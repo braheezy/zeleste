@@ -1,0 +1,6 @@
+generated
+__pycache__
+raw
+*.zip
+foreground-tilesets.png
+assets/source

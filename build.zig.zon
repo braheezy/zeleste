@@ -1,0 +1,17 @@
+.{
+    .name = .zeleste,
+    .version = "0.0.0",
+    .fingerprint = 0xfd4baca3c599f2d6,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .ziggba = .{
+            .path = "../../gba/ziggba",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "PLAN.md",
+    },
+}

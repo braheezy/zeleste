@@ -1,0 +1,7 @@
+version: "3"
+
+tasks:
+  collision:
+    desc: Open the level collision editor
+    cmds:
+      - python3 tools/collision_server.py
