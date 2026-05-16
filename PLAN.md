@@ -290,13 +290,19 @@ Those are too broad and will damage coherence.
 
 - ZigGBA project skeleton exists and builds `zig-out/zeleste.gba`.
 - `zig build run` is wired to launch the built ROM in mGBA.
-- `zig build assets` regenerates the Prologue A annotation outputs: foreground mask, cleaned background, collision grid, foreground attribute grid, converted 4bpp full-room background tilemap data, and a padded one-frame Madeline sprite from `madeline-sprites.zip`.
-- Prologue A renders as a full-capture 8bpp tile background on BG0 using the capture's 249-color palette and a bottom-aligned camera offset.
-- Annotation JSON produces `collision.bin`; the ROM embeds it and uses it for the current player rectangle collision.
-- A one-frame 16x16 Madeline OBJ sprite renders, flips horizontally, moves left/right from input, jumps from A or B, falls with simple gravity, and lands against `collision.bin`.
-- The edited `assets/backgrounds/prologue-a_1.png` and `prologue-a_2.png` screens build as separate 8bpp fixed-camera backgrounds; walking off the left/right edge swaps between them.
+- `zig build assets` regenerates Prologue room bundles from full unedited room PNGs plus matching collision annotation JSON.
+- Prologue rooms render as 8bpp scrolling tile backgrounds on BG0 using per-room palettes.
+- Annotation JSON produces `collision.bin` and `spawn.bin`; the ROM embeds them for current player rectangle collision and room spawn placement.
+- `tools/pack_player_obj_tiles.py` packs the `idle` and `runSlow` frames from `assets/Animations/player/` into 4bpp OBJ tile data and an OBJ palette.
+- A 32x32 Madeline OBJ sprite renders, flips horizontally, switches between idle and slow-run animation, moves left/right from input, jumps from A or B, and lands against `collision.bin`.
+- Player normal movement now uses 8-bit fixed-point position/velocity with first-pass Celeste-derived walk acceleration, air acceleration, gravity, max fall, variable jump height, coyote time, and jump buffering.
+- The annotated `assets/backgrounds/-1.png` and `0.png` rooms build as full 64x32-map scrolling backgrounds; walking off the left/right room edge swaps between them.
 - The annotation server now auto-loads backgrounds, saves matching annotation JSON, and generates per-room collision bundles under `assets/generated/rooms/<room_id>/`.
-- Runtime uses each room bundle's `collision.bin` instead of the earlier temporary flat floor.
+- Runtime uses each room bundle's `collision.bin` and spawn point instead of the earlier temporary flat floor and hardcoded start position.
+- The room editor can now mark falling block rectangles and landing rows; the asset step emits `falling_blocks.bin` for later runtime behavior.
+- Prologue source room assets are being organized under `assets/rooms/prologue_a/`, with generated ROM bundles still emitted under `assets/generated/rooms/`.
+- The first falling block is now extracted as room entity art and packed into 4bpp OBJ tiles, instead of being moved around by rewriting background map tiles.
+- Basic wall slide and wall jump behavior is in the prototype movement loop, with the `wallslide` player animation packed into the object sprite sheet.
 - Remaining Milestone 0 gap: split the single-file prototype into the planned source modules once the first movement loop stabilizes.
 
 ## Milestones
@@ -367,9 +373,9 @@ This should be treated as a learning/fan demake unless original branding and ass
 
 ## Immediate Next Steps
 
-1. Move the current input, player, and collision code out of `main.zig` into small modules.
-2. Add `src/player_constants.zig` with converted first-pass constants from `Player.cs`.
-3. Replace integer placeholder motion with fixed-point position/velocity.
-4. Replace the current simple jump with variable jump, coyote time, and jump buffer against room collision.
+1. Tune the first fixed-point movement pass in emulator against the local Celeste references.
+2. Move the current input, player, and collision code out of `main.zig` into small modules.
+3. Add `src/player_constants.zig` with converted first-pass constants from `Player.cs`.
+4. Add dash, dash freeze, dash attack timing, and dash refill.
 5. Add `docs/reference-map.md` linking each mechanic to official, NES, and GBA reference files.
-6. Add a simple debug collision/player overlay once basic jump works.
+6. Add a simple debug collision/player overlay once basic jump tuning stabilizes.

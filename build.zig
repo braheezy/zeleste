@@ -1,6 +1,5 @@
 const std = @import("std");
 const ziggba = @import("ziggba");
-const color = ziggba.color;
 
 pub fn build(b: *std.Build) void {
     const gba_b = ziggba.GbaBuild.create(b);
@@ -12,95 +11,95 @@ pub fn build(b: *std.Build) void {
 
     const assets_step = b.step("assets", "Build generated game assets");
 
-    const prologue_a_1_bg = b.addSystemCommand(&.{
+    const prologue_m1_bg = b.addSystemCommand(&.{
         "python3",
-        "tools/build_room_bundle.py",
-        "assets/backgrounds/prologue-a_1.png",
-        "assets/generated/rooms/prologue_a_1",
+        b.pathFromRoot("tools/build_room_bundle.py"),
+        b.pathFromRoot("assets/rooms/prologue_a/-1.png"),
+        b.pathFromRoot("assets/generated/rooms/prologue_m1"),
     });
-    assets_step.dependOn(&prologue_a_1_bg.step);
+    assets_step.dependOn(&prologue_m1_bg.step);
 
-    const prologue_a_2_bg = b.addSystemCommand(&.{
+    const prologue_0_bg = b.addSystemCommand(&.{
         "python3",
-        "tools/build_room_bundle.py",
-        "assets/backgrounds/prologue-a_2.png",
-        "assets/generated/rooms/prologue_a_2",
+        b.pathFromRoot("tools/build_room_bundle.py"),
+        b.pathFromRoot("assets/rooms/prologue_a/0.png"),
+        b.pathFromRoot("assets/generated/rooms/prologue_0"),
+        "--rgb-bits",
+        "4",
     });
-    assets_step.dependOn(&prologue_a_2_bg.step);
+    assets_step.dependOn(&prologue_0_bg.step);
 
-    const extract_player_sprite = b.addSystemCommand(&.{
+    const pack_player_animations = b.addSystemCommand(&.{
         "python3",
-        "tools/extract_player_sprite.py",
-        "madeline-sprites.zip",
-        "Raw/player/idle00.png",
-        "assets/generated/player/idle00_16x16.png",
+        b.pathFromRoot("tools/pack_player_obj_tiles.py"),
+        "--input",
+        b.pathFromRoot("assets/Animations/player"),
+        "--output-dir",
+        b.pathFromRoot("assets/generated/player"),
+        "--animations",
+        "idle",
+        "runSlow",
+        "wallslide",
     });
-    const player_colors = b.allocator.dupe(color.ColorRgba32, &.{
-        .transparent,
-        .rgb(4, 0, 0),
-        .rgb(63, 63, 116),
-        .rgb(66, 80, 95),
-        .rgb(69, 40, 60),
-        .rgb(91, 110, 225),
-        .rgb(103, 119, 136),
-        .rgb(135, 55, 36),
-        .rgb(217, 160, 102),
-        .rgb(238, 195, 154),
-        .transparent,
-        .transparent,
-        .transparent,
-        .transparent,
-        .transparent,
-        .transparent,
-    }) catch @panic("OOM");
-    const player_pal = color.PalettizerNearest.create(b.allocator, player_colors) catch @panic("OOM");
-    const player_tiles = gba_b.addConvertImageTiles4BppStep(.{
-        .name = "Convert player idle sprite",
-        .image_path = "assets/generated/player/idle00_16x16.png",
-        .output_path = "assets/generated/player/idle00_tiles.bin",
-        .options = .{
-            .palettizer = player_pal.pal(),
-        },
-    });
-    player_tiles.step.dependOn(&extract_player_sprite.step);
-    const player_palette = gba_b.addSaveQuantizedPalettizerPaletteStep(.{
-        .name = "Save player sprite palette",
-        .palettizer = player_pal.pal(),
-        .output_path = "assets/generated/player/palette.bin",
-    });
-    assets_step.dependOn(&player_tiles.step);
-    assets_step.dependOn(&player_palette.step);
+    assets_step.dependOn(&pack_player_animations.step);
 
-    exe.dependOn(assets_step);
-    exe.step.root_module.addAnonymousImport("prologue_a_1_bg_tiles.bin", .{
-        .root_source_file = b.path("assets/generated/rooms/prologue_a_1/bg_tiles.bin"),
+    const pack_falling_block = b.addSystemCommand(&.{
+        "python3",
+        b.pathFromRoot("tools/pack_falling_block_obj.py"),
+        "--input",
+        b.pathFromRoot("assets/rooms/prologue_a/prologue-a-block1.png"),
+        "--output-dir",
+        b.pathFromRoot("assets/generated/entities/prologue_a"),
     });
-    exe.step.root_module.addAnonymousImport("prologue_a_1_bg_map.bin", .{
-        .root_source_file = b.path("assets/generated/rooms/prologue_a_1/bg_map.bin"),
+    assets_step.dependOn(&pack_falling_block.step);
+
+    exe.step.root_module.addAnonymousImport("prologue_m1_bg_tiles.bin", .{
+        .root_source_file = b.path("assets/generated/rooms/prologue_m1/bg_tiles.bin"),
     });
-    exe.step.root_module.addAnonymousImport("prologue_a_1_bg_palette.bin", .{
-        .root_source_file = b.path("assets/generated/rooms/prologue_a_1/bg_palette.bin"),
+    exe.step.root_module.addAnonymousImport("prologue_m1_bg_map.bin", .{
+        .root_source_file = b.path("assets/generated/rooms/prologue_m1/bg_map.bin"),
     });
-    exe.step.root_module.addAnonymousImport("prologue_a_1_collision.bin", .{
-        .root_source_file = b.path("assets/generated/rooms/prologue_a_1/collision.bin"),
+    exe.step.root_module.addAnonymousImport("prologue_m1_bg_palette.bin", .{
+        .root_source_file = b.path("assets/generated/rooms/prologue_m1/bg_palette.bin"),
     });
-    exe.step.root_module.addAnonymousImport("prologue_a_2_bg_tiles.bin", .{
-        .root_source_file = b.path("assets/generated/rooms/prologue_a_2/bg_tiles.bin"),
+    exe.step.root_module.addAnonymousImport("prologue_m1_collision.bin", .{
+        .root_source_file = b.path("assets/generated/rooms/prologue_m1/collision.bin"),
     });
-    exe.step.root_module.addAnonymousImport("prologue_a_2_bg_map.bin", .{
-        .root_source_file = b.path("assets/generated/rooms/prologue_a_2/bg_map.bin"),
+    exe.step.root_module.addAnonymousImport("prologue_m1_spawn.bin", .{
+        .root_source_file = b.path("assets/generated/rooms/prologue_m1/spawn.bin"),
     });
-    exe.step.root_module.addAnonymousImport("prologue_a_2_bg_palette.bin", .{
-        .root_source_file = b.path("assets/generated/rooms/prologue_a_2/bg_palette.bin"),
+    exe.step.root_module.addAnonymousImport("prologue_m1_falling_blocks.bin", .{
+        .root_source_file = b.path("assets/generated/rooms/prologue_m1/falling_blocks.bin"),
     });
-    exe.step.root_module.addAnonymousImport("prologue_a_2_collision.bin", .{
-        .root_source_file = b.path("assets/generated/rooms/prologue_a_2/collision.bin"),
+    exe.step.root_module.addAnonymousImport("prologue_0_bg_tiles.bin", .{
+        .root_source_file = b.path("assets/generated/rooms/prologue_0/bg_tiles.bin"),
+    });
+    exe.step.root_module.addAnonymousImport("prologue_0_bg_map.bin", .{
+        .root_source_file = b.path("assets/generated/rooms/prologue_0/bg_map.bin"),
+    });
+    exe.step.root_module.addAnonymousImport("prologue_0_bg_palette.bin", .{
+        .root_source_file = b.path("assets/generated/rooms/prologue_0/bg_palette.bin"),
+    });
+    exe.step.root_module.addAnonymousImport("prologue_0_collision.bin", .{
+        .root_source_file = b.path("assets/generated/rooms/prologue_0/collision.bin"),
+    });
+    exe.step.root_module.addAnonymousImport("prologue_0_spawn.bin", .{
+        .root_source_file = b.path("assets/generated/rooms/prologue_0/spawn.bin"),
+    });
+    exe.step.root_module.addAnonymousImport("prologue_0_falling_blocks.bin", .{
+        .root_source_file = b.path("assets/generated/rooms/prologue_0/falling_blocks.bin"),
     });
     exe.step.root_module.addAnonymousImport("player_idle_tiles.bin", .{
-        .root_source_file = b.path("assets/generated/player/idle00_tiles.bin"),
+        .root_source_file = b.path("assets/generated/player/madeline_tiles.bin"),
     });
     exe.step.root_module.addAnonymousImport("player_palette.bin", .{
-        .root_source_file = b.path("assets/generated/player/palette.bin"),
+        .root_source_file = b.path("assets/generated/player/madeline_palette.bin"),
+    });
+    exe.step.root_module.addAnonymousImport("falling_block_tiles.bin", .{
+        .root_source_file = b.path("assets/generated/entities/prologue_a/falling_block_tiles.bin"),
+    });
+    exe.step.root_module.addAnonymousImport("falling_block_palette.bin", .{
+        .root_source_file = b.path("assets/generated/entities/prologue_a/falling_block_palette.bin"),
     });
 
     const mgba = b.addSystemCommand(&.{"/Applications/mGBA.app/Contents/MacOS/mGBA"});

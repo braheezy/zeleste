@@ -14,6 +14,8 @@
       --line: #3a414a;
       --accent: #72d6ff;
       --solid: rgba(255, 72, 72, 0.52);
+      --spawn: rgba(80, 255, 136, 0.88);
+      --falling: rgba(255, 205, 74, 0.88);
     }
 
     * { box-sizing: border-box; }
@@ -120,6 +122,13 @@
       <label for="backgroundSelect">Background</label>
       <select id="backgroundSelect"></select>
 
+      <label for="mode">Mode</label>
+      <select id="mode">
+        <option value="solid">Solid Collision</option>
+        <option value="spawn">Spawn Point</option>
+        <option value="fallingBlock">Falling Block</option>
+      </select>
+
       <div class="row">
         <div>
           <label for="tileSize">Tile</label>
@@ -132,6 +141,7 @@
       </div>
 
       <button id="saveButton" type="button">Save</button>
+      <button id="deleteBlockButton" type="button">Delete Selected Block</button>
       <button id="clearButton" type="button">Clear</button>
       <button id="reloadButton" type="button">Reload</button>
 
@@ -141,12 +151,16 @@
         <div>Image: <span id="imageStats">none</span></div>
         <div>Grid: <span id="gridStats">none</span></div>
         <div>Solid: <span id="markedStats">0</span></div>
+        <div>Spawn: <span id="spawnStats">none</span></div>
+        <div>Falling Blocks: <span id="fallingBlockStats">0</span></div>
         <div>JSON: <span id="annotationStats">none</span></div>
       </div>
 
       <div class="hint">
-        Click or drag to mark solid collision. Right click or hold Option/Alt to erase.
-        Shift-click fills a horizontal run to the right edge. Save writes beside the selected background.
+        Collision mode: click or drag to mark solid collision. Right click or hold Option/Alt to erase.
+        Spawn mode: click a tile to place the player's collision-box top-left.
+        Falling Block mode: drag a rectangle around the block tiles, click a block to select it.
+        Shift-click sets the selected block's landing row.
       </div>
     </aside>
 
@@ -160,15 +174,19 @@
 
   <script>
     const backgroundSelect = document.getElementById('backgroundSelect');
+    const modeSelect = document.getElementById('mode');
     const tileSizeInput = document.getElementById('tileSize');
     const zoomInput = document.getElementById('zoom');
     const saveButton = document.getElementById('saveButton');
+    const deleteBlockButton = document.getElementById('deleteBlockButton');
     const clearButton = document.getElementById('clearButton');
     const reloadButton = document.getElementById('reloadButton');
     const status = document.getElementById('status');
     const imageStats = document.getElementById('imageStats');
     const gridStats = document.getElementById('gridStats');
     const markedStats = document.getElementById('markedStats');
+    const spawnStats = document.getElementById('spawnStats');
+    const fallingBlockStats = document.getElementById('fallingBlockStats');
     const annotationStats = document.getElementById('annotationStats');
     const stage = document.getElementById('stage');
     const base = document.getElementById('base');
@@ -182,9 +200,14 @@
     let gridW = 0;
     let gridH = 0;
     let tiles = new Set();
+    let spawn = null;
+    let fallingBlocks = [];
+    let selectedFallingBlock = -1;
     let isPointerDown = false;
     let eraseMode = false;
     let lastKey = '';
+    let dragStartTile = null;
+    let dragExistingBlock = -1;
 
     function key(x, y) {
       return `${x},${y}`;
@@ -252,15 +275,33 @@
 
     async function loadAnnotation(imagePath) {
       tiles = new Set();
+      spawn = null;
+      fallingBlocks = [];
+      selectedFallingBlock = -1;
       const result = await apiJson(`/api/annotation?image=${encodeURIComponent(imagePath)}`);
       annotationStats.textContent = result.path;
       if (result.data && result.data.tileSize) {
         tileSizeInput.value = result.data.tileSize;
       }
+      if (result.data && result.data.spawn) {
+        spawn = {
+          x: Number(result.data.spawn.x) || 0,
+          y: Number(result.data.spawn.y) || 0
+        };
+      }
       for (const tile of (result.data && result.data.tiles) || []) {
         if ((tile.kind || 'solid') === 'solid') {
           tiles.add(key(tile.x, tile.y));
         }
+      }
+      for (const block of (result.data && result.data.fallingBlocks) || []) {
+        fallingBlocks.push({
+          x: Number(block.x) || 0,
+          y: Number(block.y) || 0,
+          w: Math.max(8, Number(block.w) || 8),
+          h: Math.max(8, Number(block.h) || 8),
+          maxY: Number(block.maxY ?? block.y) || 0
+        });
       }
     }
 
@@ -293,6 +334,40 @@
         overlayCtx.fillRect(tile.x * tileSize, tile.y * tileSize, tileSize, tileSize);
       }
 
+      if (spawn) {
+        overlayCtx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--spawn');
+        overlayCtx.fillStyle = 'rgba(80,255,136,0.22)';
+        overlayCtx.lineWidth = 2;
+        overlayCtx.fillRect(spawn.x, spawn.y, 8, 16);
+        overlayCtx.strokeRect(spawn.x + 0.5, spawn.y + 0.5, 7, 15);
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(spawn.x - 4, spawn.y);
+        overlayCtx.lineTo(spawn.x + 12, spawn.y);
+        overlayCtx.moveTo(spawn.x, spawn.y - 4);
+        overlayCtx.lineTo(spawn.x, spawn.y + 20);
+        overlayCtx.stroke();
+      }
+
+      for (let index = 0; index < fallingBlocks.length; index += 1) {
+        const block = fallingBlocks[index];
+        const selected = index === selectedFallingBlock;
+        overlayCtx.fillStyle = selected ? 'rgba(255,205,74,0.34)' : 'rgba(255,205,74,0.18)';
+        overlayCtx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--falling');
+        overlayCtx.lineWidth = selected ? 3 : 2;
+        overlayCtx.fillRect(block.x, block.y, block.w, block.h);
+        overlayCtx.strokeRect(block.x + 0.5, block.y + 0.5, block.w - 1, block.h - 1);
+        overlayCtx.strokeStyle = selected ? 'rgba(255,255,255,0.9)' : 'rgba(255,205,74,0.72)';
+        overlayCtx.lineWidth = 1;
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(block.x, block.maxY + 0.5);
+        overlayCtx.lineTo(block.x + block.w, block.maxY + 0.5);
+        overlayCtx.stroke();
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(block.x + block.w / 2, block.y + block.h);
+        overlayCtx.lineTo(block.x + block.w / 2, block.maxY);
+        overlayCtx.stroke();
+      }
+
       overlayCtx.strokeStyle = 'rgba(255,255,255,0.48)';
       overlayCtx.lineWidth = 1;
       overlayCtx.beginPath();
@@ -309,6 +384,8 @@
       imageStats.textContent = `${image.width}x${image.height}`;
       gridStats.textContent = `${gridW}x${gridH}`;
       markedStats.textContent = String(tiles.size);
+      spawnStats.textContent = spawn ? `${spawn.x},${spawn.y}` : 'none';
+      fallingBlockStats.textContent = `${fallingBlocks.length}${selectedFallingBlock >= 0 ? ` (${selectedFallingBlock + 1} selected)` : ''}`;
     }
 
     function setTile(x, y, erase) {
@@ -332,9 +409,64 @@
       };
     }
 
+    function tileToPixelRect(a, b) {
+      const tileSize = currentTileSize();
+      const minX = Math.max(0, Math.min(a.x, b.x));
+      const minY = Math.max(0, Math.min(a.y, b.y));
+      const maxX = Math.min(gridW - 1, Math.max(a.x, b.x));
+      const maxY = Math.min(gridH - 1, Math.max(a.y, b.y));
+      return {
+        x: minX * tileSize,
+        y: minY * tileSize,
+        w: (maxX - minX + 1) * tileSize,
+        h: (maxY - minY + 1) * tileSize
+      };
+    }
+
+    function findFallingBlockAt(tile) {
+      const tileSize = currentTileSize();
+      const x = tile.x * tileSize;
+      const y = tile.y * tileSize;
+      for (let index = fallingBlocks.length - 1; index >= 0; index -= 1) {
+        const block = fallingBlocks[index];
+        if (x >= block.x && x < block.x + block.w && y >= block.y && y < block.y + block.h) {
+          return index;
+        }
+      }
+      return -1;
+    }
+
     function paintEvent(event) {
       if (!image) return;
       const tile = eventToTile(event);
+      if (modeSelect.value === 'fallingBlock') {
+        if (event.shiftKey && selectedFallingBlock >= 0) {
+          const tileSize = currentTileSize();
+          const block = fallingBlocks[selectedFallingBlock];
+          block.maxY = Math.max(block.y + block.h, Math.min(image.height, tile.y * tileSize));
+          redraw();
+          return;
+        }
+        const index = findFallingBlockAt(tile);
+        if (index >= 0) {
+          selectedFallingBlock = index;
+          if (eraseMode) {
+            fallingBlocks.splice(index, 1);
+            selectedFallingBlock = -1;
+          }
+          redraw();
+        }
+        return;
+      }
+      if (modeSelect.value === 'spawn') {
+        const tileSize = currentTileSize();
+        spawn = {
+          x: Math.max(0, Math.min(image.width - 8, tile.x * tileSize)),
+          y: Math.max(0, Math.min(image.height - 16, tile.y * tileSize))
+        };
+        redraw();
+        return;
+      }
       const tileKey = key(tile.x, tile.y);
       if (tileKey === lastKey && !event.shiftKey) return;
       lastKey = tileKey;
@@ -353,6 +485,14 @@
         tileSize: currentTileSize(),
         width: image.width,
         height: image.height,
+        spawn: spawn || { x: 24, y: 128 },
+        fallingBlocks: fallingBlocks.map((block) => ({
+          x: block.x,
+          y: block.y,
+          w: block.w,
+          h: block.h,
+          maxY: block.maxY
+        })),
         tiles: sorted.map((tile) => ({
           x: tile.x,
           y: tile.y,
@@ -384,8 +524,21 @@
     });
 
     clearButton.addEventListener('click', () => {
-      if (!confirm('Clear all solid tiles for this background?')) return;
-      tiles.clear();
+      if (modeSelect.value === 'fallingBlock') {
+        if (!confirm('Clear all falling blocks for this background?')) return;
+        fallingBlocks = [];
+        selectedFallingBlock = -1;
+      } else {
+        if (!confirm('Clear all solid tiles for this background?')) return;
+        tiles.clear();
+      }
+      redraw();
+    });
+
+    deleteBlockButton.addEventListener('click', () => {
+      if (selectedFallingBlock < 0) return;
+      fallingBlocks.splice(selectedFallingBlock, 1);
+      selectedFallingBlock = -1;
       redraw();
     });
 
@@ -401,21 +554,40 @@
       isPointerDown = true;
       eraseMode = event.button === 2 || event.altKey;
       lastKey = '';
+      dragStartTile = null;
+      dragExistingBlock = -1;
       overlay.setPointerCapture(event.pointerId);
+      if (modeSelect.value === 'fallingBlock') {
+        dragStartTile = eventToTile(event);
+        dragExistingBlock = findFallingBlockAt(dragStartTile);
+      }
       paintEvent(event);
     });
     overlay.addEventListener('pointermove', (event) => {
       if (isPointerDown) paintEvent(event);
     });
-    overlay.addEventListener('pointerup', () => {
+    overlay.addEventListener('pointerup', (event) => {
+      if (modeSelect.value === 'fallingBlock' && dragStartTile && dragExistingBlock < 0 && !eraseMode) {
+        const endTile = eventToTile(event);
+        const rect = tileToPixelRect(dragStartTile, endTile);
+        if (rect.w >= currentTileSize() && rect.h >= currentTileSize()) {
+          fallingBlocks.push({ ...rect, maxY: rect.y + rect.h });
+          selectedFallingBlock = fallingBlocks.length - 1;
+        }
+        redraw();
+      }
       isPointerDown = false;
       eraseMode = false;
       lastKey = '';
+      dragStartTile = null;
+      dragExistingBlock = -1;
     });
     overlay.addEventListener('pointercancel', () => {
       isPointerDown = false;
       eraseMode = false;
       lastKey = '';
+      dragStartTile = null;
+      dragExistingBlock = -1;
     });
 
     loadBackgroundList().catch((error) => setStatus(`Startup failed: ${error}`));

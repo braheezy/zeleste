@@ -52,19 +52,41 @@ class AnnotationHandler(SimpleHTTPRequestHandler):
         self.send_json(200, {"ok": True, "path": str(relative_path), "bundle": str(bundle_path)})
 
     def backgrounds(self) -> list[dict]:
-        root = self.repo_root / "assets" / "backgrounds"
         backgrounds = []
-        for path in sorted(root.glob("*.png")):
-            relative = path.relative_to(self.repo_root)
-            annotation = self.annotation_path_for_image(str(relative))
-            backgrounds.append(
-                {
-                    "image": str(relative),
-                    "annotation": str(annotation),
-                    "hasAnnotation": (self.repo_root / annotation).exists(),
-                }
-            )
+        roots = [
+            self.repo_root / "assets" / "rooms",
+            self.repo_root / "assets" / "backgrounds",
+        ]
+        for root in roots:
+            if not root.exists():
+                continue
+            paths = root.rglob("*.png") if root.name == "rooms" else root.glob("*.png")
+            for path in sorted(paths):
+                if self.is_entity_art(path):
+                    continue
+                relative = path.relative_to(self.repo_root)
+                annotation = self.annotation_path_for_image(str(relative))
+                backgrounds.append(
+                    {
+                        "image": str(relative),
+                        "annotation": str(annotation),
+                        "hasAnnotation": (self.repo_root / annotation).exists(),
+                    }
+                )
         return backgrounds
+
+    @staticmethod
+    def is_entity_art(path: Path) -> bool:
+        name = path.stem.lower()
+        return "-block" in name or name.endswith("_block")
+
+    @staticmethod
+    def room_id_for_image(image_path: Path) -> str:
+        if image_path.parent.name == "prologue_a":
+            if image_path.stem.startswith("-"):
+                return f"prologue_m{image_path.stem[1:]}"
+            return f"prologue_{image_path.stem}"
+        return image_path.stem.replace("-", "_")
 
     def send_annotation(self, image_path: str) -> None:
         try:
@@ -93,7 +115,7 @@ class AnnotationHandler(SimpleHTTPRequestHandler):
         if "image" not in request:
             return Path()
         image_path = self.safe_relative_path(str(request["image"]), expected_suffix=".png")
-        room_id = image_path.stem.replace("-", "_")
+        room_id = self.room_id_for_image(image_path)
         output_dir = Path("assets/generated/rooms") / room_id
         subprocess.run(
             [

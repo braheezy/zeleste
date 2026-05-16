@@ -2,8 +2,8 @@
 """Split the downloaded Celeste foreground atlas into grid-aligned islands.
 
 This intentionally uses only the Python standard library so it can run before
-we settle the rest of the asset-tool dependencies. It supports 8-bit RGBA PNGs,
-which is what `foreground-tilesets.png` currently is.
+we settle the rest of the asset-tool dependencies. It supports non-interlaced
+8-bit RGBA and indexed-color PNGs.
 """
 
 from __future__ import annotations
@@ -65,6 +65,8 @@ def read_png_rgba(path: Path) -> Image:
     width = height = None
     compressed = bytearray()
     color_type = bit_depth = None
+    palette: list[tuple[int, int, int, int]] = []
+    transparency: bytes = b""
 
     while pos < len(data):
         length = struct.unpack(">I", data[pos : pos + 4])[0]
@@ -76,11 +78,17 @@ def read_png_rgba(path: Path) -> Image:
             width, height, bit_depth, color_type, compression, filter_method, interlace = struct.unpack(
                 ">IIBBBBB", payload
             )
-            if bit_depth != 8 or color_type != 6 or compression != 0 or filter_method != 0 or interlace != 0:
+            if bit_depth != 8 or color_type not in (3, 6) or compression != 0 or filter_method != 0 or interlace != 0:
                 raise ValueError(
-                    f"{path} must be non-interlaced 8-bit RGBA PNG; "
+                    f"{path} must be non-interlaced 8-bit RGBA or indexed-color PNG; "
                     f"got bit_depth={bit_depth}, color_type={color_type}, interlace={interlace}"
                 )
+        elif kind == b"PLTE":
+            if len(payload) % 3 != 0:
+                raise ValueError(f"{path} has invalid PLTE length")
+            palette = [(payload[i], payload[i + 1], payload[i + 2], 255) for i in range(0, len(payload), 3)]
+        elif kind == b"tRNS":
+            transparency = payload
         elif kind == b"IDAT":
             compressed.extend(payload)
         elif kind == b"IEND":
@@ -88,23 +96,31 @@ def read_png_rgba(path: Path) -> Image:
 
     if width is None or height is None:
         raise ValueError(f"{path} has no IHDR")
+    if color_type == 3:
+        if not palette:
+            raise ValueError(f"{path} is indexed-color but has no PLTE")
+        palette = [
+            (r, g, b, transparency[index] if index < len(transparency) else a)
+            for index, (r, g, b, a) in enumerate(palette)
+        ]
 
     raw = zlib.decompress(bytes(compressed))
-    stride = width * 4
-    out = bytearray(height * stride)
+    source_bpp = 4 if color_type == 6 else 1
+    source_stride = width * source_bpp
+    recon_rows = bytearray(height * source_stride)
     src = 0
 
     for y in range(height):
         filter_type = raw[src]
         src += 1
-        scanline = bytearray(raw[src : src + stride])
-        src += stride
-        prev_row = out[(y - 1) * stride : y * stride] if y else bytes(stride)
+        scanline = bytearray(raw[src : src + source_stride])
+        src += source_stride
+        prev_row = recon_rows[(y - 1) * source_stride : y * source_stride] if y else bytes(source_stride)
 
-        for x in range(stride):
-            left = scanline[x - 4] if x >= 4 else 0
+        for x in range(source_stride):
+            left = scanline[x - source_bpp] if x >= source_bpp else 0
             up = prev_row[x]
-            up_left = prev_row[x - 4] if x >= 4 else 0
+            up_left = prev_row[x - source_bpp] if x >= source_bpp else 0
             if filter_type == 0:
                 recon = scanline[x]
             elif filter_type == 1:
@@ -119,8 +135,16 @@ def read_png_rgba(path: Path) -> Image:
                 raise ValueError(f"unsupported PNG filter {filter_type} on row {y}")
             scanline[x] = recon
 
-        out[y * stride : (y + 1) * stride] = scanline
+        recon_rows[y * source_stride : (y + 1) * source_stride] = scanline
 
+    if color_type == 6:
+        return Image(width, height, bytes(recon_rows))
+
+    out = bytearray(width * height * 4)
+    for index, palette_index in enumerate(recon_rows):
+        if palette_index >= len(palette):
+            raise ValueError(f"{path} references palette index {palette_index}, but PLTE has {len(palette)} entries")
+        out[index * 4 : index * 4 + 4] = bytes(palette[palette_index])
     return Image(width, height, bytes(out))
 
 
