@@ -37,8 +37,14 @@ pub fn build(b: *std.Build) void {
         "--output-dir",
         b.pathFromRoot("assets/generated/player"),
         "--animations",
-        "idle",
+        "idleLoop:idleA",
+        "idleLoop:idleB",
+        "idleLoop:idleA",
+        "idleLoop:idleB",
+        "idleLoop:idleC",
         "runSlow",
+        "jumpSlow",
+        "fallSlow",
         "wallslide",
     });
     assets_step.dependOn(&pack_player_animations.step);
@@ -52,6 +58,16 @@ pub fn build(b: *std.Build) void {
         b.pathFromRoot("assets/generated/entities/prologue_a"),
     });
     assets_step.dependOn(&pack_falling_block.step);
+
+    const pack_hair = b.addSystemCommand(&.{
+        "python3",
+        b.pathFromRoot("tools/pack_hair_obj.py"),
+        "--input-dir",
+        b.pathFromRoot("assets/Animations/hair"),
+        "--output-dir",
+        b.pathFromRoot("assets/generated/player"),
+    });
+    assets_step.dependOn(&pack_hair.step);
 
     exe.step.root_module.addAnonymousImport("prologue_m1_bg_tiles.bin", .{
         .root_source_file = b.path("assets/generated/rooms/prologue_m1/bg_tiles.bin"),
@@ -94,6 +110,15 @@ pub fn build(b: *std.Build) void {
     });
     exe.step.root_module.addAnonymousImport("player_palette.bin", .{
         .root_source_file = b.path("assets/generated/player/madeline_palette.bin"),
+    });
+    exe.step.root_module.addAnonymousImport("player_hair_anchors.bin", .{
+        .root_source_file = b.path("assets/generated/player/madeline_hair_anchors.bin"),
+    });
+    exe.step.root_module.addAnonymousImport("hair_tiles.bin", .{
+        .root_source_file = b.path("assets/generated/player/hair_tiles.bin"),
+    });
+    exe.step.root_module.addAnonymousImport("hair_palette.bin", .{
+        .root_source_file = b.path("assets/generated/player/hair_palette.bin"),
     });
     exe.step.root_module.addAnonymousImport("falling_block_tiles.bin", .{
         .root_source_file = b.path("assets/generated/entities/prologue_a/falling_block_tiles.bin"),

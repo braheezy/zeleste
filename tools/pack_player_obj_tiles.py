@@ -35,6 +35,35 @@ def write_tile_4bpp(output: bytearray, pixels: list[int]) -> None:
             output.append(left | (right << 4))
 
 
+def load_hair_anchors(directory: Path) -> dict[int, dict] | None:
+    path = directory / "hair_anchors.json"
+    if not path.exists():
+        return None
+    data = json.loads(path.read_text())
+    return {int(frame["index"]): frame for frame in data["frames"]}
+
+
+def normalize_hair_anchor(anchor_frame: dict | None) -> tuple[int, int, int]:
+    if anchor_frame is None:
+        return (18, 19, -1)
+    direction = int(anchor_frame.get("dir", -1))
+    direction = 1 if direction > 0 else -1
+    if "anchor" in anchor_frame:
+        return (int(anchor_frame["anchor"]["x"]), int(anchor_frame["anchor"]["y"]), direction)
+    if "root1" in anchor_frame:
+        return (int(anchor_frame["root1"]["x"]), int(anchor_frame["root1"]["y"]) + 7, direction)
+    return (18, 19, direction)
+
+
+def parse_animation_spec(spec: str) -> tuple[str, str]:
+    if ":" in spec:
+        name, directory = spec.split(":", 1)
+        if not name or not directory:
+            raise ValueError(f"invalid animation spec: {spec}")
+        return name, directory
+    return spec, spec
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=Path, default=Path("assets/Animations/player"))
@@ -46,18 +75,21 @@ def main() -> int:
 
     frame_sources = []
     colors: Counter[tuple[int, int, int, int]] = Counter()
-    for animation in args.animations:
-        directory = args.input / animation
+    for spec in args.animations:
+        animation, directory_name = parse_animation_spec(spec)
+        directory = args.input / directory_name
+        hair_anchors = load_hair_anchors(directory)
         frame_paths = sorted(directory.glob("f*.png"), key=frame_index)
         if not frame_paths:
-            raise ValueError(f"no frames found for {animation}")
+            raise ValueError(f"no frames found for {directory_name}")
         for path in frame_paths:
             image = read_png_rgba(path)
             if image.width > args.cell_width or image.height > args.cell_height:
                 raise ValueError(f"{path} is {image.width}x{image.height}, larger than {args.cell_width}x{args.cell_height}")
             for index in range(0, len(image.pixels), 4):
                 colors[tuple(image.pixels[index : index + 4])] += 1
-            frame_sources.append((animation, frame_index(path), image))
+            anchor = normalize_hair_anchor(hair_anchors.get(frame_index(path)) if hair_anchors else None)
+            frame_sources.append((animation, frame_index(path), image, anchor))
 
     transparent = [(0, 0, 0, 0)]
     opaque = [color for color, _ in colors.most_common() if color[3] != 0]
@@ -76,7 +108,8 @@ def main() -> int:
     tiles_per_col = args.cell_height // 8
     tiles_per_frame = tiles_per_row * tiles_per_col
 
-    for animation, source_frame, image in frame_sources:
+    hair_anchor_bytes = bytearray()
+    for animation, source_frame, image, hair_anchor in frame_sources:
         frame_index_out = len(frames)
         base_tile = frame_index_out * tiles_per_frame
         animations.setdefault(
@@ -90,6 +123,9 @@ def main() -> int:
         )
         animations[animation]["frameCount"] += 1
         animations[animation]["frames"].append(frame_index_out)
+        hair_anchor_bytes.append(max(0, min(args.cell_width - 1, hair_anchor[0])))
+        hair_anchor_bytes.append(max(0, min(args.cell_height - 1, hair_anchor[1])))
+        hair_anchor_bytes.append(1 if hair_anchor[2] > 0 else 0)
 
         for tile_y in range(tiles_per_col):
             for tile_x in range(tiles_per_row):
@@ -119,6 +155,7 @@ def main() -> int:
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     (args.output_dir / "madeline_tiles.bin").write_bytes(bytes(tiles))
+    (args.output_dir / "madeline_hair_anchors.bin").write_bytes(bytes(hair_anchor_bytes))
     (args.output_dir / "madeline_palette.bin").write_bytes(
         b"".join(rgba_to_rgb555(color).to_bytes(2, "little") for color in palette)
     )

@@ -5,3 +5,8 @@ tasks:
     desc: Open the level collision editor
     cmds:
       - python3 tools/collision_server.py
+
+  hair:
+    desc: Open the player hair anchor editor
+    cmds:
+      - python3 tools/hair_anchor_server.py

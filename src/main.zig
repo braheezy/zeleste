@@ -16,6 +16,9 @@ const prologue_0_collision align(4) = @embedFile("prologue_0_collision.bin").*;
 const prologue_0_falling_blocks align(4) = @embedFile("prologue_0_falling_blocks.bin").*;
 const player_tiles_data align(4) = @embedFile("player_idle_tiles.bin").*;
 const player_palette_data align(4) = @embedFile("player_palette.bin").*;
+const player_hair_anchors_data align(4) = @embedFile("player_hair_anchors.bin").*;
+const hair_tiles_data align(4) = @embedFile("hair_tiles.bin").*;
+const hair_palette_data align(4) = @embedFile("hair_palette.bin").*;
 const falling_block_tiles_data align(4) = @embedFile("falling_block_tiles.bin").*;
 const falling_block_palette_data align(4) = @embedFile("falling_block_palette.bin").*;
 
@@ -48,17 +51,35 @@ const player_jump_buffer_frames = 5;
 const player_tiles_per_frame = 16;
 const player_animation_speed = 6;
 const player_idle_first_frame = 0;
-const player_idle_frame_count = 66;
-const player_run_first_frame = 66;
+const player_idle_frame_count = 84;
+const player_idle_a_first_frame = 0;
+const player_idle_a_frame_count = 12;
+const player_idle_b_first_frame = 12;
+const player_idle_b_frame_count = 24;
+const player_idle_c_first_frame = 72;
+const player_idle_c_frame_count = 12;
+const player_run_first_frame = 84;
 const player_run_frame_count = 12;
-const player_wallslide_first_frame = 78;
+const player_jump_first_frame = 96;
+const player_jump_frame_count = 2;
+const player_fall_first_frame = 98;
+const player_fall_frame_count = 2;
+const player_wallslide_first_frame = 100;
 const max_falling_blocks = 8;
 const falling_block_shake_frames = 48;
 const falling_block_gravity: i32 = 0x20;
 const falling_block_max_fall: i32 = 0x300;
 const falling_block_base_tile: u10 = 32;
 const falling_block_palette_bank: u4 = 1;
-const falling_block_first_object = 1;
+const hair_base_tile: u10 = 60;
+const hair_root_base_tile: u10 = 64;
+const hair_palette_bank: u4 = 2;
+const player_object = 0;
+const hair_root_object = 1;
+const hair_object = 2;
+const hair_node_count = 3;
+const hair_sprite_size = 16;
+const falling_block_first_object = 8;
 const falling_block_objects_per_block = 3;
 
 const RoomBackground = struct {
@@ -91,6 +112,14 @@ const FallingBlockState = enum(u8) {
     landed,
 };
 
+const PlayerAnimation = enum(u8) {
+    idle,
+    run,
+    jump,
+    fall,
+    wallslide,
+};
+
 const FallingBlock = struct {
     active: bool = false,
     state: FallingBlockState = .idle,
@@ -101,6 +130,17 @@ const FallingBlock = struct {
     max_y: i16 = 0,
     timer: u8 = 0,
     vy: i32 = 0,
+};
+
+const HairNode = struct {
+    x: i32 = 0,
+    y: i32 = 0,
+};
+
+const HairAnchor = struct {
+    x: i32,
+    y: i32,
+    dir: i16,
 };
 
 const rooms = [_]RoomBackground{
@@ -133,6 +173,7 @@ const rooms = [_]RoomBackground{
 var falling_blocks: [max_falling_blocks]FallingBlock = [_]FallingBlock{.{}} ** max_falling_blocks;
 var falling_block_count: usize = 0;
 var current_room_index: usize = 0;
+var rng_state: u16 = 0xACE1;
 
 const Player = struct {
     x: i32,
@@ -144,13 +185,22 @@ const Player = struct {
     var_jump_timer: u8 = 0,
     wall_slide_timer: u8 = player_wall_slide_frames,
     var_jump_speed: i32 = 0,
+    animation: PlayerAnimation = .idle,
     animation_timer: u16 = 0,
+    idle_first_frame: u16 = player_idle_a_first_frame,
+    idle_frame_count: u16 = player_idle_a_frame_count,
     frame: u16 = 0,
     grounded: bool = false,
     facing_left: bool = false,
     moving: bool = false,
     wall_sliding: bool = false,
+    hair_initialized: bool = false,
+    hair_nodes: [hair_node_count]HairNode = [_]HairNode{.{}} ** hair_node_count,
 };
+
+var hair_pixels: [hair_sprite_size * hair_sprite_size]u8 = [_]u8{0} ** (hair_sprite_size * hair_sprite_size);
+var hair_mask: [hair_sprite_size * hair_sprite_size]u8 = [_]u8{0} ** (hair_sprite_size * hair_sprite_size);
+var hair_tiles: [4]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** 4;
 
 pub export fn main() void {
     var room_index: usize = 0;
@@ -185,12 +235,15 @@ pub export fn main() void {
         input.poll();
         updatePlayer(&player, input, room_index);
         updateFallingBlocks(&player);
+        updateHair(&player);
         if (trySwitchRoom(&player, input, &room_index)) {
             loadRoomBackground(room_index);
             loadFallingBlocks(room_index);
+            player.hair_initialized = false;
         }
         camera = updateCamera(player, room_index);
         applyCamera(camera);
+        drawHair(player, camera);
         drawPlayer(player, camera);
         drawFallingBlockObjects(camera);
     }
@@ -207,6 +260,7 @@ fn loadRoomBackground(room_index: usize) void {
 fn loadFallingBlocks(room_index: usize) void {
     falling_blocks = [_]FallingBlock{.{}} ** max_falling_blocks;
     falling_block_count = 0;
+    hideFallingBlockObjects();
 
     const data = rooms[room_index].falling_blocks;
     if (data.len < 2) return;
@@ -242,7 +296,9 @@ fn loadFallingBlocks(room_index: usize) void {
 fn loadObjectSprites() void {
     gba.mem.memcpy(gba.display.obj_palette, &player_palette_data, player_palette_data.len);
     gba.mem.memcpy16(&gba.display.obj_palette.colors[16], @ptrCast(&falling_block_palette_data), 16);
+    gba.mem.memcpy16(&gba.display.obj_palette.colors[32], @ptrCast(&hair_palette_data), 16);
     gba.display.memcpyObjectTiles4Bpp(falling_block_base_tile, @ptrCast(&falling_block_tiles_data));
+    gba.display.memcpyObjectTiles4Bpp(hair_root_base_tile, @ptrCast(&hair_tiles_data));
     loadPlayerFrame(0);
 }
 
@@ -301,6 +357,9 @@ fn updatePlayer(player: *Player, input: gba.input.BufferedKeysState, room_index:
     moveHorizontal(player, player.vx, room_index);
     player.grounded = false;
     moveVertical(player, player.vy, room_index);
+    if (!player.grounded and player.vy >= 0 and floorContact(player.*, room_index)) {
+        player.grounded = true;
+    }
 
     if (player.grounded) {
         player.var_jump_timer = 0;
@@ -350,22 +409,66 @@ fn updateVerticalSpeed(player: *Player, jump_held: bool, fast_fall: bool, horizo
 }
 
 fn updatePlayerAnimation(player: *Player) void {
-    const first_frame: u16 = if (player.wall_sliding)
-        player_wallslide_first_frame
+    const next_animation: PlayerAnimation = if (player.wall_sliding)
+        .wallslide
+    else if (!player.grounded and player.vy < 0)
+        .jump
+    else if (!player.grounded)
+        .fall
     else if (player.moving)
-        player_run_first_frame
+        .run
     else
-        player_idle_first_frame;
-    const frame_count: u16 = if (player.wall_sliding)
-        1
-    else if (player.moving)
-        player_run_frame_count
-    else
-        player_idle_frame_count;
+        .idle;
+    if (player.animation != next_animation) {
+        player.animation = next_animation;
+        player.animation_timer = 0;
+        if (next_animation == .idle) {
+            chooseNextIdle(player);
+        }
+    }
+
+    const first_frame: u16 = switch (player.animation) {
+        .idle => player.idle_first_frame,
+        .run => player_run_first_frame,
+        .jump => player_jump_first_frame,
+        .fall => player_fall_first_frame,
+        .wallslide => player_wallslide_first_frame,
+    };
+    const frame_count: u16 = switch (player.animation) {
+        .idle => player.idle_frame_count,
+        .run => player_run_frame_count,
+        .jump => player_jump_frame_count,
+        .fall => player_fall_frame_count,
+        .wallslide => 1,
+    };
     player.animation_timer +%= 1;
+    if (player.animation == .idle and player.animation_timer >= frame_count * player_animation_speed) {
+        chooseNextIdle(player);
+        player.animation_timer = 0;
+    }
     const frame_offset = (player.animation_timer / player_animation_speed) % frame_count;
     player.frame = first_frame + frame_offset;
     loadPlayerFrame(player.frame);
+}
+
+fn chooseNextIdle(player: *Player) void {
+    const choice = nextRandom() % 5;
+    if (choice == 4) {
+        player.idle_first_frame = player_idle_c_first_frame;
+        player.idle_frame_count = player_idle_c_frame_count;
+    } else if ((choice & 1) == 0) {
+        player.idle_first_frame = player_idle_a_first_frame;
+        player.idle_frame_count = player_idle_a_frame_count;
+    } else {
+        player.idle_first_frame = player_idle_b_first_frame;
+        player.idle_frame_count = player_idle_b_frame_count;
+    }
+}
+
+fn nextRandom() u16 {
+    const bit = ((rng_state >> 0) ^ (rng_state >> 2) ^ (rng_state >> 3) ^ (rng_state >> 5)) & 1;
+    rng_state = (rng_state >> 1) | (bit << 15);
+    return rng_state;
 }
 
 fn updateFallingBlocks(player: *Player) void {
@@ -451,6 +554,12 @@ fn wallContact(player: Player, dir: i16, room_index: usize) bool {
         solidAtPixel(x, y + player_body_height - 3, room_index);
 }
 
+fn floorContact(player: Player, room_index: usize) bool {
+    const x = fixedToPixel(player.x);
+    const y = fixedToPixel(player.y) + 1;
+    return collidesAt(x, y, room_index);
+}
+
 fn trySwitchRoom(player: *Player, input: gba.input.BufferedKeysState, room_index: *usize) bool {
     const room = rooms[room_index.*];
     const player_x = fixedToPixel(player.x);
@@ -488,7 +597,7 @@ fn applyCamera(camera: Camera) void {
 fn drawPlayer(player: Player, camera: Camera) void {
     const draw_x = fixedToPixel(player.x) - camera.x + player_draw_offset_x;
     const draw_y = fixedToPixel(player.y) - camera.y + player_draw_offset_y;
-    gba.display.objects[0] = gba.display.Object.init(.{
+    gba.display.objects[player_object] = gba.display.Object.init(.{
         .size = .size_32x32,
         .x = objX(draw_x),
         .y = objY(draw_y),
@@ -499,13 +608,270 @@ fn drawPlayer(player: Player, camera: Camera) void {
     });
 }
 
-fn drawFallingBlockObjects(camera: Camera) void {
-    hideFallingBlockObjects();
+fn updateHair(player: *Player) void {
+    const anchor = hairAnchorWorld(player.*);
+    const dir = anchor.dir;
+    const falling_hair = player.animation == .fall;
+    if (!player.hair_initialized) {
+        var index: usize = 0;
+        while (index < hair_node_count) : (index += 1) {
+            player.hair_nodes[index] = .{
+                .x = anchor.x,
+                .y = anchor.y,
+            };
+        }
+        player.hair_initialized = true;
+    }
 
+    var target_x = anchor.x + (@as(i32, dir) << fixed_shift);
+    var target_y = if (falling_hair) anchor.y else anchor.y - fixed_one;
+    var index: usize = 0;
+    while (index < hair_node_count) : (index += 1) {
+        const spacing_x: i32 = if (falling_hair)
+            switch (index) {
+                0 => @as(i32, dir),
+                1 => 0,
+                else => -@as(i32, dir),
+            }
+        else if (index == 0)
+            @as(i32, dir)
+        else
+            0;
+        target_x += spacing_x << fixed_shift;
+        const spacing_y: i32 = if (falling_hair)
+            switch (index) {
+                0 => -1,
+                1 => -1,
+                else => 1,
+            }
+        else switch (index) {
+            0 => 1,
+            1 => 2,
+            else => 2,
+        };
+        target_y += spacing_y << fixed_shift;
+        if (index == 0) {
+            player.hair_nodes[index].x = target_x;
+            player.hair_nodes[index].y = target_y;
+        } else {
+            player.hair_nodes[index].x += @divTrunc(target_x - player.hair_nodes[index].x, 2);
+            const y_ease: i32 = if (falling_hair) 2 else 4;
+            player.hair_nodes[index].y += @divTrunc(target_y - player.hair_nodes[index].y, y_ease);
+        }
+        target_x = player.hair_nodes[index].x;
+        target_y = player.hair_nodes[index].y;
+    }
+}
+
+fn drawHair(player: Player, camera: Camera) void {
+    const anchor = hairAnchorWorld(player);
+    const dir = anchor.dir;
+    const falling_hair = player.animation == .fall;
+    const sprite_offset_x: i16 = if (anchor.dir > 0) -4 else -12;
+    const sprite_x = fixedToPixel(anchor.x) - camera.x + sprite_offset_x;
+    const sprite_offset_y: i16 = if (falling_hair) 7 else 5;
+    const sprite_y = fixedToPixel(anchor.y) - camera.y - sprite_offset_y;
+    clearHairPixels();
+
+    var index: usize = 0;
+    var prev_x = anchor.x + (@as(i32, dir) << fixed_shift);
+    const prev_y_offset: i32 = if (falling_hair) fixed_one else fixed_one * 2;
+    var prev_y = anchor.y - prev_y_offset;
+    drawHairMaskBlobWorld(prev_x, prev_y, sprite_x + camera.x, sprite_y + camera.y, 1);
+    while (index < hair_node_count) : (index += 1) {
+        const size: u8 = if (!falling_hair and index == 1) 2 else 1;
+        const node_x_offset_shift: u5 = if (falling_hair) fixed_shift else fixed_shift + 1;
+        const node_x = player.hair_nodes[index].x + (@as(i32, dir) << node_x_offset_shift);
+        const node_y = if (falling_hair) player.hair_nodes[index].y else player.hair_nodes[index].y - fixed_one;
+        drawHairMaskStrokeWorld(prev_x, prev_y, node_x, node_y, sprite_x + camera.x, sprite_y + camera.y, size);
+        prev_x = node_x;
+        prev_y = node_y;
+    }
+    renderHairMask();
+    packHairTiles();
+    gba.display.memcpyObjectTiles4Bpp(hair_base_tile, &hair_tiles);
+    gba.display.objects[hair_object] = gba.display.Object.init(.{
+        .size = .size_16x16,
+        .x = objX(sprite_x),
+        .y = objY(sprite_y),
+        .base_tile = hair_base_tile,
+        .priority = 0,
+        .palette = hair_palette_bank,
+    });
+    drawHairRoot(anchor, camera);
+}
+
+fn drawHairRoot(anchor: HairAnchor, camera: Camera) void {
+    const anchor_x = fixedToPixel(anchor.x) - camera.x;
+    const anchor_y = fixedToPixel(anchor.y) - camera.y;
+    const flip_x = anchor.dir > 0;
+    const root_offset_x: i16 = if (flip_x) -4 else -3;
+    const root_x = anchor_x + root_offset_x;
+    const root_y = anchor_y - 7;
+    gba.display.objects[hair_root_object] = gba.display.Object.init(.{
+        .size = .size_8x8,
+        .x = objX(root_x),
+        .y = objY(root_y),
+        .base_tile = hair_root_base_tile,
+        .priority = 0,
+        .palette = hair_palette_bank,
+        .flip = gba.math.Vec2B.init(flip_x, false),
+    });
+}
+
+fn hairAnchorWorld(player: Player) HairAnchor {
+    const anchor_offset = @as(usize, player.frame) * 3;
+    var anchor_x: i16 = 18;
+    var anchor_y: i16 = 19;
+    var dir: i16 = -1;
+    if (anchor_offset + 2 < player_hair_anchors_data.len) {
+        anchor_x = player_hair_anchors_data[anchor_offset];
+        anchor_y = player_hair_anchors_data[anchor_offset + 1];
+        dir = if (player_hair_anchors_data[anchor_offset + 2] == 0) -1 else 1;
+    }
+    if (player.facing_left) {
+        anchor_x = 31 - anchor_x;
+        dir = -dir;
+    }
+    const body_x = fixedToPixel(player.x) + player_draw_offset_x;
+    const body_y = fixedToPixel(player.y) + player_draw_offset_y;
+    return .{
+        .x = pixelToFixed(body_x + anchor_x),
+        .y = pixelToFixed(body_y + anchor_y),
+        .dir = dir,
+    };
+}
+
+fn clearHairPixels() void {
+    var index: usize = 0;
+    while (index < hair_pixels.len) : (index += 1) {
+        hair_pixels[index] = 0;
+        hair_mask[index] = 0;
+    }
+}
+
+fn drawHairMaskStrokeWorld(world_x0: i32, world_y0: i32, world_x1: i32, world_y1: i32, origin_x: i16, origin_y: i16, size: u8) void {
+    const x0 = fixedToPixel(world_x0) - origin_x;
+    const y0 = fixedToPixel(world_y0) - origin_y;
+    const x1 = fixedToPixel(world_x1) - origin_x;
+    const y1 = fixedToPixel(world_y1) - origin_y;
+    const steps = maxI16(absI16(x1 - x0), absI16(y1 - y0));
+    if (steps == 0) {
+        drawHairMaskBlobLocal(x0, y0, size);
+        return;
+    }
+
+    var step: i16 = 0;
+    while (step <= steps) : (step += 1) {
+        const x = x0 + @divTrunc((x1 - x0) * step, steps);
+        const y = y0 + @divTrunc((y1 - y0) * step, steps);
+        drawHairMaskBlobLocal(x, y, size);
+    }
+}
+
+fn drawHairMaskBlobLocal(local_x: i16, local_y: i16, size: u8) void {
+    drawHairMaskDisc(local_x, local_y + 1, size, 2);
+    drawHairMaskDisc(local_x, local_y, size, 3);
+}
+
+fn drawHairMaskBlobWorld(world_x: i32, world_y: i32, origin_x: i16, origin_y: i16, size: u8) void {
+    const local_x = fixedToPixel(world_x) - origin_x;
+    const local_y = fixedToPixel(world_y) - origin_y;
+    drawHairMaskBlobLocal(local_x, local_y, size);
+}
+
+fn drawHairMaskDisc(center_x: i16, center_y: i16, radius: u8, color: u8) void {
+    const r: i16 = @intCast(radius);
+    var y: i16 = -r;
+    while (y <= r) : (y += 1) {
+        var x: i16 = -r;
+        while (x <= r) : (x += 1) {
+            if (x * x + y * y <= r * r) {
+                setHairMaskPixel(center_x + x, center_y + y, color);
+            }
+        }
+    }
+}
+
+fn renderHairMask() void {
+    var y: i16 = 0;
+    while (y < hair_sprite_size) : (y += 1) {
+        var x: i16 = 0;
+        while (x < hair_sprite_size) : (x += 1) {
+            if (hairMaskPixel(x, y) == 0) continue;
+
+            var oy: i16 = -1;
+            while (oy <= 1) : (oy += 1) {
+                var ox: i16 = -1;
+                while (ox <= 1) : (ox += 1) {
+                    if (ox == 0 and oy == 0) continue;
+                    if (hairMaskPixel(x + ox, y + oy) == 0) {
+                        setHairPixel(x + ox, y + oy, 1);
+                    }
+                }
+            }
+        }
+    }
+
+    y = 0;
+    while (y < hair_sprite_size) : (y += 1) {
+        var x: i16 = 0;
+        while (x < hair_sprite_size) : (x += 1) {
+            const color = hairMaskPixel(x, y);
+            if (color != 0) setHairPixel(x, y, color);
+        }
+    }
+}
+
+fn hairMaskPixel(x: i16, y: i16) u8 {
+    if (x < 0 or x >= hair_sprite_size or y < 0 or y >= hair_sprite_size) return 0;
+    const index: usize = @intCast(y * hair_sprite_size + x);
+    return hair_mask[index];
+}
+
+fn setHairMaskPixel(x: i16, y: i16, color: u8) void {
+    if (x < 0 or x >= hair_sprite_size or y < 0 or y >= hair_sprite_size) return;
+    const index: usize = @intCast(y * hair_sprite_size + x);
+    hair_mask[index] = color;
+}
+
+fn setHairPixel(x: i16, y: i16, color: u8) void {
+    if (x < 0 or x >= hair_sprite_size or y < 0 or y >= hair_sprite_size) return;
+    const index: usize = @intCast(y * hair_sprite_size + x);
+    hair_pixels[index] = color;
+}
+
+fn packHairTiles() void {
+    var tile_y: usize = 0;
+    while (tile_y < 2) : (tile_y += 1) {
+        var tile_x: usize = 0;
+        while (tile_x < 2) : (tile_x += 1) {
+            const tile_index = tile_y * 2 + tile_x;
+            var byte_index: usize = 0;
+            var y: usize = 0;
+            while (y < 8) : (y += 1) {
+                var x_pair: usize = 0;
+                while (x_pair < 4) : (x_pair += 1) {
+                    const px_x = tile_x * 8 + x_pair * 2;
+                    const px_y = tile_y * 8 + y;
+                    const left = hair_pixels[px_y * hair_sprite_size + px_x] & 0x0f;
+                    const right = hair_pixels[px_y * hair_sprite_size + px_x + 1] & 0x0f;
+                    hair_tiles[tile_index].data_8[byte_index] = left | (right << 4);
+                    byte_index += 1;
+                }
+            }
+        }
+    }
+}
+
+fn drawFallingBlockObjects(camera: Camera) void {
     var index: usize = 0;
     while (index < falling_block_count) : (index += 1) {
         const block = falling_blocks[index];
-        if (!block.active) continue;
+        if (!block.active) {
+            hideFallingBlockObject(index);
+            continue;
+        }
 
         const shake: i16 = if (block.state == .shaking and (block.timer & 3) < 2) -1 else 0;
         const draw_x = block.x - camera.x + shake;
@@ -528,16 +894,27 @@ fn drawFallingBlockChunk(object_index: usize, x: i16, y: i16, base_tile: u10, si
     });
 }
 
+fn hideFallingBlockObject(block_index: usize) void {
+    var index: usize = 0;
+    while (index < falling_block_objects_per_block) : (index += 1) {
+        hideObject(falling_block_first_object + block_index * falling_block_objects_per_block + index);
+    }
+}
+
 fn hideFallingBlockObjects() void {
     var index: usize = 0;
     while (index < max_falling_blocks * falling_block_objects_per_block) : (index += 1) {
-        gba.display.objects[falling_block_first_object + index] = gba.display.Object.init(.{
-            .size = .size_8x8,
-            .x = objX(240),
-            .y = objY(160),
-            .base_tile = 0,
-        });
+        hideObject(falling_block_first_object + index);
     }
+}
+
+fn hideObject(object_index: usize) void {
+    gba.display.objects[object_index] = gba.display.Object.init(.{
+        .size = .size_8x8,
+        .x = objX(240),
+        .y = objY(160),
+        .base_tile = 0,
+    });
 }
 
 fn spawnPlayer(room_index: usize) Player {
@@ -680,6 +1057,14 @@ fn approach(value: i32, target: i32, amount: i32) i32 {
 
 fn absI32(value: i32) i32 {
     return if (value < 0) -value else value;
+}
+
+fn absI16(value: i16) i16 {
+    return if (value < 0) -value else value;
+}
+
+fn maxI16(a: i16, b: i16) i16 {
+    return if (a > b) a else b;
 }
 
 fn signI32(value: i32) i16 {

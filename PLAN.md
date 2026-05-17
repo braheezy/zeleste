@@ -303,6 +303,10 @@ Those are too broad and will damage coherence.
 - Prologue source room assets are being organized under `assets/rooms/prologue_a/`, with generated ROM bundles still emitted under `assets/generated/rooms/`.
 - The first falling block is now extracted as room entity art and packed into 4bpp OBJ tiles, instead of being moved around by rewriting background map tiles.
 - Basic wall slide and wall jump behavior is in the prototype movement loop, with the `wallslide` player animation packed into the object sprite sheet.
+- Hair is moving toward Celeste-style runtime composition: `assets/Animations/hair/` parts are packed as small 4bpp OBJ tiles, with root pieces anchored to the current player sprite and tail pieces following with simple node motion.
+- A local hair anchor editor now supports choosing a player animation directory, guessing per-frame root/tail placement, dragging hair pieces over frames, and saving `hair_anchors.json` next to the source animation frames.
+- Player sprite packing now emits `madeline_hair_anchors.bin` in packed-frame order. Runtime uses that table to drive a first-pass generated 16x16 OBJ hair sprite, while the player body frames remain bald.
+- Procedural hair now also uses the authored `root1` tile as the scalp/front root piece, while generated red/dark/black blobs form the trailing segments from the anchor direction.
 - Remaining Milestone 0 gap: split the single-file prototype into the planned source modules once the first movement loop stabilizes.
 
 ## Milestones

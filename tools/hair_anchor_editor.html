@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zeleste Hair Anchors</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #17191c;
+      --panel: #22262b;
+      --text: #eef1f4;
+      --muted: #aeb6c0;
+      --line: #3a414a;
+      --accent: #72d6ff;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      min-height: 100vh;
+    }
+
+    aside {
+      border-right: 1px solid var(--line);
+      background: var(--panel);
+      padding: 16px;
+    }
+
+    main {
+      display: grid;
+      place-items: start center;
+      overflow: auto;
+      padding: 16px;
+    }
+
+    h1 {
+      margin: 0 0 16px;
+      font-size: 18px;
+    }
+
+    label {
+      display: block;
+      margin: 14px 0 6px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    input, select, button {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #111317;
+      color: var(--text);
+      padding: 8px 10px;
+      font: inherit;
+    }
+
+    input[type="range"] { padding: 0; }
+
+    button {
+      cursor: pointer;
+      background: #2b333b;
+      margin-top: 8px;
+    }
+
+    button:hover { border-color: var(--accent); }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .stage {
+      position: relative;
+      width: max-content;
+      image-rendering: pixelated;
+      user-select: none;
+    }
+
+    canvas {
+      display: block;
+      image-rendering: pixelated;
+    }
+
+    #overlay {
+      position: absolute;
+      left: 0;
+      top: 0;
+      cursor: move;
+    }
+
+    #status, .hint, .stats {
+      margin-top: 16px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .stats {
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <h1>Zeleste Hair</h1>
+
+      <label for="animationSelect">Animation</label>
+      <select id="animationSelect"></select>
+
+      <label for="frameSlider">Frame <span id="frameLabel">0</span></label>
+      <input id="frameSlider" type="range" min="0" max="0" value="0">
+
+      <div class="row">
+        <button id="prevButton" type="button">Prev</button>
+        <button id="nextButton" type="button">Next</button>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="xInput">Anchor X</label>
+          <input id="xInput" type="number" step="1">
+        </div>
+        <div>
+          <label for="yInput">Anchor Y</label>
+          <input id="yInput" type="number" step="1">
+        </div>
+      </div>
+
+      <button id="flipDirButton" type="button">Flip Hair Direction</button>
+
+      <label for="zoomInput">Zoom</label>
+      <input id="zoomInput" type="number" min="4" max="16" value="15">
+
+      <button id="resetButton" type="button">Reset Current</button>
+      <button id="applyFollowingButton" type="button">Apply Current To Following</button>
+      <button id="applyAllButton" type="button">Apply Current To All</button>
+      <button id="copyPrevButton" type="button">Copy Previous Frame</button>
+      <button id="saveButton" type="button">Save</button>
+
+      <div id="status">Loading...</div>
+      <div class="stats">
+        <div>Frames: <span id="frameStats">0</span></div>
+        <div>Direction: <span id="directionStats">left</span></div>
+        <div>JSON: <span id="jsonStats">none</span></div>
+      </div>
+      <div class="hint">
+        Drag the anchor to where root1's lower forward hair pixel should attach to Madeline's head. Arrow keys nudge it. Bracket keys move frames.
+        Press X or use Flip Hair Direction to choose which way the hair trails.
+        Use apply-current controls when the same placement works across several frames.
+        Save writes <code>hair_anchors.json</code> into the selected animation folder.
+      </div>
+    </aside>
+
+    <main>
+      <div class="stage">
+        <canvas id="base"></canvas>
+        <canvas id="overlay"></canvas>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const animationSelect = document.getElementById('animationSelect');
+    const frameSlider = document.getElementById('frameSlider');
+    const frameLabel = document.getElementById('frameLabel');
+    const prevButton = document.getElementById('prevButton');
+    const nextButton = document.getElementById('nextButton');
+    const xInput = document.getElementById('xInput');
+    const yInput = document.getElementById('yInput');
+    const flipDirButton = document.getElementById('flipDirButton');
+    const zoomInput = document.getElementById('zoomInput');
+    const resetButton = document.getElementById('resetButton');
+    const applyFollowingButton = document.getElementById('applyFollowingButton');
+    const applyAllButton = document.getElementById('applyAllButton');
+    const copyPrevButton = document.getElementById('copyPrevButton');
+    const saveButton = document.getElementById('saveButton');
+    const status = document.getElementById('status');
+    const frameStats = document.getElementById('frameStats');
+    const directionStats = document.getElementById('directionStats');
+    const jsonStats = document.getElementById('jsonStats');
+    const base = document.getElementById('base');
+    const overlay = document.getElementById('overlay');
+    const baseCtx = base.getContext('2d', { alpha: false });
+    const overlayCtx = overlay.getContext('2d');
+
+    let animations = [];
+    let currentAnimation = null;
+    let frames = [];
+    let frameImages = [];
+    let anchors = null;
+    let frameIndex = 0;
+    let draggingAnchor = false;
+    let dragOffset = { x: 0, y: 0 };
+
+    function zoom() {
+      return Number(zoomInput.value) || 10;
+    }
+
+    function emptyAnchorData(animation) {
+      return {
+        version: 2,
+        animation: animation.path,
+        frames: animation.frames.map((path, index) => ({
+          index,
+          source: path,
+          anchor: defaultAnchor(),
+          dir: -1,
+        })),
+      };
+    }
+
+    function defaultAnchor() {
+      return { x: 18, y: 19 };
+    }
+
+    async function loadImage(path) {
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = reject;
+        image.src = `/${path.replace(/^\/+/, '')}`;
+      });
+    }
+
+    async function loadAnimations() {
+      const response = await fetch('/api/hair/animations');
+      const data = await response.json();
+      animations = data.animations;
+      animationSelect.innerHTML = '';
+      for (const animation of animations) {
+        const option = document.createElement('option');
+        option.value = animation.path;
+        option.textContent = `${animation.name} (${animation.frameCount})`;
+        animationSelect.appendChild(option);
+      }
+      if (animations.length) {
+        await selectAnimation(animations[0].path);
+      }
+    }
+
+    async function selectAnimation(path) {
+      currentAnimation = animations.find((animation) => animation.path === path);
+      frames = currentAnimation.frames;
+      frameImages = await Promise.all(frames.map(loadImage));
+      frameSlider.max = String(frames.length - 1);
+      frameSlider.value = '0';
+      frameIndex = 0;
+      frameStats.textContent = String(frames.length);
+
+      const response = await fetch(`/api/hair/anchors?animation=${encodeURIComponent(currentAnimation.path)}`);
+      const payload = await response.json();
+      anchors = payload.data || emptyAnchorData(currentAnimation);
+      normalizeAnchorData();
+      jsonStats.textContent = payload.path;
+      fillMissingAnchors();
+      render();
+      setStatus(payload.data ? 'Loaded saved anchors.' : 'Loaded default hair placement.');
+    }
+
+    function currentFrame() {
+      return anchors.frames[frameIndex];
+    }
+
+    function setStatus(message) {
+      status.textContent = message;
+    }
+
+    function fillMissingAnchors() {
+      for (const frame of anchors.frames) {
+        if (!frame.anchor) frame.anchor = defaultAnchor();
+        if (frame.dir !== -1 && frame.dir !== 1) frame.dir = -1;
+      }
+    }
+
+    function normalizeAnchorData() {
+      anchors.version = 2;
+      delete anchors.parts;
+      for (const frame of anchors.frames) {
+        if (!frame.anchor && frame.root1) {
+          frame.anchor = { x: frame.root1.x, y: frame.root1.y + 7 };
+        }
+        if (!frame.anchor) frame.anchor = defaultAnchor();
+        frame.anchor = {
+          x: Math.round(frame.anchor.x),
+          y: Math.round(frame.anchor.y),
+        };
+        if (frame.dir !== -1 && frame.dir !== 1) frame.dir = -1;
+        delete frame.root1;
+        delete frame.root2;
+        delete frame.tail;
+      }
+    }
+
+    function clonePlacement(frame) {
+      return { anchor: { ...frame.anchor }, dir: frame.dir };
+    }
+
+    function applyPlacement(startIndex, endIndex, placement) {
+      for (let index = startIndex; index <= endIndex; index += 1) {
+        anchors.frames[index].anchor = { ...placement.anchor };
+        anchors.frames[index].dir = placement.dir;
+      }
+      render();
+    }
+
+    function render() {
+      if (!currentAnimation || !anchors) return;
+      const z = zoom();
+      const image = frameImages[frameIndex];
+      base.width = overlay.width = image.width * z;
+      base.height = overlay.height = image.height * z;
+      baseCtx.imageSmoothingEnabled = false;
+      overlayCtx.imageSmoothingEnabled = false;
+      baseCtx.fillStyle = '#111317';
+      baseCtx.fillRect(0, 0, base.width, base.height);
+      baseCtx.drawImage(image, 0, 0, base.width, base.height);
+
+      overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+      overlayCtx.strokeStyle = 'rgba(255,255,255,0.18)';
+      overlayCtx.lineWidth = 1;
+      for (let x = 0; x <= image.width; x += 1) {
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(x * z + 0.5, 0);
+        overlayCtx.lineTo(x * z + 0.5, overlay.height);
+        overlayCtx.stroke();
+      }
+      for (let y = 0; y <= image.height; y += 1) {
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(0, y * z + 0.5);
+        overlayCtx.lineTo(overlay.width, y * z + 0.5);
+        overlayCtx.stroke();
+      }
+
+      drawAnchor(currentFrame().anchor);
+      updateInputs();
+      frameLabel.textContent = `${frameIndex} / ${frames.length - 1}`;
+    }
+
+    function drawAnchor(point) {
+      if (!point) return;
+      const z = zoom();
+      const x = point.x * z;
+      const y = point.y * z;
+      overlayCtx.strokeStyle = '#72d6ff';
+      overlayCtx.fillStyle = 'rgba(114, 214, 255, 0.32)';
+      overlayCtx.lineWidth = 2;
+      overlayCtx.beginPath();
+      overlayCtx.arc(x, y, Math.max(4, z * 0.35), 0, Math.PI * 2);
+      overlayCtx.fill();
+      overlayCtx.stroke();
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(x - z, y);
+      overlayCtx.lineTo(x + z, y);
+      overlayCtx.moveTo(x, y - z);
+      overlayCtx.lineTo(x, y + z);
+      overlayCtx.stroke();
+
+      const dir = currentFrame().dir || -1;
+      overlayCtx.strokeStyle = '#ffcf5a';
+      overlayCtx.fillStyle = '#ffcf5a';
+      overlayCtx.lineWidth = 3;
+      const arrow_x = x + dir * z * 4;
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(x, y);
+      overlayCtx.lineTo(arrow_x, y + z * 1.5);
+      overlayCtx.stroke();
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(arrow_x, y + z * 1.5);
+      overlayCtx.lineTo(arrow_x - dir * z * 0.8, y + z * 0.8);
+      overlayCtx.lineTo(arrow_x - dir * z * 0.25, y + z * 2.0);
+      overlayCtx.closePath();
+      overlayCtx.fill();
+    }
+
+    function updateInputs() {
+      const point = currentFrame().anchor;
+      xInput.value = point ? point.x : 0;
+      yInput.value = point ? point.y : 0;
+      directionStats.textContent = (currentFrame().dir || -1) < 0 ? 'left' : 'right';
+    }
+
+    function setAnchorPosition(x, y) {
+      const image = frameImages[frameIndex];
+      currentFrame().anchor = {
+        x: Math.max(-8, Math.min(image.width, Math.round(x))),
+        y: Math.max(-8, Math.min(image.height, Math.round(y))),
+      };
+      render();
+    }
+
+    function flipDirection() {
+      const frame = currentFrame();
+      frame.dir = (frame.dir || -1) * -1;
+      render();
+    }
+
+    function pointerToPixel(event) {
+      const rect = overlay.getBoundingClientRect();
+      return {
+        x: Math.floor((event.clientX - rect.left) / zoom()),
+        y: Math.floor((event.clientY - rect.top) / zoom()),
+      };
+    }
+
+    overlay.addEventListener('pointerdown', (event) => {
+      const pixel = pointerToPixel(event);
+      draggingAnchor = true;
+      const point = currentFrame().anchor;
+      dragOffset = { x: pixel.x - point.x, y: pixel.y - point.y };
+      overlay.setPointerCapture(event.pointerId);
+      render();
+    });
+
+    overlay.addEventListener('pointermove', (event) => {
+      if (!draggingAnchor) return;
+      const pixel = pointerToPixel(event);
+      setAnchorPosition(pixel.x - dragOffset.x, pixel.y - dragOffset.y);
+    });
+
+    overlay.addEventListener('pointerup', () => {
+      draggingAnchor = false;
+    });
+
+    function setFrame(index) {
+      frameIndex = Math.max(0, Math.min(frames.length - 1, index));
+      frameSlider.value = String(frameIndex);
+      render();
+    }
+
+    animationSelect.addEventListener('change', () => selectAnimation(animationSelect.value));
+    frameSlider.addEventListener('input', () => setFrame(Number(frameSlider.value)));
+    prevButton.addEventListener('click', () => setFrame(frameIndex - 1));
+    nextButton.addEventListener('click', () => setFrame(frameIndex + 1));
+    zoomInput.addEventListener('change', render);
+    xInput.addEventListener('change', () => setAnchorPosition(Number(xInput.value), Number(yInput.value)));
+    yInput.addEventListener('change', () => setAnchorPosition(Number(xInput.value), Number(yInput.value)));
+    flipDirButton.addEventListener('click', flipDirection);
+    resetButton.addEventListener('click', () => {
+      currentFrame().anchor = defaultAnchor();
+      render();
+    });
+    applyFollowingButton.addEventListener('click', () => {
+      applyPlacement(frameIndex + 1, anchors.frames.length - 1, clonePlacement(currentFrame()));
+      setStatus(`Applied frame ${frameIndex} placement to following frames.`);
+    });
+    applyAllButton.addEventListener('click', () => {
+      applyPlacement(0, anchors.frames.length - 1, clonePlacement(currentFrame()));
+      setStatus(`Applied frame ${frameIndex} placement to all frames.`);
+    });
+    copyPrevButton.addEventListener('click', () => {
+      if (frameIndex === 0) return;
+      const previous = anchors.frames[frameIndex - 1];
+      const frame = currentFrame();
+      frame.anchor = { ...previous.anchor };
+      frame.dir = previous.dir;
+      render();
+    });
+    saveButton.addEventListener('click', async () => {
+      const response = await fetch('/api/hair/save', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ animation: currentAnimation.path, data: anchors }),
+      });
+      const payload = await response.json();
+      setStatus(payload.ok ? `Saved ${payload.path}` : payload.error);
+    });
+
+    window.addEventListener('keydown', (event) => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
+      if (event.key === '[') setFrame(frameIndex - 1);
+      if (event.key === ']') setFrame(frameIndex + 1);
+      const point = currentFrame().anchor;
+      if (!point) return;
+      if (event.key === 'x' || event.key === 'X') flipDirection();
+      if (event.key === 'ArrowLeft') setAnchorPosition(point.x - 1, point.y);
+      if (event.key === 'ArrowRight') setAnchorPosition(point.x + 1, point.y);
+      if (event.key === 'ArrowUp') setAnchorPosition(point.x, point.y - 1);
+      if (event.key === 'ArrowDown') setAnchorPosition(point.x, point.y + 1);
+    });
+
+    loadAnimations().catch((error) => setStatus(String(error)));
+  </script>
+</body>
+</html>
