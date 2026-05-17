@@ -96,6 +96,18 @@ pub fn build(b: *std.Build) void {
     });
     assets_step.dependOn(&pack_hair.step);
 
+    const pack_prologue_0_parallax = b.addSystemCommand(&.{
+        "python3",
+        b.pathFromRoot("tools/pack_parallax_obj.py"),
+        "--input",
+        b.pathFromRoot("assets/rooms/prologue_a/0-plx.png"),
+        "--output-dir",
+        b.pathFromRoot("assets/generated/rooms/prologue_0"),
+        "--name",
+        "parallax_fg",
+    });
+    assets_step.dependOn(&pack_prologue_0_parallax.step);
+
     exe.step.root_module.addAnonymousImport("prologue_m1_bg_tiles.bin", .{
         .root_source_file = b.path("assets/generated/rooms/prologue_m1/bg_tiles.bin"),
     });
@@ -131,6 +143,12 @@ pub fn build(b: *std.Build) void {
     });
     exe.step.root_module.addAnonymousImport("prologue_0_falling_blocks.bin", .{
         .root_source_file = b.path("assets/generated/rooms/prologue_0/falling_blocks.bin"),
+    });
+    exe.step.root_module.addAnonymousImport("prologue_0_parallax_fg_tiles.bin", .{
+        .root_source_file = b.path("assets/generated/rooms/prologue_0/parallax_fg_tiles.bin"),
+    });
+    exe.step.root_module.addAnonymousImport("prologue_0_parallax_fg_palette.bin", .{
+        .root_source_file = b.path("assets/generated/rooms/prologue_0/parallax_fg_palette.bin"),
     });
     exe.step.root_module.addAnonymousImport("prologue_0b_bg_tiles.bin", .{
         .root_source_file = b.path("assets/generated/rooms/prologue_0b/bg_tiles.bin"),

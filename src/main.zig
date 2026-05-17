@@ -14,6 +14,8 @@ const prologue_0_bg_palette align(4) = @embedFile("prologue_0_bg_palette.bin").*
 const prologue_0_spawn align(4) = @embedFile("prologue_0_spawn.bin").*;
 const prologue_0_collision align(4) = @embedFile("prologue_0_collision.bin").*;
 const prologue_0_falling_blocks align(4) = @embedFile("prologue_0_falling_blocks.bin").*;
+const prologue_0_parallax_fg_tiles align(4) = @embedFile("prologue_0_parallax_fg_tiles.bin").*;
+const prologue_0_parallax_fg_palette align(4) = @embedFile("prologue_0_parallax_fg_palette.bin").*;
 const prologue_0b_bg_tiles align(4) = @embedFile("prologue_0b_bg_tiles.bin").*;
 const prologue_0b_bg_map align(4) = @embedFile("prologue_0b_bg_map.bin").*;
 const prologue_0b_bg_palette align(4) = @embedFile("prologue_0b_bg_palette.bin").*;
@@ -45,12 +47,13 @@ const player_max_run: i32 = 0x180;
 const player_run_accel: i32 = 0x41;
 const player_run_reduce: i32 = 0x19;
 const player_air_mult: i32 = 0xA8;
-const player_gravity: i32 = 0x40;
+const player_gravity: i32 = 0x44;
 const player_max_fall: i32 = 0x2A8;
 const player_fast_max_fall: i32 = 0x400;
 const player_half_grav_threshold: i32 = 0xAA;
 const player_jump_speed: i32 = -0x1C0;
-const player_wall_jump_h_speed: i32 = 0x230;
+const player_wall_jump_h_speed: i32 = 0x1F8;
+const player_wall_jump_force_frames = 10;
 const player_wall_slide_start_max: i32 = 0x55;
 const player_wall_slide_frames = 72;
 const player_room_transition_cooldown_frames = 18;
@@ -112,15 +115,20 @@ const dust_palette_bank: u4 = 3;
 const max_dust_particles = 4;
 const sweat_base_tile: u10 = 72;
 const sweat_palette_bank: u4 = 4;
-const player_object = 0;
-const hair_root_object = 1;
-const hair_object = 2;
-const dust_first_object = 3;
-const sweat_object = 7;
+const parallax_first_object = 0;
+const parallax_max_objects = 8;
+const player_object = 8;
+const hair_root_object = 9;
+const hair_object = 10;
+const dust_first_object = 11;
+const sweat_object = 15;
 const hair_node_count = 3;
 const hair_sprite_size = 16;
-const falling_block_first_object = 8;
+const falling_block_first_object = 16;
 const falling_block_objects_per_block = 3;
+const parallax_base_tile: u10 = 128;
+const parallax_palette_bank: u4 = 5;
+const parallax_chunk_size = 64;
 const room_prologue_m1: usize = 0;
 const room_prologue_0: usize = 1;
 const room_prologue_0b: usize = 2;
@@ -136,6 +144,19 @@ const RoomBackground = struct {
     collision: []align(4) const u8,
     spawn: Spawn,
     falling_blocks: []align(4) const u8,
+    parallax: ?ParallaxLayer = null,
+};
+
+const ParallaxLayer = struct {
+    tiles: []align(4) const u8,
+    palette: []align(4) const u8,
+    width: i16,
+    height: i16,
+    world_x: i16,
+    world_y: i16,
+    chunk_count: u8,
+    scroll_extra_x_divisor: i16,
+    scroll_extra_y_divisor: i16,
 };
 
 const Spawn = struct {
@@ -225,6 +246,17 @@ const rooms = [_]RoomBackground{
         .collision = &prologue_0_collision,
         .spawn = spawnFromBytes(&prologue_0_spawn),
         .falling_blocks = &prologue_0_falling_blocks,
+        .parallax = .{
+            .tiles = &prologue_0_parallax_fg_tiles,
+            .palette = &prologue_0_parallax_fg_palette,
+            .width = 448,
+            .height = 42,
+            .world_x = 0,
+            .world_y = 142,
+            .chunk_count = 7,
+            .scroll_extra_x_divisor = 0,
+            .scroll_extra_y_divisor = 0,
+        },
     },
     .{
         .width_tiles = 54,
@@ -255,6 +287,8 @@ const Player = struct {
     jump_buffer_timer: u8 = 0,
     var_jump_timer: u8 = 0,
     room_transition_cooldown: u8 = 0,
+    force_move_x_timer: u8 = 0,
+    force_move_x: i16 = 0,
     wall_slide_timer: u8 = player_wall_slide_frames,
     var_jump_speed: i32 = 0,
     stamina: i16 = player_climb_max_stamina,
@@ -291,6 +325,7 @@ pub export fn main() void {
     loadRoomBackground(room_index);
     loadFallingBlocks(room_index);
     loadObjectSprites();
+    loadRoomParallax(room_index);
     gba.display.hideAllObjects();
 
     _ = gba.display.BackgroundMap.setup(0, .{
@@ -311,11 +346,11 @@ pub export fn main() void {
     var player = spawnPlayer(room_index);
     var camera = updateCamera(player, room_index);
     applyCamera(camera);
+    drawParallaxObjects(camera, room_index);
     drawPlayer(player, camera);
     drawFallingBlockObjects(camera);
 
     while (true) {
-        gba.display.naiveVSync();
         input.poll();
         updatePlayer(&player, input, room_index);
         updateFallingBlocks(&player);
@@ -329,11 +364,13 @@ pub export fn main() void {
             gba.display.naiveVSync();
             loadRoomBackground(room_index);
             loadFallingBlocks(room_index);
+            loadRoomParallax(room_index);
             clearDustParticles();
             player.hair_initialized = false;
             updateHair(&player);
             camera = updateCamera(player, room_index);
             applyCamera(camera);
+            drawParallaxObjects(camera, room_index);
             drawHair(player, camera);
             drawDust(camera);
             drawPlayer(player, camera);
@@ -345,12 +382,14 @@ pub export fn main() void {
             continue;
         }
         camera = updateCamera(player, room_index);
+        gba.display.naiveVSync();
         applyCamera(camera);
+        drawParallaxObjects(camera, room_index);
+        drawFallingBlockObjects(camera);
         drawHair(player, camera);
         drawDust(camera);
         drawPlayer(player, camera);
         drawSweat(&player, camera);
-        drawFallingBlockObjects(camera);
     }
 }
 
@@ -398,6 +437,16 @@ fn loadFallingBlocks(room_index: usize) void {
     }
 }
 
+fn loadRoomParallax(room_index: usize) void {
+    hideParallaxObjects();
+    if (rooms[room_index].parallax) |parallax| {
+        gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, parallax_palette_bank) * 16], @ptrCast(parallax.palette.ptr), 16);
+        const tile_count = parallax.tiles.len / 32;
+        const tiles: [*]align(2) const gba.display.Tile4Bpp = @ptrCast(parallax.tiles.ptr);
+        gba.display.memcpyObjectTiles4Bpp(parallax_base_tile, tiles[0..tile_count]);
+    }
+}
+
 fn loadObjectSprites() void {
     gba.mem.memcpy(gba.display.obj_palette, &player_palette_data, player_palette_data.len);
     gba.mem.memcpy16(&gba.display.obj_palette.colors[16], @ptrCast(&falling_block_palette_data), 16);
@@ -435,6 +484,9 @@ fn updatePlayer(player: *Player, input: gba.input.BufferedKeysState, room_index:
     if (player.climb_grab_lockout_timer > 0) {
         player.climb_grab_lockout_timer -= 1;
     }
+    if (player.force_move_x_timer > 0) {
+        player.force_move_x_timer -= 1;
+    }
 
     if (player.climb_ledge_timer > 0) {
         updateClimbLedgeMotion(player);
@@ -463,7 +515,8 @@ fn updatePlayer(player: *Player, input: gba.input.BufferedKeysState, room_index:
         player.coyote_timer -= 1;
     }
 
-    updateHorizontalSpeed(player, horizontal);
+    const effective_horizontal: i16 = if (player.force_move_x_timer > 0) player.force_move_x else horizontal;
+    updateHorizontalSpeed(player, effective_horizontal);
 
     const wall_jump_dir = wallJumpDirection(player.*, horizontal, room_index);
     var jumped_this_frame = false;
@@ -486,6 +539,8 @@ fn updatePlayer(player: *Player, input: gba.input.BufferedKeysState, room_index:
         spawnJumpDustAtFeet(player.*);
         player.vx = @as(i32, wall_jump_dir) * player_wall_jump_h_speed;
         player.vy = player_jump_speed;
+        player.force_move_x = wall_jump_dir;
+        player.force_move_x_timer = player_wall_jump_force_frames;
         player.var_jump_speed = player.vy;
         player.var_jump_timer = player_var_jump_frames;
         player.jump_buffer_timer = 0;
@@ -502,7 +557,7 @@ fn updatePlayer(player: *Player, input: gba.input.BufferedKeysState, room_index:
         updateClimb(player, grab_held, vertical, room_index);
     }
     if (!player.climbing) {
-        updateVerticalSpeed(player, jump_held, input.isPressed(.down), horizontal, room_index);
+        updateVerticalSpeed(player, jump_held, input.isPressed(.down), effective_horizontal, room_index);
     }
 
     moveHorizontal(player, player.vx, room_index);
@@ -743,7 +798,6 @@ fn updatePlayerAnimation(player: *Player) void {
     }
     const frame_offset = (player.animation_timer / player_animation_speed) % frame_count;
     player.frame = first_frame + frame_offset;
-    loadPlayerFrame(player.frame);
 }
 
 fn chooseNextIdle(player: *Player) void {
@@ -887,8 +941,8 @@ fn playerBelowBlock(player: Player, block: FallingBlock) bool {
     const player_x = fixedToPixel(player.x);
     const player_y = fixedToPixel(player.y);
     const player_center_x = player_x + player_body_width / 2;
-    const trigger_left = block.x + @as(i16, @intCast(block.w / 2));
-    const trigger_right = block.x + block.w + 8;
+    const trigger_left = block.x + @as(i16, @intCast(@divTrunc(@as(u16, block.w) * 3, 4)));
+    const trigger_right = block.x + @as(i16, @intCast(block.w)) + 2;
     return player_center_x >= trigger_left and
         player_center_x < trigger_right and
         player_y >= fixedToPixel(block.y) + block.h and
@@ -1001,6 +1055,7 @@ fn applyCamera(camera: Camera) void {
 }
 
 fn drawPlayer(player: Player, camera: Camera) void {
+    loadPlayerFrame(player.frame);
     const draw_x = fixedToPixel(player.x) - camera.x + player_draw_offset_x;
     const draw_y = fixedToPixel(player.y) - camera.y + player_draw_offset_y;
     gba.display.objects[player_object] = gba.display.Object.init(.{
@@ -1372,6 +1427,42 @@ fn setDustTilePixel(tile_index: usize, x: i16, y: i16, color: u4) void {
     }
 }
 
+fn drawParallaxObjects(camera: Camera, room_index: usize) void {
+    const maybe_parallax = rooms[room_index].parallax;
+    if (maybe_parallax == null) {
+        hideParallaxObjects();
+        return;
+    }
+
+    const parallax = maybe_parallax.?;
+    const extra_x: i16 = if (parallax.scroll_extra_x_divisor == 0) 0 else @divTrunc(camera.x, parallax.scroll_extra_x_divisor);
+    const extra_y: i16 = if (parallax.scroll_extra_y_divisor == 0) 0 else @divTrunc(camera.y, parallax.scroll_extra_y_divisor);
+    const base_x = parallax.world_x - camera.x - extra_x;
+    const base_y = parallax.world_y - camera.y - extra_y;
+    var index: usize = 0;
+    while (index < parallax_max_objects) : (index += 1) {
+        if (index >= parallax.chunk_count) {
+            hideObject(parallax_first_object + index);
+            continue;
+        }
+        gba.display.objects[parallax_first_object + index] = gba.display.Object.init(.{
+            .size = .size_64x64,
+            .x = objX(base_x + @as(i16, @intCast(index)) * parallax_chunk_size),
+            .y = objY(base_y),
+            .base_tile = parallax_base_tile + @as(u10, @intCast(index * 64)),
+            .priority = 0,
+            .palette = parallax_palette_bank,
+        });
+    }
+}
+
+fn hideParallaxObjects() void {
+    var index: usize = 0;
+    while (index < parallax_max_objects) : (index += 1) {
+        hideObject(parallax_first_object + index);
+    }
+}
+
 fn drawFallingBlockObjects(camera: Camera) void {
     var index: usize = 0;
     while (index < falling_block_count) : (index += 1) {
@@ -1381,9 +1472,10 @@ fn drawFallingBlockObjects(camera: Camera) void {
             continue;
         }
 
-        const shake: i16 = if (block.state == .shaking and (block.timer & 3) < 2) -1 else 0;
-        const draw_x = block.x - camera.x + shake;
-        const draw_y = fixedToPixel(block.y) - camera.y;
+        const shake_x: i16 = if (block.state == .shaking and block.timer < 32 and (block.timer & 3) == 0) -1 else 0;
+        const shake_y: i16 = if (block.state == .shaking and block.timer < 16 and (block.timer & 7) == 0) 1 else 0;
+        const draw_x = block.x - camera.x + shake_x;
+        const draw_y = fixedToPixel(block.y) - camera.y + shake_y;
         const object_index = falling_block_first_object + index * falling_block_objects_per_block;
         drawFallingBlockChunk(object_index, draw_x, draw_y, falling_block_base_tile, .size_32x32);
         drawFallingBlockChunk(object_index + 1, draw_x + 32, draw_y, falling_block_base_tile + 16, .size_16x32);
