@@ -14,9 +14,17 @@ const prologue_0_bg_palette align(4) = @embedFile("prologue_0_bg_palette.bin").*
 const prologue_0_spawn align(4) = @embedFile("prologue_0_spawn.bin").*;
 const prologue_0_collision align(4) = @embedFile("prologue_0_collision.bin").*;
 const prologue_0_falling_blocks align(4) = @embedFile("prologue_0_falling_blocks.bin").*;
+const prologue_0b_bg_tiles align(4) = @embedFile("prologue_0b_bg_tiles.bin").*;
+const prologue_0b_bg_map align(4) = @embedFile("prologue_0b_bg_map.bin").*;
+const prologue_0b_bg_palette align(4) = @embedFile("prologue_0b_bg_palette.bin").*;
+const prologue_0b_spawn align(4) = @embedFile("prologue_0b_spawn.bin").*;
+const prologue_0b_collision align(4) = @embedFile("prologue_0b_collision.bin").*;
+const prologue_0b_falling_blocks align(4) = @embedFile("prologue_0b_falling_blocks.bin").*;
 const player_tiles_data align(4) = @embedFile("player_idle_tiles.bin").*;
 const player_palette_data align(4) = @embedFile("player_palette.bin").*;
 const player_hair_anchors_data align(4) = @embedFile("player_hair_anchors.bin").*;
+const player_sweat_tiles_data align(4) = @embedFile("player_sweat_tiles.bin").*;
+const player_sweat_palette_data align(4) = @embedFile("player_sweat_palette.bin").*;
 const hair_tiles_data align(4) = @embedFile("hair_tiles.bin").*;
 const hair_palette_data align(4) = @embedFile("hair_palette.bin").*;
 const falling_block_tiles_data align(4) = @embedFile("falling_block_tiles.bin").*;
@@ -45,6 +53,18 @@ const player_jump_speed: i32 = -0x1C0;
 const player_wall_jump_h_speed: i32 = 0x230;
 const player_wall_slide_start_max: i32 = 0x55;
 const player_wall_slide_frames = 72;
+const player_room_transition_cooldown_frames = 18;
+const player_climb_max_stamina: i16 = 660;
+const player_climb_up_speed: i32 = -0xBF;
+const player_climb_down_speed: i32 = 0x154;
+const player_climb_slip_speed: i32 = 0x80;
+const player_climb_accel: i32 = 0x64;
+const player_climb_grab_y_mult: i32 = 0x80;
+const player_climb_up_cost: i16 = 5;
+const player_climb_still_cost: i16 = 1;
+const player_climb_ledge_frames = 8;
+const player_climb_ledge_hop_pixels = 6;
+const player_climb_jump_lockout_frames = 8;
 const player_var_jump_frames = 12;
 const player_coyote_frames = 6;
 const player_jump_buffer_frames = 5;
@@ -65,6 +85,19 @@ const player_jump_frame_count = 2;
 const player_fall_first_frame = 98;
 const player_fall_frame_count = 2;
 const player_wallslide_first_frame = 100;
+const player_climbup_first_frame = 101;
+const player_climbup_frame_count = 6;
+const player_dangling_first_frame = 107;
+const player_dangling_frame_count = 10;
+const player_climb_pull_first_frame = 117;
+const player_climb_pull_frame_count = 4;
+const sweat_tiles_per_frame = 16;
+const sweat_still_first_frame = 0;
+const sweat_still_frame_count = 6;
+const sweat_climb_first_frame = 6;
+const sweat_climb_frame_count = 6;
+const sweat_jump_first_frame = 12;
+const sweat_jump_frame_count = 4;
 const max_falling_blocks = 8;
 const falling_block_shake_frames = 48;
 const falling_block_gravity: i32 = 0x20;
@@ -74,13 +107,23 @@ const falling_block_palette_bank: u4 = 1;
 const hair_base_tile: u10 = 60;
 const hair_root_base_tile: u10 = 64;
 const hair_palette_bank: u4 = 2;
+const dust_base_tile: u10 = 68;
+const dust_palette_bank: u4 = 3;
+const max_dust_particles = 4;
+const sweat_base_tile: u10 = 72;
+const sweat_palette_bank: u4 = 4;
 const player_object = 0;
 const hair_root_object = 1;
 const hair_object = 2;
+const dust_first_object = 3;
+const sweat_object = 7;
 const hair_node_count = 3;
 const hair_sprite_size = 16;
 const falling_block_first_object = 8;
 const falling_block_objects_per_block = 3;
+const room_prologue_m1: usize = 0;
+const room_prologue_0: usize = 1;
+const room_prologue_0b: usize = 2;
 
 const RoomBackground = struct {
     width_tiles: usize,
@@ -118,6 +161,9 @@ const PlayerAnimation = enum(u8) {
     jump,
     fall,
     wallslide,
+    climb,
+    dangling,
+    climb_pull,
 };
 
 const FallingBlock = struct {
@@ -130,6 +176,18 @@ const FallingBlock = struct {
     max_y: i16 = 0,
     timer: u8 = 0,
     vy: i32 = 0,
+};
+
+const DustParticle = struct {
+    active: bool = false,
+    x: i32 = 0,
+    y: i32 = 0,
+    vx: i32 = 0,
+    vy: i32 = 0,
+    life: u8 = 0,
+    max_life: u8 = 0,
+    shape: u8 = 0,
+    landing: bool = false,
 };
 
 const HairNode = struct {
@@ -168,12 +226,25 @@ const rooms = [_]RoomBackground{
         .spawn = spawnFromBytes(&prologue_0_spawn),
         .falling_blocks = &prologue_0_falling_blocks,
     },
+    .{
+        .width_tiles = 54,
+        .height_tiles = 23,
+        .width_pixels = 432,
+        .height_pixels = 184,
+        .tiles = &prologue_0b_bg_tiles,
+        .map = &prologue_0b_bg_map,
+        .palette = &prologue_0b_bg_palette,
+        .collision = &prologue_0b_collision,
+        .spawn = spawnFromBytes(&prologue_0b_spawn),
+        .falling_blocks = &prologue_0b_falling_blocks,
+    },
 };
 
 var falling_blocks: [max_falling_blocks]FallingBlock = [_]FallingBlock{.{}} ** max_falling_blocks;
 var falling_block_count: usize = 0;
 var current_room_index: usize = 0;
 var rng_state: u16 = 0xACE1;
+var dust_particles: [max_dust_particles]DustParticle = [_]DustParticle{.{}} ** max_dust_particles;
 
 const Player = struct {
     x: i32,
@@ -183,10 +254,14 @@ const Player = struct {
     coyote_timer: u8 = 0,
     jump_buffer_timer: u8 = 0,
     var_jump_timer: u8 = 0,
+    room_transition_cooldown: u8 = 0,
     wall_slide_timer: u8 = player_wall_slide_frames,
     var_jump_speed: i32 = 0,
+    stamina: i16 = player_climb_max_stamina,
     animation: PlayerAnimation = .idle,
     animation_timer: u16 = 0,
+    sweat_timer: u16 = 0,
+    sweat_frame: u16 = 0,
     idle_first_frame: u16 = player_idle_a_first_frame,
     idle_frame_count: u16 = player_idle_a_frame_count,
     frame: u16 = 0,
@@ -194,6 +269,14 @@ const Player = struct {
     facing_left: bool = false,
     moving: bool = false,
     wall_sliding: bool = false,
+    climbing: bool = false,
+    climb_dangling: bool = false,
+    climb_ledge_timer: u8 = 0,
+    climb_ledge_start_x: i32 = 0,
+    climb_ledge_start_y: i32 = 0,
+    climb_ledge_target_x: i32 = 0,
+    climb_ledge_target_y: i32 = 0,
+    climb_grab_lockout_timer: u8 = 0,
     hair_initialized: bool = false,
     hair_nodes: [hair_node_count]HairNode = [_]HairNode{.{}} ** hair_node_count,
 };
@@ -201,9 +284,10 @@ const Player = struct {
 var hair_pixels: [hair_sprite_size * hair_sprite_size]u8 = [_]u8{0} ** (hair_sprite_size * hair_sprite_size);
 var hair_mask: [hair_sprite_size * hair_sprite_size]u8 = [_]u8{0} ** (hair_sprite_size * hair_sprite_size);
 var hair_tiles: [4]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** 4;
+var dust_tiles: [max_dust_particles]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** max_dust_particles;
 
 pub export fn main() void {
-    var room_index: usize = 0;
+    var room_index: usize = room_prologue_0;
     loadRoomBackground(room_index);
     loadFallingBlocks(room_index);
     loadObjectSprites();
@@ -236,15 +320,36 @@ pub export fn main() void {
         updatePlayer(&player, input, room_index);
         updateFallingBlocks(&player);
         updateHair(&player);
+        updateDustParticles();
         if (trySwitchRoom(&player, input, &room_index)) {
+            gba.display.bg_palette.colors[0] = .black;
+            gba.display.ctrl.bg0 = false;
+            gba.display.ctrl.obj = false;
+            gba.display.hideAllObjects();
+            gba.display.naiveVSync();
             loadRoomBackground(room_index);
             loadFallingBlocks(room_index);
+            clearDustParticles();
             player.hair_initialized = false;
+            updateHair(&player);
+            camera = updateCamera(player, room_index);
+            applyCamera(camera);
+            drawHair(player, camera);
+            drawDust(camera);
+            drawPlayer(player, camera);
+            drawSweat(&player, camera);
+            drawFallingBlockObjects(camera);
+            gba.display.naiveVSync();
+            gba.display.ctrl.bg0 = true;
+            gba.display.ctrl.obj = true;
+            continue;
         }
         camera = updateCamera(player, room_index);
         applyCamera(camera);
         drawHair(player, camera);
+        drawDust(camera);
         drawPlayer(player, camera);
+        drawSweat(&player, camera);
         drawFallingBlockObjects(camera);
     }
 }
@@ -297,6 +402,9 @@ fn loadObjectSprites() void {
     gba.mem.memcpy(gba.display.obj_palette, &player_palette_data, player_palette_data.len);
     gba.mem.memcpy16(&gba.display.obj_palette.colors[16], @ptrCast(&falling_block_palette_data), 16);
     gba.mem.memcpy16(&gba.display.obj_palette.colors[32], @ptrCast(&hair_palette_data), 16);
+    gba.display.obj_palette.colors[48] = .black;
+    gba.display.obj_palette.colors[49] = .white;
+    gba.mem.memcpy16(&gba.display.obj_palette.colors[64], @ptrCast(&player_sweat_palette_data), 16);
     gba.display.memcpyObjectTiles4Bpp(falling_block_base_tile, @ptrCast(&falling_block_tiles_data));
     gba.display.memcpyObjectTiles4Bpp(hair_root_base_tile, @ptrCast(&hair_tiles_data));
     loadPlayerFrame(0);
@@ -309,8 +417,31 @@ fn loadPlayerFrame(frame: u16) void {
     gba.display.memcpyObjectTiles4Bpp(0, @ptrCast(@alignCast(frame_bytes)));
 }
 
+fn loadSweatFrame(frame: u16) void {
+    const byte_offset = @as(usize, frame) * sweat_tiles_per_frame * 32;
+    const byte_len = sweat_tiles_per_frame * 32;
+    const frame_bytes = player_sweat_tiles_data[byte_offset .. byte_offset + byte_len];
+    gba.display.memcpyObjectTiles4Bpp(sweat_base_tile, @ptrCast(@alignCast(frame_bytes)));
+}
+
 fn updatePlayer(player: *Player, input: gba.input.BufferedKeysState, room_index: usize) void {
+    const was_grounded = player.grounded;
     const horizontal: i16 = @intCast(input.getAxisHorizontal());
+    const vertical: i16 = @intCast(input.getAxisVertical());
+    const grab_held = input.isPressed(.L) or input.isPressed(.R);
+    if (player.room_transition_cooldown > 0) {
+        player.room_transition_cooldown -= 1;
+    }
+    if (player.climb_grab_lockout_timer > 0) {
+        player.climb_grab_lockout_timer -= 1;
+    }
+
+    if (player.climb_ledge_timer > 0) {
+        updateClimbLedgeMotion(player);
+        updatePlayerAnimation(player);
+        return;
+    }
+
     player.moving = horizontal != 0;
     if (horizontal != 0) {
         player.facing_left = horizontal < 0;
@@ -318,6 +449,7 @@ fn updatePlayer(player: *Player, input: gba.input.BufferedKeysState, room_index:
 
     const jump_pressed = input.isJustPressed(.A) or input.isJustPressed(.B);
     const jump_held = input.isPressed(.A) or input.isPressed(.B);
+
     if (jump_pressed) {
         player.jump_buffer_timer = player_jump_buffer_frames;
     } else if (player.jump_buffer_timer > 0) {
@@ -326,6 +458,7 @@ fn updatePlayer(player: *Player, input: gba.input.BufferedKeysState, room_index:
 
     if (player.grounded) {
         player.coyote_timer = player_coyote_frames;
+        player.stamina = player_climb_max_stamina;
     } else if (player.coyote_timer > 0) {
         player.coyote_timer -= 1;
     }
@@ -333,15 +466,24 @@ fn updatePlayer(player: *Player, input: gba.input.BufferedKeysState, room_index:
     updateHorizontalSpeed(player, horizontal);
 
     const wall_jump_dir = wallJumpDirection(player.*, horizontal, room_index);
+    var jumped_this_frame = false;
 
     if (player.jump_buffer_timer > 0 and player.coyote_timer > 0) {
+        spawnJumpDustAtFeet(player.*);
         player.vy = player_jump_speed;
         player.var_jump_speed = player.vy;
         player.var_jump_timer = player_var_jump_frames;
         player.jump_buffer_timer = 0;
         player.coyote_timer = 0;
         player.grounded = false;
+        jumped_this_frame = true;
+        if (player.climbing) {
+            player.climb_grab_lockout_timer = player_climb_jump_lockout_frames;
+            player.climbing = false;
+            player.climb_dangling = false;
+        }
     } else if (player.jump_buffer_timer > 0 and wall_jump_dir != 0) {
+        spawnJumpDustAtFeet(player.*);
         player.vx = @as(i32, wall_jump_dir) * player_wall_jump_h_speed;
         player.vy = player_jump_speed;
         player.var_jump_speed = player.vy;
@@ -350,9 +492,18 @@ fn updatePlayer(player: *Player, input: gba.input.BufferedKeysState, room_index:
         player.coyote_timer = 0;
         player.grounded = false;
         player.facing_left = wall_jump_dir < 0;
+        player.climb_grab_lockout_timer = player_climb_jump_lockout_frames;
+        player.climbing = false;
+        player.climb_dangling = false;
+        jumped_this_frame = true;
     }
 
-    updateVerticalSpeed(player, jump_held, input.isPressed(.down), horizontal, room_index);
+    if (!jumped_this_frame) {
+        updateClimb(player, grab_held, vertical, room_index);
+    }
+    if (!player.climbing) {
+        updateVerticalSpeed(player, jump_held, input.isPressed(.down), horizontal, room_index);
+    }
 
     moveHorizontal(player, player.vx, room_index);
     player.grounded = false;
@@ -362,9 +513,16 @@ fn updatePlayer(player: *Player, input: gba.input.BufferedKeysState, room_index:
     }
 
     if (player.grounded) {
+        if (!was_grounded) {
+            spawnLandingDustAtFeet(player.*);
+        }
         player.var_jump_timer = 0;
         player.wall_slide_timer = player_wall_slide_frames;
         player.wall_sliding = false;
+        if (!grab_held) {
+            player.climbing = false;
+        }
+        player.climb_dangling = false;
     }
 
     updatePlayerAnimation(player);
@@ -408,9 +566,140 @@ fn updateVerticalSpeed(player: *Player, jump_held: bool, fast_fall: bool, horizo
     }
 }
 
+fn updateClimb(player: *Player, grab_held: bool, vertical: i16, room_index: usize) void {
+    if (!grab_held or player.stamina <= 0 or player.climb_grab_lockout_timer > 0) {
+        player.climbing = false;
+        player.climb_dangling = false;
+        return;
+    }
+
+    const facing_dir: i16 = if (player.facing_left) -1 else 1;
+    const climb_dir = if (wallContact(player.*, facing_dir, room_index))
+        facing_dir
+    else if (wallContact(player.*, -facing_dir, room_index))
+        -facing_dir
+    else
+        0;
+    if (climb_dir == 0) {
+        if (player.climbing and vertical < 0 and tryClimbLedge(player, facing_dir, room_index)) {
+            return;
+        }
+        player.climbing = false;
+        player.climb_dangling = false;
+        return;
+    }
+
+    player.facing_left = climb_dir < 0;
+    if (!player.climbing) {
+        player.vy = fixedMul(player.vy, player_climb_grab_y_mult);
+    }
+
+    player.climbing = true;
+    player.climb_dangling = false;
+    player.wall_sliding = false;
+    player.vx = 0;
+
+    const target_y: i32 = if (vertical < 0)
+        player_climb_up_speed
+    else if (vertical > 0)
+        player_climb_down_speed
+    else
+        0;
+    player.vy = approach(player.vy, target_y, player_climb_accel);
+    player.climb_dangling = vertical == 0 and !player.grounded and climbDangleContact(player.*, climb_dir, room_index);
+
+    if (vertical < 0) {
+        player.stamina = @max(0, player.stamina - player_climb_up_cost);
+    } else {
+        player.stamina = @max(0, player.stamina - player_climb_still_cost);
+    }
+}
+
+fn climbDangleContact(player: Player, dir: i16, room_index: usize) bool {
+    const side_offset: i16 = if (dir < 0) -1 else player_body_width;
+    const x = fixedToPixel(player.x) + side_offset;
+    const y = fixedToPixel(player.y);
+    const hands_caught = wallSolidAtPixel(x, y + 1, room_index) or
+        wallSolidAtPixel(x, y + 2, room_index) or
+        wallSolidAtPixel(x, y + 3, room_index);
+    const body_blocked = wallSolidAtPixel(x, y + 6, room_index) or
+        wallSolidAtPixel(x, y + 9, room_index) or
+        wallSolidAtPixel(x, y + player_body_height - 3, room_index);
+    return hands_caught and !body_blocked;
+}
+
+fn tryClimbLedge(player: *Player, dir: i16, room_index: usize) bool {
+    const start_x = fixedToPixel(player.x);
+    const start_y = fixedToPixel(player.y);
+
+    var y_offset: i16 = -18;
+    while (y_offset <= 8) : (y_offset += 1) {
+        var over: i16 = player_body_width - 2;
+        while (over <= player_body_width + 8) : (over += 1) {
+            const candidate_x = start_x + dir * over;
+            const candidate_y = start_y + y_offset;
+            if (!collidesAt(candidate_x, candidate_y, room_index) and floorContactAt(candidate_x, candidate_y, room_index)) {
+                startClimbLedgeMotion(player, candidate_x, candidate_y);
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+fn startClimbLedgeMotion(player: *Player, target_x: i16, target_y: i16) void {
+    player.climb_ledge_timer = player_climb_ledge_frames;
+    player.climb_ledge_start_x = player.x;
+    player.climb_ledge_start_y = player.y;
+    player.climb_ledge_target_x = pixelToFixed(target_x);
+    player.climb_ledge_target_y = pixelToFixed(target_y);
+    player.vx = 0;
+    player.vy = 0;
+    player.grounded = false;
+    player.climbing = true;
+    player.climb_dangling = false;
+    player.wall_sliding = false;
+}
+
+fn updateClimbLedgeMotion(player: *Player) void {
+    const duration: i32 = player_climb_ledge_frames;
+    const elapsed: i32 = duration - @as(i32, player.climb_ledge_timer) + 1;
+    const remaining = duration - elapsed;
+    const denom = duration * duration;
+    const eased = denom - remaining * remaining;
+    const arc = @divTrunc(4 * player_climb_ledge_hop_pixels * fixed_one * elapsed * remaining, denom);
+
+    player.x = player.climb_ledge_start_x + @divTrunc((player.climb_ledge_target_x - player.climb_ledge_start_x) * eased, denom);
+    player.y = player.climb_ledge_start_y + @divTrunc((player.climb_ledge_target_y - player.climb_ledge_start_y) * elapsed, duration) - arc;
+    player.vx = 0;
+    player.vy = 0;
+    player.moving = false;
+    player.grounded = false;
+    player.climbing = true;
+    player.climb_dangling = false;
+    player.wall_sliding = false;
+
+    player.climb_ledge_timer -= 1;
+    if (player.climb_ledge_timer == 0) {
+        player.x = player.climb_ledge_target_x;
+        player.y = player.climb_ledge_target_y;
+        player.grounded = true;
+        player.climbing = false;
+        player.stamina = player_climb_max_stamina;
+        player.wall_slide_timer = player_wall_slide_frames;
+    }
+}
+
 fn updatePlayerAnimation(player: *Player) void {
     const next_animation: PlayerAnimation = if (player.wall_sliding)
         .wallslide
+    else if (player.climb_ledge_timer > 0)
+        .climb_pull
+    else if (player.climb_dangling)
+        .dangling
+    else if (player.climbing)
+        .climb
     else if (!player.grounded and player.vy < 0)
         .jump
     else if (!player.grounded)
@@ -433,6 +722,9 @@ fn updatePlayerAnimation(player: *Player) void {
         .jump => player_jump_first_frame,
         .fall => player_fall_first_frame,
         .wallslide => player_wallslide_first_frame,
+        .climb => player_climbup_first_frame,
+        .dangling => player_dangling_first_frame,
+        .climb_pull => player_climb_pull_first_frame,
     };
     const frame_count: u16 = switch (player.animation) {
         .idle => player.idle_frame_count,
@@ -440,6 +732,9 @@ fn updatePlayerAnimation(player: *Player) void {
         .jump => player_jump_frame_count,
         .fall => player_fall_frame_count,
         .wallslide => 1,
+        .climb => player_climbup_frame_count,
+        .dangling => player_dangling_frame_count,
+        .climb_pull => player_climb_pull_frame_count,
     };
     player.animation_timer +%= 1;
     if (player.animation == .idle and player.animation_timer >= frame_count * player_animation_speed) {
@@ -469,6 +764,82 @@ fn nextRandom() u16 {
     const bit = ((rng_state >> 0) ^ (rng_state >> 2) ^ (rng_state >> 3) ^ (rng_state >> 5)) & 1;
     rng_state = (rng_state >> 1) | (bit << 15);
     return rng_state;
+}
+
+fn spawnJumpDustAtFeet(player: Player) void {
+    spawnDustAtFeet(player, false);
+}
+
+fn spawnLandingDustAtFeet(player: Player) void {
+    spawnDustAtFeet(player, true);
+}
+
+fn spawnDustAtFeet(player: Player, landing: bool) void {
+    const base_x = fixedToPixel(player.x) + player_body_width / 2;
+    const base_y = fixedToPixel(player.y) + player_body_height - 2;
+    const count: u8 = if (landing) 3 + @as(u8, @intCast(nextRandom() % 2)) else 2 + @as(u8, @intCast(nextRandom() % 3));
+    var index: u8 = 0;
+    while (index < count) : (index += 1) {
+        const slot = nextDustParticleIndex();
+        const side: i32 = if (((nextRandom() + index) & 1) == 0) -1 else 1;
+        const x_jitter: i16 = if (landing) @intCast(nextRandom() % 9) else @intCast(nextRandom() % 5);
+        const speed: i32 = if (landing) 0x40 + @as(i32, @intCast(nextRandom() % 0x48)) else 0x28 + @as(i32, @intCast(nextRandom() % 0x38));
+        const rise: i32 = if (landing) 0x08 + @as(i32, @intCast(nextRandom() % 0x18)) else 0x18 + @as(i32, @intCast(nextRandom() % 0x28));
+        const life: u8 = if (landing) 16 + @as(u8, @intCast(nextRandom() % 9)) else 12 + @as(u8, @intCast(nextRandom() % 9));
+        const x_offset: i16 = if (landing) 4 else 2;
+        dust_particles[slot] = .{
+            .active = true,
+            .x = pixelToFixed(base_x + x_jitter - x_offset),
+            .y = pixelToFixed(base_y + @as(i16, @intCast(nextRandom() % 3))),
+            .vx = side * speed,
+            .vy = -rise,
+            .life = life,
+            .max_life = life,
+            .shape = @intCast(nextRandom() % 4),
+            .landing = landing,
+        };
+    }
+}
+
+fn nextDustParticleIndex() usize {
+    var index: usize = 0;
+    while (index < max_dust_particles) : (index += 1) {
+        if (!dust_particles[index].active) return index;
+    }
+
+    var weakest: usize = 0;
+    index = 1;
+    while (index < max_dust_particles) : (index += 1) {
+        if (dust_particles[index].life < dust_particles[weakest].life) weakest = index;
+    }
+    return weakest;
+}
+
+fn updateDustParticles() void {
+    var index: usize = 0;
+    while (index < max_dust_particles) : (index += 1) {
+        if (!dust_particles[index].active) continue;
+        if (dust_particles[index].life == 0) {
+            dust_particles[index].active = false;
+            continue;
+        }
+        dust_particles[index].life -= 1;
+        dust_particles[index].x += dust_particles[index].vx;
+        dust_particles[index].y += dust_particles[index].vy;
+        dust_particles[index].vx = @divTrunc(dust_particles[index].vx * 7, 8);
+        dust_particles[index].vy += 0x08;
+        if (dust_particles[index].life == 0) {
+            dust_particles[index].active = false;
+        }
+    }
+}
+
+fn clearDustParticles() void {
+    dust_particles = [_]DustParticle{.{}} ** max_dust_particles;
+    var index: usize = 0;
+    while (index < max_dust_particles) : (index += 1) {
+        hideObject(dust_first_object + index);
+    }
 }
 
 fn updateFallingBlocks(player: *Player) void {
@@ -516,8 +887,10 @@ fn playerBelowBlock(player: Player, block: FallingBlock) bool {
     const player_x = fixedToPixel(player.x);
     const player_y = fixedToPixel(player.y);
     const player_center_x = player_x + player_body_width / 2;
-    return player_center_x >= block.x and
-        player_center_x < block.x + block.w and
+    const trigger_left = block.x + @as(i16, @intCast(block.w / 2));
+    const trigger_right = block.x + block.w + 8;
+    return player_center_x >= trigger_left and
+        player_center_x < trigger_right and
         player_y >= fixedToPixel(block.y) + block.h and
         player_y <= block.max_y + block.h;
 }
@@ -550,34 +923,67 @@ fn wallContact(player: Player, dir: i16, room_index: usize) bool {
     const side_offset: i16 = if (dir < 0) -1 else player_body_width;
     const x = fixedToPixel(player.x) + side_offset;
     const y = fixedToPixel(player.y);
-    return solidAtPixel(x, y + 2, room_index) or
-        solidAtPixel(x, y + player_body_height - 3, room_index);
+    return wallSolidAtPixel(x, y + 2, room_index) or
+        wallSolidAtPixel(x, y + player_body_height - 3, room_index);
+}
+
+fn wallSolidAtPixel(x: i16, y: i16, room_index: usize) bool {
+    return solidAtPixel(x, y, room_index) or dynamicSolidAtPixel(x, y);
 }
 
 fn floorContact(player: Player, room_index: usize) bool {
-    const x = fixedToPixel(player.x);
-    const y = fixedToPixel(player.y) + 1;
-    return collidesAt(x, y, room_index);
+    return floorContactAt(fixedToPixel(player.x), fixedToPixel(player.y), room_index);
+}
+
+fn floorContactAt(x: i16, y: i16, room_index: usize) bool {
+    return collidesAt(x, y + 1, room_index) or oneWayFloorAt(x, y, room_index);
 }
 
 fn trySwitchRoom(player: *Player, input: gba.input.BufferedKeysState, room_index: *usize) bool {
+    if (player.room_transition_cooldown > 0) return false;
+
     const room = rooms[room_index.*];
     const player_x = fixedToPixel(player.x);
+    const player_y = fixedToPixel(player.y);
     if (input.isPressed(.right) and player_x >= room.width_pixels - player_body_width) {
-        if (room_index.* + 1 < rooms.len) {
-            room_index.* += 1;
+        if (room_index.* == room_prologue_m1) {
+            room_index.* = room_prologue_0;
             enterRoomFromLeft(player);
+            startRoomTransitionCooldown(player);
             return true;
         }
     }
     if (input.isPressed(.left) and player_x <= 0) {
-        if (room_index.* > 0) {
-            room_index.* -= 1;
+        if (room_index.* == room_prologue_0) {
+            room_index.* = room_prologue_m1;
             enterRoomFromRight(player, room_index.*);
+            startRoomTransitionCooldown(player);
+            return true;
+        }
+    }
+    if (player_y <= 0) {
+        if (room_index.* == room_prologue_0) {
+            room_index.* = room_prologue_0b;
+            clampPlayerToRoom(player, room_index.*);
+            enterRoomFromBottom(player, room_index.*);
+            startRoomTransitionCooldown(player);
+            return true;
+        }
+    }
+    if (player_y >= room.height_pixels - player_body_height - 1) {
+        if (room_index.* == room_prologue_0b) {
+            room_index.* = room_prologue_0;
+            clampPlayerToRoom(player, room_index.*);
+            enterRoomFromTop(player);
+            startRoomTransitionCooldown(player);
             return true;
         }
     }
     return false;
+}
+
+fn startRoomTransitionCooldown(player: *Player) void {
+    player.room_transition_cooldown = player_room_transition_cooldown_frames;
 }
 
 fn updateCamera(player: Player, room_index: usize) Camera {
@@ -608,6 +1014,32 @@ fn drawPlayer(player: Player, camera: Camera) void {
     });
 }
 
+fn drawSweat(player: *Player, camera: Camera) void {
+    if (!player.climbing or player.climb_ledge_timer > 0) {
+        hideObject(sweat_object);
+        return;
+    }
+
+    player.sweat_timer +%= 1;
+    const moving = absI32(player.vy) > 0x20;
+    const first_frame: u16 = if (moving) sweat_climb_first_frame else sweat_still_first_frame;
+    const frame_count: u16 = if (moving) sweat_climb_frame_count else sweat_still_frame_count;
+    player.sweat_frame = first_frame + (player.sweat_timer / player_animation_speed) % frame_count;
+    loadSweatFrame(player.sweat_frame);
+
+    const draw_x = fixedToPixel(player.x) - camera.x + player_draw_offset_x;
+    const draw_y = fixedToPixel(player.y) - camera.y + player_draw_offset_y;
+    gba.display.objects[sweat_object] = gba.display.Object.init(.{
+        .size = .size_32x32,
+        .x = objX(draw_x),
+        .y = objY(draw_y),
+        .base_tile = sweat_base_tile,
+        .priority = 0,
+        .palette = sweat_palette_bank,
+        .flip = gba.math.Vec2B.init(player.facing_left, false),
+    });
+}
+
 fn updateHair(player: *Player) void {
     const anchor = hairAnchorWorld(player.*);
     const dir = anchor.dir;
@@ -629,9 +1061,9 @@ fn updateHair(player: *Player) void {
     while (index < hair_node_count) : (index += 1) {
         const spacing_x: i32 = if (falling_hair)
             switch (index) {
-                0 => @as(i32, dir),
+                0 => 0,
                 1 => 0,
-                else => -@as(i32, dir),
+                else => @as(i32, -dir),
             }
         else if (index == 0)
             @as(i32, dir)
@@ -640,9 +1072,9 @@ fn updateHair(player: *Player) void {
         target_x += spacing_x << fixed_shift;
         const spacing_y: i32 = if (falling_hair)
             switch (index) {
-                0 => -1,
-                1 => -1,
-                else => 1,
+                0 => -2,
+                1 => -2,
+                else => -1,
             }
         else switch (index) {
             0 => 1,
@@ -669,18 +1101,18 @@ fn drawHair(player: Player, camera: Camera) void {
     const falling_hair = player.animation == .fall;
     const sprite_offset_x: i16 = if (anchor.dir > 0) -4 else -12;
     const sprite_x = fixedToPixel(anchor.x) - camera.x + sprite_offset_x;
-    const sprite_offset_y: i16 = if (falling_hair) 7 else 5;
+    const sprite_offset_y: i16 = if (falling_hair) 9 else 5;
     const sprite_y = fixedToPixel(anchor.y) - camera.y - sprite_offset_y;
     clearHairPixels();
 
     var index: usize = 0;
     var prev_x = anchor.x + (@as(i32, dir) << fixed_shift);
-    const prev_y_offset: i32 = if (falling_hair) fixed_one else fixed_one * 2;
+    const prev_y_offset: i32 = if (falling_hair) fixed_one * 2 else fixed_one * 2;
     var prev_y = anchor.y - prev_y_offset;
     drawHairMaskBlobWorld(prev_x, prev_y, sprite_x + camera.x, sprite_y + camera.y, 1);
     while (index < hair_node_count) : (index += 1) {
-        const size: u8 = if (!falling_hair and index == 1) 2 else 1;
-        const node_x_offset_shift: u5 = if (falling_hair) fixed_shift else fixed_shift + 1;
+        const size: u8 = if (falling_hair and index == 1) 2 else if (!falling_hair and index == 1) 2 else 1;
+        const node_x_offset_shift: u5 = if (falling_hair) fixed_shift + 1 else fixed_shift + 1;
         const node_x = player.hair_nodes[index].x + (@as(i32, dir) << node_x_offset_shift);
         const node_y = if (falling_hair) player.hair_nodes[index].y else player.hair_nodes[index].y - fixed_one;
         drawHairMaskStrokeWorld(prev_x, prev_y, node_x, node_y, sprite_x + camera.x, sprite_y + camera.y, size);
@@ -864,6 +1296,82 @@ fn packHairTiles() void {
     }
 }
 
+fn drawDust(camera: Camera) void {
+    var index: usize = 0;
+    while (index < max_dust_particles) : (index += 1) {
+        clearDustTile(index);
+        if (!dust_particles[index].active) {
+            hideObject(dust_first_object + index);
+            continue;
+        }
+
+        drawDustShape(index, dust_particles[index]);
+        const draw_x = fixedToPixel(dust_particles[index].x) - camera.x - 4;
+        const draw_y = fixedToPixel(dust_particles[index].y) - camera.y - 4;
+        gba.display.objects[dust_first_object + index] = gba.display.Object.init(.{
+            .size = .size_8x8,
+            .x = objX(draw_x),
+            .y = objY(draw_y),
+            .base_tile = dust_base_tile + @as(u10, @intCast(index)),
+            .priority = 0,
+            .palette = dust_palette_bank,
+        });
+    }
+    gba.display.memcpyObjectTiles4Bpp(dust_base_tile, &dust_tiles);
+}
+
+fn clearDustTile(tile_index: usize) void {
+    var byte_index: usize = 0;
+    while (byte_index < 32) : (byte_index += 1) {
+        dust_tiles[tile_index].data_8[byte_index] = 0;
+    }
+}
+
+fn drawDustShape(tile_index: usize, particle: DustParticle) void {
+    const age = particle.max_life - particle.life;
+    const shrink = particle.life < particle.max_life / 3;
+    const center_x: i16 = 3 + @as(i16, @intCast(particle.shape & 1));
+    const center_y: i16 = if (particle.landing) 5 else 4 - @as(i16, @intCast((particle.shape >> 1) & 1));
+    const radius: u8 = if (shrink) 1 else 2;
+    drawDustDisc(tile_index, center_x, center_y, radius);
+    if (particle.landing and !shrink) {
+        drawDustDisc(tile_index, center_x - 2, center_y + 1, 1);
+        drawDustDisc(tile_index, center_x + 2, center_y + 1, 1);
+        if (age > 5) {
+            drawDustDisc(tile_index, center_x, center_y - 2, 1);
+        }
+        return;
+    }
+    if (!shrink and age > 4) {
+        const side: i16 = if ((particle.shape & 1) == 0) -2 else 2;
+        drawDustDisc(tile_index, center_x + side, center_y + 1, 1);
+    }
+}
+
+fn drawDustDisc(tile_index: usize, center_x: i16, center_y: i16, radius: u8) void {
+    const r: i16 = @intCast(radius);
+    var y: i16 = -r;
+    while (y <= r) : (y += 1) {
+        var x: i16 = -r;
+        while (x <= r) : (x += 1) {
+            if (x * x + y * y <= r * r) {
+                setDustTilePixel(tile_index, center_x + x, center_y + y, 1);
+            }
+        }
+    }
+}
+
+fn setDustTilePixel(tile_index: usize, x: i16, y: i16, color: u4) void {
+    if (x < 0 or x >= 8 or y < 0 or y >= 8) return;
+    const pixel_index: u8 = @intCast(y * 8 + x);
+    const byte_index = pixel_index >> 1;
+    if ((pixel_index & 1) == 0) {
+        dust_tiles[tile_index].data_8[byte_index] = (dust_tiles[tile_index].data_8[byte_index] & 0xf0) | color;
+    } else {
+        dust_tiles[tile_index].data_8[byte_index] = (dust_tiles[tile_index].data_8[byte_index] & 0x0f) | (@as(u8, color) << 4);
+    }
+}
+
 fn drawFallingBlockObjects(camera: Camera) void {
     var index: usize = 0;
     while (index < falling_block_count) : (index += 1) {
@@ -933,6 +1441,21 @@ fn enterRoomFromRight(player: *Player, room_index: usize) void {
     player.x = pixelToFixed(rooms[room_index].width_pixels - player_body_width - 1);
 }
 
+fn enterRoomFromTop(player: *Player) void {
+    player.y = pixelToFixed(1);
+}
+
+fn enterRoomFromBottom(player: *Player, room_index: usize) void {
+    player.y = pixelToFixed(rooms[room_index].height_pixels - player_body_height - 8);
+    player.vy = 0;
+}
+
+fn clampPlayerToRoom(player: *Player, room_index: usize) void {
+    const room = rooms[room_index];
+    const x = clampI16(fixedToPixel(player.x), 1, room.width_pixels - player_body_width - 1);
+    player.x = pixelToFixed(x);
+}
+
 fn spawnFromBytes(bytes: []align(4) const u8) Spawn {
     return .{
         .x = readI16Le(bytes, 0),
@@ -981,36 +1504,103 @@ fn moveVertical(player: *Player, amount: i32, room_index: usize) void {
             player.grounded = step > 0;
             return;
         }
+        if (step > 0) {
+            if (oneWayPlatformTopForPlayer(fixedToPixel(player.x), pixel, next, room_index)) |platform_top| {
+                player.y = pixelToFixed(platform_top - player_body_height);
+                player.vy = 0;
+                player.grounded = true;
+                return;
+            }
+        }
         pixel = next;
     }
     player.y = target;
 }
 
 fn collidesAt(x: i16, y: i16, room_index: usize) bool {
-    const right = x + player_body_width - 1;
-    const bottom = y + player_body_height - 1;
-    return solidAtPixel(x, y, room_index) or
-        solidAtPixel(right, y, room_index) or
-        solidAtPixel(x, bottom, room_index) or
-        solidAtPixel(right, bottom, room_index);
+    return solidRectAt(x, y, player_body_width, player_body_height, room_index) or
+        dynamicSolidRectAt(x, y, player_body_width, player_body_height);
 }
 
 fn solidAtPixel(x: i16, y: i16, room_index: usize) bool {
+    return solidRectAt(x, y, 1, 1, room_index);
+}
+
+fn solidRectAt(x: i16, y: i16, width: i16, height: i16, room_index: usize) bool {
     const room = rooms[room_index];
-    if (x < 0 or x >= room.width_pixels or y >= room.height_pixels) return true;
-    if (y < 0) return false;
+    const left = x;
+    const right = x + width - 1;
+    const top = y;
+    const bottom = y + height - 1;
+    if (left < 0 or right >= room.width_pixels or bottom >= room.height_pixels) return true;
+    if (bottom < 0) return false;
+
+    const tile_left: usize = @intCast(@divTrunc(left, 8));
+    const tile_right: usize = @intCast(@divTrunc(right, 8));
+    const tile_top: usize = if (top < 0) 0 else @intCast(@divTrunc(top, 8));
+    const tile_bottom: usize = @intCast(@divTrunc(bottom, 8));
+    var tile_y = tile_top;
+    while (tile_y <= tile_bottom) : (tile_y += 1) {
+        var tile_x = tile_left;
+        while (tile_x <= tile_right) : (tile_x += 1) {
+            if (room.collision[tile_y * room.width_tiles + tile_x] == 1) return true;
+        }
+    }
+    return false;
+}
+
+fn oneWayFloorAt(x: i16, player_y: i16, room_index: usize) bool {
+    const player_bottom = player_y + player_body_height;
+    return oneWayPlatformAtBottom(x, player_bottom, room_index) or
+        oneWayPlatformAtBottom(x + player_body_width - 1, player_bottom, room_index);
+}
+
+fn oneWayPlatformTopForPlayer(player_x: i16, old_y: i16, next_y: i16, room_index: usize) ?i16 {
+    const old_bottom = old_y + player_body_height - 1;
+    const next_bottom = next_y + player_body_height - 1;
+    if (oneWayPlatformTopAtBottom(player_x, old_bottom, next_bottom, room_index)) |platform_top| {
+        return platform_top;
+    }
+    return oneWayPlatformTopAtBottom(player_x + player_body_width - 1, old_bottom, next_bottom, room_index);
+}
+
+fn oneWayPlatformTopAtBottom(x: i16, old_bottom: i16, next_bottom: i16, room_index: usize) ?i16 {
+    const room = rooms[room_index];
+    if (x < 0 or x >= room.width_pixels or next_bottom < 0 or next_bottom >= room.height_pixels) return null;
     const tile_x: usize = @intCast(@divTrunc(x, 8));
-    const tile_y: usize = @intCast(@divTrunc(y, 8));
-    return room.collision[tile_y * room.width_tiles + tile_x] != 0 or dynamicSolidAtPixel(x, y);
+    const tile_y: usize = @intCast(@divTrunc(next_bottom, 8));
+    if (room.collision[tile_y * room.width_tiles + tile_x] != 2) return null;
+
+    const platform_top = @as(i16, @intCast(tile_y)) * 8;
+    if (old_bottom <= platform_top and next_bottom >= platform_top and next_bottom < platform_top + 4) {
+        return platform_top;
+    }
+    return null;
+}
+
+fn oneWayPlatformAtBottom(x: i16, bottom_y: i16, room_index: usize) bool {
+    const room = rooms[room_index];
+    if (x < 0 or x >= room.width_pixels or bottom_y < 0 or bottom_y >= room.height_pixels) return false;
+    const tile_x: usize = @intCast(@divTrunc(x, 8));
+    const tile_y: usize = @intCast(@divTrunc(bottom_y, 8));
+    if (room.collision[tile_y * room.width_tiles + tile_x] != 2) return false;
+    const platform_top = @as(i16, @intCast(tile_y)) * 8;
+    return bottom_y >= platform_top and bottom_y < platform_top + 4;
 }
 
 fn dynamicSolidAtPixel(x: i16, y: i16) bool {
+    return dynamicSolidRectAt(x, y, 1, 1);
+}
+
+fn dynamicSolidRectAt(x: i16, y: i16, width: i16, height: i16) bool {
+    const right = x + width;
+    const bottom = y + height;
     var index: usize = 0;
     while (index < falling_block_count) : (index += 1) {
         const block = falling_blocks[index];
         if (!block.active) continue;
         const block_y = fixedToPixel(block.y);
-        if (x >= block.x and x < block.x + block.w and y >= block_y and y < block_y + block.h) {
+        if (right > block.x and x < block.x + block.w and bottom > block_y and y < block_y + block.h) {
             return true;
         }
     }

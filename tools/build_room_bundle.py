@@ -27,12 +27,14 @@ def build_collision(annotations_json: Path, output_dir: Path) -> None:
     collision = bytearray(width_tiles * height_tiles)
 
     for tile in data.get("tiles", []):
-        if tile.get("kind", "solid") != "solid":
-            continue
+        kind = tile.get("kind", "solid")
         x = int(tile["x"])
         y = int(tile["y"])
         if 0 <= x < width_tiles and 0 <= y < height_tiles:
-            collision[y * width_tiles + x] = 1
+            if kind == "solid":
+                collision[y * width_tiles + x] = 1
+            elif kind == "oneWay":
+                collision[y * width_tiles + x] = 2
 
     source_blocks = data.get("fallingBlocks", [])
     for block in source_blocks:
@@ -52,7 +54,7 @@ def build_collision(annotations_json: Path, output_dir: Path) -> None:
     rows = []
     for y in range(height_tiles):
         row = collision[y * width_tiles : (y + 1) * width_tiles]
-        rows.append("".join("#" if value else "." for value in row))
+        rows.append("".join("#" if value == 1 else "^" if value == 2 else "." for value in row))
     (output_dir / "collision.txt").write_text("\n".join(rows) + "\n")
 
     falling_blocks = []
