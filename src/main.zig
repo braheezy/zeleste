@@ -64,7 +64,8 @@ const player_climb_ledge_frames = 8;
 const player_climb_ledge_hop_pixels = 6;
 const player_climb_ledge_min_body_above = 10;
 const player_climb_jump_lockout_frames = 8;
-const player_death_blackout_frames = 24;
+const player_death_anim_frames = 52;
+const player_respawn_burst_frames = 16;
 const player_var_jump_frames = 11;
 const player_wall_jump_var_jump_frames = 10;
 const player_coyote_frames = 6;
@@ -117,6 +118,11 @@ const max_wind_snow_particles = 28;
 const wind_snow_tile_count = 8;
 const sweat_base_tile: u10 = wind_snow_base_tile + wind_snow_tile_count;
 const sweat_palette_bank: u4 = 4;
+const death_burst_base_tile: u10 = sweat_base_tile + sweat_tiles_per_frame;
+const death_burst_palette_bank: u4 = 3;
+const death_burst_first_object = 0;
+const death_burst_spoke_count = 8;
+const death_burst_count = death_burst_spoke_count + 1;
 const parallax_first_object = 0;
 const parallax_max_objects = 8;
 const foreground_occluding_stamp_first_object = 8;
@@ -339,6 +345,9 @@ var hair_tiles: [4]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.d
 var dust_tiles: [max_dust_particles]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** max_dust_particles;
 var wind_snow_particles: [max_wind_snow_particles]WindSnowParticle = [_]WindSnowParticle{.{}} ** max_wind_snow_particles;
 var wind_snow_tiles: [wind_snow_tile_count]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** wind_snow_tile_count;
+var death_burst_tiles: [6]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** 6;
+var death_origin_x: i32 = 0;
+var death_origin_y: i32 = 0;
 
 pub export fn main() void {
     var room_index: usize = level.start_room_index;
@@ -369,6 +378,7 @@ pub export fn main() void {
     var respawn = rooms[room_index].spawn;
     var camera = updateCamera(player, room_index);
     var death_timer: u8 = 0;
+    var respawn_burst_timer: u8 = 0;
     resetWindSnow(room_index, camera);
     applyCamera(camera);
     drawParallaxObjects(camera, room_index);
@@ -378,10 +388,27 @@ pub export fn main() void {
 
     while (true) {
         input.poll();
+        if (respawn_burst_timer > 0) {
+            respawn_burst_timer -= 1;
+            gba.display.naiveVSync();
+            if (respawn_burst_timer == 0) {
+                hideDeathBurstObjects();
+                drawParallaxObjects(camera, room_index);
+                drawForegroundStampObjects(camera);
+                drawFallingBlockObjects(camera);
+                drawHair(player, camera);
+                drawPlayer(player, camera);
+            } else {
+                drawRespawnBurst(camera, respawn_burst_timer);
+            }
+            continue;
+        }
+
         if (death_timer > 0) {
             death_timer -= 1;
             gba.display.naiveVSync();
             if (death_timer == 0) {
+                hideDeathBurstObjects();
                 loadRoomBackground(room_index);
                 loadFallingBlocks(room_index);
                 loadForegroundStamps(room_index);
@@ -396,11 +423,18 @@ pub export fn main() void {
                 drawParallaxObjects(camera, room_index);
                 drawForegroundStampObjects(camera);
                 drawFallingBlockObjects(camera);
-                drawHair(player, camera);
-                drawPlayer(player, camera);
+                death_origin_x = player.x + (player_body_width / 2) * fixed_one;
+                death_origin_y = player.y + (player_body_height / 2) * fixed_one;
+                hideObject(player_object);
+                hideObject(hair_root_object);
+                hideObject(hair_object);
+                hideObject(sweat_object);
+                respawn_burst_timer = player_respawn_burst_frames;
                 gba.display.naiveVSync();
                 gba.display.ctrl.bg0 = true;
                 gba.display.ctrl.obj = true;
+            } else {
+                drawDeathBurst(camera, death_timer);
             }
             continue;
         }
@@ -413,7 +447,7 @@ pub export fn main() void {
         updateWindSnow(room_index, next_camera);
         foreground_anim_counter +%= 1;
         if (playerInDeathPit(player, room_index)) {
-            beginPlayerDeath(&death_timer);
+            beginPlayerDeath(&death_timer, player);
             continue;
         }
         if (trySwitchRoom(&player, input, &room_index, &respawn)) {
@@ -553,6 +587,10 @@ fn loadObjectSprites() void {
     gba.mem.memcpy16(&gba.display.obj_palette.colors[32], @ptrCast(&hair_palette_data), 16);
     gba.display.obj_palette.colors[48] = .black;
     gba.display.obj_palette.colors[49] = .white;
+    gba.display.obj_palette.colors[50] = gba.ColorRgb555.rgb(17, 27, 31);
+    gba.display.obj_palette.colors[51] = gba.ColorRgb555.rgb(29, 4, 4);
+    gba.display.obj_palette.colors[52] = gba.ColorRgb555.rgb(17, 2, 3);
+    gba.display.obj_palette.colors[53] = .black;
     gba.mem.memcpy16(&gba.display.obj_palette.colors[64], @ptrCast(&player_sweat_palette_data), 16);
     gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, foreground_stamp_palette_bank) * 16], @ptrCast(&grass1_palette_data), 16);
     gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, foreground_stamp2_palette_bank) * 16], @ptrCast(&grass2_palette_data), 16);
@@ -562,7 +600,41 @@ fn loadObjectSprites() void {
     gba.display.memcpyObjectTiles4Bpp(foreground_stamp_mirror_base_tile, @ptrCast(&grass1_mirror_tiles_data));
     gba.display.memcpyObjectTiles4Bpp(foreground_stamp2_base_tile, @ptrCast(&grass2_tiles_data));
     gba.display.memcpyObjectTiles4Bpp(foreground_stamp2_mirror_base_tile, @ptrCast(&grass2_mirror_tiles_data));
+    loadDeathBurstTile();
     loadPlayerFrame(0);
+}
+
+fn loadDeathBurstTile() void {
+    death_burst_tiles = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** 6;
+    drawDeathBurstDisc(0, 3, 3, 3, 5);
+    drawDeathBurstDisc(0, 3, 3, 2, 1);
+    setDeathBurstTilePixel(0, 1, 2, 1);
+    setDeathBurstTilePixel(0, 2, 1, 1);
+    setDeathBurstTilePixel(0, 4, 1, 1);
+    setDeathBurstTilePixel(0, 5, 2, 1);
+    setDeathBurstTilePixel(0, 1, 4, 1);
+    setDeathBurstTilePixel(0, 2, 5, 1);
+    setDeathBurstTilePixel(0, 4, 5, 1);
+    setDeathBurstTilePixel(0, 5, 4, 1);
+    setDeathBurstTilePixel(0, 5, 3, 2);
+
+    drawDeathBurstDisc(1, 3, 3, 3, 5);
+    drawDeathBurstDisc(1, 3, 3, 2, 3);
+    setDeathBurstTilePixel(1, 1, 2, 3);
+    setDeathBurstTilePixel(1, 2, 1, 3);
+    setDeathBurstTilePixel(1, 4, 1, 3);
+    setDeathBurstTilePixel(1, 5, 2, 3);
+    setDeathBurstTilePixel(1, 1, 4, 3);
+    setDeathBurstTilePixel(1, 2, 5, 3);
+    setDeathBurstTilePixel(1, 4, 5, 3);
+    setDeathBurstTilePixel(1, 5, 4, 3);
+    setDeathBurstTilePixel(1, 4, 4, 4);
+
+    drawDeathBurstBlob16(2, 1);
+    drawDeathBurstBlob16(2, 3);
+    setDeathBurstPixel16(2, 8, 8, 4);
+    setDeathBurstPixel16(2, 9, 8, 4);
+    gba.display.memcpyObjectTiles4Bpp(death_burst_base_tile, &death_burst_tiles);
 }
 
 fn loadWindSnowTiles() void {
@@ -1296,12 +1368,15 @@ fn playerInDeathPit(player: Player, room_index: usize) bool {
     return fixedToPixel(player.y) > room.height_pixels + 8;
 }
 
-fn beginPlayerDeath(death_timer: *u8) void {
-    death_timer.* = player_death_blackout_frames;
-    gba.display.bg_palette.colors[0] = .black;
-    gba.display.ctrl.bg0 = false;
-    gba.display.ctrl.obj = false;
-    gba.display.hideAllObjects();
+fn beginPlayerDeath(death_timer: *u8, player: Player) void {
+    death_timer.* = player_death_anim_frames;
+    death_origin_x = player.x + (player_body_width / 2) * fixed_one;
+    death_origin_y = player.y + (player_body_height / 2) * fixed_one;
+    hideObject(player_object);
+    hideObject(hair_root_object);
+    hideObject(hair_object);
+    hideObject(sweat_object);
+    clearDustParticles();
 }
 
 fn updateCamera(player: Player, room_index: usize) Camera {
@@ -1802,6 +1877,113 @@ fn drawDust(camera: Camera) void {
     gba.display.memcpyObjectTiles4Bpp(dust_base_tile, &dust_tiles);
 }
 
+fn drawDeathBurst(camera: Camera, death_timer: u8) void {
+    const elapsed: u8 = player_death_anim_frames - death_timer;
+    if (elapsed < 3) {
+        drawDeathCore(camera, .size_8x8, death_burst_base_tile, -4, -4);
+        return;
+    }
+    if (elapsed < 6) {
+        drawDeathCore(camera, .size_8x8, death_burst_base_tile + 1, -4, -4);
+        return;
+    }
+    if (elapsed < 10) {
+        drawDeathCore(camera, .size_16x16, death_burst_base_tile + 2, -8, -8);
+        return;
+    }
+
+    drawDeathBalls(camera, elapsed - 10);
+}
+
+fn drawRespawnBurst(camera: Camera, respawn_timer: u8) void {
+    drawDeathBalls(camera, respawn_timer + 6);
+}
+
+fn drawDeathCore(camera: Camera, size: gba.display.Object.Size, base_tile: u10, x_offset: i16, y_offset: i16) void {
+    const origin_x = clampI16(fixedToPixel(death_origin_x) - camera.x - 4, 4, screen_width - 12);
+    const origin_y = clampI16(fixedToPixel(death_origin_y) - camera.y - 4, 4, screen_height - 12);
+    gba.display.objects[death_burst_first_object] = gba.display.Object.init(.{
+        .size = size,
+        .x = objX(origin_x + x_offset + 4),
+        .y = objY(origin_y + y_offset + 4),
+        .base_tile = base_tile,
+        .priority = 0,
+        .palette = death_burst_palette_bank,
+    });
+    var index: usize = 1;
+    while (index < death_burst_count) : (index += 1) {
+        hideObject(death_burst_first_object + index);
+    }
+}
+
+fn drawDeathBalls(camera: Camera, progress: u8) void {
+    const circle = [_][2]i16{
+        .{ 0, -16 },
+        .{ 3, -16 },
+        .{ 6, -15 },
+        .{ 9, -13 },
+        .{ 11, -11 },
+        .{ 13, -9 },
+        .{ 15, -6 },
+        .{ 16, -3 },
+        .{ 16, 0 },
+        .{ 16, 3 },
+        .{ 15, 6 },
+        .{ 13, 9 },
+        .{ 11, 11 },
+        .{ 9, 13 },
+        .{ 6, 15 },
+        .{ 3, 16 },
+        .{ 0, 16 },
+        .{ -3, 16 },
+        .{ -6, 15 },
+        .{ -9, 13 },
+        .{ -11, 11 },
+        .{ -13, 9 },
+        .{ -15, 6 },
+        .{ -16, 3 },
+        .{ -16, 0 },
+        .{ -16, -3 },
+        .{ -15, -6 },
+        .{ -13, -9 },
+        .{ -11, -11 },
+        .{ -9, -13 },
+        .{ -6, -15 },
+        .{ -3, -16 },
+    };
+    const origin_x = clampI16(fixedToPixel(death_origin_x) - camera.x - 4, 4, screen_width - 12);
+    const origin_y = clampI16(fixedToPixel(death_origin_y) - camera.y - 4, 4, screen_height - 12);
+    const spread_progress: i16 = @intCast(@min(progress, 10));
+    const post_spread: i16 = @intCast(if (progress > 10) progress - 10 else 0);
+    const radius: i16 = 5 + spread_progress + @divTrunc(post_spread, 8);
+    const flash_white = (progress & 0x10) != 0;
+    const ball_base_tile: u10 = death_burst_base_tile + if (flash_white) @as(u10, 0) else @as(u10, 1);
+    const phase: usize = @intCast(@divTrunc(progress, 5));
+
+    var index: usize = 0;
+    while (index < death_burst_spoke_count) : (index += 1) {
+        const direction_index = (index * 4 + phase) % circle.len;
+        const dx = @divTrunc(circle[direction_index][0] * radius, 16);
+        const dy = @divTrunc(circle[direction_index][1] * radius, 16);
+        gba.display.objects[death_burst_first_object + index] = gba.display.Object.init(.{
+            .size = .size_8x8,
+            .x = objX(origin_x + dx),
+            .y = objY(origin_y + dy),
+            .base_tile = ball_base_tile,
+            .priority = 0,
+            .palette = death_burst_palette_bank,
+        });
+    }
+    hideObject(death_burst_first_object + death_burst_spoke_count);
+}
+
+fn hideDeathBurstObjects() void {
+    var index: usize = 0;
+    while (index < death_burst_count) : (index += 1) {
+        hideObject(death_burst_first_object + index);
+    }
+}
+
 fn clearDustTile(tile_index: usize) void {
     var byte_index: usize = 0;
     while (byte_index < 32) : (byte_index += 1) {
@@ -1858,6 +2040,57 @@ fn drawDustDisc(tile_index: usize, center_x: i16, center_y: i16, radius: u8) voi
                 setDustTilePixel(tile_index, center_x + x, center_y + y, 1);
             }
         }
+    }
+}
+
+fn drawDeathBurstDisc(tile_index: usize, center_x: i16, center_y: i16, radius: u8, color: u4) void {
+    const r: i16 = @intCast(radius);
+    var y: i16 = -r;
+    while (y <= r) : (y += 1) {
+        var x: i16 = -r;
+        while (x <= r) : (x += 1) {
+            if (x * x + y * y <= r * r) {
+                setDeathBurstTilePixel(tile_index, center_x + x, center_y + y, color);
+            }
+        }
+    }
+}
+
+fn drawDeathBurstBlob16(first_tile_index: usize, color: u4) void {
+    var y: i16 = 1;
+    while (y < 15) : (y += 1) {
+        var x: i16 = 1;
+        while (x < 15) : (x += 1) {
+            const dx = x - 8;
+            const dy = y - 8;
+            if (dx * dx + dy * dy <= 42) {
+                setDeathBurstPixel16(first_tile_index, x, y, color);
+            }
+        }
+    }
+    setDeathBurstPixel16(first_tile_index, 8, 1, color);
+    setDeathBurstPixel16(first_tile_index, 8, 15, color);
+    setDeathBurstPixel16(first_tile_index, 1, 8, color);
+    setDeathBurstPixel16(first_tile_index, 15, 8, color);
+}
+
+fn setDeathBurstPixel16(first_tile_index: usize, x: i16, y: i16, color: u4) void {
+    if (x < 0 or x >= 16 or y < 0 or y >= 16) return;
+    const tile_x: usize = @intCast(@divTrunc(x, 8));
+    const tile_y: usize = @intCast(@divTrunc(y, 8));
+    const local_x = @mod(x, 8);
+    const local_y = @mod(y, 8);
+    setDeathBurstTilePixel(first_tile_index + tile_y * 2 + tile_x, local_x, local_y, color);
+}
+
+fn setDeathBurstTilePixel(tile_index: usize, x: i16, y: i16, color: u4) void {
+    if (x < 0 or x >= 8 or y < 0 or y >= 8) return;
+    const pixel_index: u8 = @intCast(y * 8 + x);
+    const byte_index = pixel_index >> 1;
+    if ((pixel_index & 1) == 0) {
+        death_burst_tiles[tile_index].data_8[byte_index] = (death_burst_tiles[tile_index].data_8[byte_index] & 0xf0) | color;
+    } else {
+        death_burst_tiles[tile_index].data_8[byte_index] = (death_burst_tiles[tile_index].data_8[byte_index] & 0x0f) | (@as(u8, color) << 4);
     }
 }
 
