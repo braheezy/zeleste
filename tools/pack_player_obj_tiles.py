@@ -11,7 +11,6 @@ from pathlib import Path
 
 from split_foreground_tileset import read_png_rgba
 
-
 FRAME_RE = re.compile(r"^f(\d+)\.png$")
 
 
@@ -49,9 +48,17 @@ def normalize_hair_anchor(anchor_frame: dict | None) -> tuple[int, int, int]:
     direction = int(anchor_frame.get("dir", -1))
     direction = 1 if direction > 0 else -1
     if "anchor" in anchor_frame:
-        return (int(anchor_frame["anchor"]["x"]), int(anchor_frame["anchor"]["y"]), direction)
+        return (
+            int(anchor_frame["anchor"]["x"]),
+            int(anchor_frame["anchor"]["y"]),
+            direction,
+        )
     if "root1" in anchor_frame:
-        return (int(anchor_frame["root1"]["x"]), int(anchor_frame["root1"]["y"]) + 7, direction)
+        return (
+            int(anchor_frame["root1"]["x"]),
+            int(anchor_frame["root1"]["y"]) + 7,
+            direction,
+        )
     return (18, 19, direction)
 
 
@@ -66,8 +73,10 @@ def parse_animation_spec(spec: str) -> tuple[str, str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input", type=Path, default=Path("assets/Animations/player"))
-    parser.add_argument("--output-dir", type=Path, default=Path("assets/generated/player"))
+    parser.add_argument("--input", type=Path, default=Path("assets/animations/player"))
+    parser.add_argument(
+        "--output-dir", type=Path, default=Path("assets/generated/player")
+    )
     parser.add_argument("--animations", nargs="+", default=["idle", "runSlow"])
     parser.add_argument("--cell-width", type=int, default=32)
     parser.add_argument("--cell-height", type=int, default=32)
@@ -85,16 +94,22 @@ def main() -> int:
         for path in frame_paths:
             image = read_png_rgba(path)
             if image.width > args.cell_width or image.height > args.cell_height:
-                raise ValueError(f"{path} is {image.width}x{image.height}, larger than {args.cell_width}x{args.cell_height}")
+                raise ValueError(
+                    f"{path} is {image.width}x{image.height}, larger than {args.cell_width}x{args.cell_height}"
+                )
             for index in range(0, len(image.pixels), 4):
                 colors[tuple(image.pixels[index : index + 4])] += 1
-            anchor = normalize_hair_anchor(hair_anchors.get(frame_index(path)) if hair_anchors else None)
+            anchor = normalize_hair_anchor(
+                hair_anchors.get(frame_index(path)) if hair_anchors else None
+            )
             frame_sources.append((animation, frame_index(path), image, anchor))
 
     transparent = [(0, 0, 0, 0)]
     opaque = [color for color, _ in colors.most_common() if color[3] != 0]
     if len(opaque) > 15:
-        raise ValueError(f"selected animations use {len(opaque)} opaque colors; 4bpp supports 15")
+        raise ValueError(
+            f"selected animations use {len(opaque)} opaque colors; 4bpp supports 15"
+        )
     palette = transparent + opaque + [(0, 0, 0, 255)] * (16 - 1 - len(opaque))
     palette_index = {color: index for index, color in enumerate(palette)}
     for color in colors:
@@ -155,7 +170,9 @@ def main() -> int:
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     (args.output_dir / "madeline_tiles.bin").write_bytes(bytes(tiles))
-    (args.output_dir / "madeline_hair_anchors.bin").write_bytes(bytes(hair_anchor_bytes))
+    (args.output_dir / "madeline_hair_anchors.bin").write_bytes(
+        bytes(hair_anchor_bytes)
+    )
     (args.output_dir / "madeline_palette.bin").write_bytes(
         b"".join(rgba_to_rgb555(color).to_bytes(2, "little") for color in palette)
     )
@@ -168,7 +185,9 @@ def main() -> int:
         "frames": frames,
         "paletteRgba": [list(color) for color in palette],
     }
-    (args.output_dir / "madeline_animations.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    (args.output_dir / "madeline_animations.json").write_text(
+        json.dumps(manifest, indent=2) + "\n"
+    )
     print(
         f"packed {len(frames)} frames, {tiles_per_frame} tiles/frame, "
         f"{len(opaque)} opaque colors"

@@ -24,7 +24,7 @@ tasks:
         set -- {{.CLI_ARGS}}
         input="$1"
         if [ -z "$input" ]; then
-          echo "usage: task grass-sway -- assets/Animations/foreground/grass2.png"
+          echo "usage: task grass-sway -- assets/animations/foreground/grass2.png"
           exit 1
         fi
         shift

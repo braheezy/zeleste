@@ -7,22 +7,24 @@ change affects runtime data layout, also read `../docs/runtime-architecture.md`.
 
 ## Common Commands
 
-- `task collision`: opens the room collision/entity/foreground stamp editor.
+- `task collision`: opens the chapter collision/entity/foreground stamp editor.
 - `task hair`: opens the player hair anchor editor.
 - `task grass-edit`: opens the generated grass frame editor for manual cleanup
-  of generated foreground sway frames.
+  of generated foreground sway frames in `assets/generated/foreground/`.
 - `task grass-sway -- <path> [--preset auto|tiny|small|medium|large] [--no-mirror]`:
   generates sway frames for a foreground grass PNG. The generated stamp name is
-  derived from the input file or directory.
+  derived from the input file or directory and is written to
+  `assets/generated/foreground/` by default.
 - `zig build assets`: rebuilds generated ROM assets under `src/generated`.
 - `zig build`: compiles the ROM without regenerating assets.
 
 ## Tool Directory
 
-- `collision_server.py` and `collision_editor.html`: integrated room editor.
+- `collision_server.py` and `collision_editor.html`: integrated chapter editor.
   Use this for collision boxes, one-way platforms, respawn points, falling
-  blocks, and foreground stamp placement. It auto-discovers room backgrounds
-  and existing annotations. Saved annotations live beside the room source image.
+  blocks, and foreground stamp placement. It auto-discovers chapter images,
+  background art, and existing annotations. Saved annotations live beside the
+  source image.
 
 - `hair_anchor_server.py` and `hair_anchor_editor.html`: player hair anchor
   editor. Use this for per-frame hair root placement and facing direction.
@@ -34,8 +36,8 @@ change affects runtime data layout, also read `../docs/runtime-architecture.md`.
   procedural sway is close but visually wrong. It edits generated PNG frames
   directly.
 
-- `build_level_assets.py`: top-level level asset builder. It reads a room
-  manifest such as `assets/rooms/prologue_a/room.json`, runs room conversion,
+- `build_level_assets.py`: top-level level asset builder. It reads a chapter
+  manifest such as `assets/chapters/prologue_a/room.json`, runs room conversion,
   handles optional parallax metadata, and writes `src/generated_rooms.zig`.
   This is normally invoked by `zig build assets`.
 
@@ -80,8 +82,8 @@ change affects runtime data layout, also read `../docs/runtime-architecture.md`.
 
 ## Generated vs Source
 
-- Treat `assets/rooms/**`, `assets/Animations/**`, and annotation JSON files as
-  source inputs.
+- Treat `assets/chapters/**`, `assets/animations/**`, and annotation JSON files
+  as source inputs.
 - Treat `src/generated/**` and `src/generated_rooms.zig` as generated outputs.
   Regenerate them with `zig build assets` after source asset or annotation
   changes.

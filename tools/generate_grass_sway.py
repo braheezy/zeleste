@@ -27,10 +27,18 @@ class SwayPreset:
 
 
 PRESETS = {
-    "tiny": SwayPreset("tiny", positions=3, max_operation=2, root_lock_rows=3, mirror=False),
-    "small": SwayPreset("small", positions=3, max_operation=1, root_lock_rows=2, mirror=True),
-    "medium": SwayPreset("medium", positions=5, max_operation=4, root_lock_rows=1, mirror=True),
-    "large": SwayPreset("large", positions=7, max_operation=6, root_lock_rows=0, mirror=True),
+    "tiny": SwayPreset(
+        "tiny", positions=3, max_operation=2, root_lock_rows=3, mirror=False
+    ),
+    "small": SwayPreset(
+        "small", positions=3, max_operation=1, root_lock_rows=2, mirror=True
+    ),
+    "medium": SwayPreset(
+        "medium", positions=5, max_operation=4, root_lock_rows=1, mirror=True
+    ),
+    "large": SwayPreset(
+        "large", positions=7, max_operation=6, root_lock_rows=0, mirror=True
+    ),
 }
 
 
@@ -61,7 +69,9 @@ def grass_cell(x: int, y: int, bounds: tuple[int, int, int, int]) -> tuple[int, 
     return cell_x, cell_y
 
 
-def operation_hits(operation: int, cell_x: int, cell_y: int, preset: SwayPreset) -> bool:
+def operation_hits(
+    operation: int, cell_x: int, cell_y: int, preset: SwayPreset
+) -> bool:
     if cell_y <= preset.root_lock_rows:
         return False
     if preset.name == "tiny":
@@ -86,10 +96,14 @@ def operation_hits(operation: int, cell_x: int, cell_y: int, preset: SwayPreset)
     return False
 
 
-def shift_for_pixel(position: int, x: int, y: int, bounds: tuple[int, int, int, int], preset: SwayPreset) -> int:
+def shift_for_pixel(
+    position: int, x: int, y: int, bounds: tuple[int, int, int, int], preset: SwayPreset
+) -> int:
     cell_x, cell_y = grass_cell(x, y, bounds)
     shift = 0
-    operation_limit = round(position * preset.max_operation / max(1, preset.positions - 1))
+    operation_limit = round(
+        position * preset.max_operation / max(1, preset.positions - 1)
+    )
     operation = 1
     while operation <= operation_limit:
         if operation_hits(operation, cell_x, cell_y, preset):
@@ -120,17 +134,25 @@ def crop_image(image: Image, left: int, top: int, width: int, height: int) -> Im
 
 def normalize_stamp_canvas(image: Image, path: Path) -> tuple[Image, int, int]:
     if image.width not in (8, 16) or image.height not in (8, 16):
-        raise ValueError(f"{path} must be 8x8, 8x16, 16x8, or 16x16, got {image.width}x{image.height}")
+        raise ValueError(
+            f"{path} must be 8x8, 8x16, 16x8, or 16x16, got {image.width}x{image.height}"
+        )
 
     left, top, right, bottom = opaque_bounds(image)
-    if right - left <= 8 and bottom - top <= 8 and (image.width, image.height) != (8, 8):
+    if (
+        right - left <= 8
+        and bottom - top <= 8
+        and (image.width, image.height) != (8, 8)
+    ):
         crop_left = clamp(right - 8, 0, image.width - 8)
         crop_top = clamp(bottom - 8, 0, image.height - 8)
         return crop_image(image, crop_left, crop_top, 8, 8), crop_left, crop_top
 
     if image.width in (8, 16) and image.height in (8, 16):
         return image, 0, 0
-    raise ValueError(f"{path} must be 8x8, 8x16, 16x8, or 16x16, got {image.width}x{image.height}")
+    raise ValueError(
+        f"{path} must be 8x8, 8x16, 16x8, or 16x16, got {image.width}x{image.height}"
+    )
 
 
 def opaque_components(image: Image) -> list[list[tuple[int, int]]]:
@@ -209,7 +231,9 @@ def reconnect_grass_pixels(image: Image) -> Image:
                     dst = (y * image.width + x) * 4
                     candidate[dst : dst + 4] = color
                 candidate_image = Image(image.width, image.height, bytes(candidate))
-                if len(opaque_components(candidate_image)) < len(opaque_components(Image(image.width, image.height, bytes(out)))):
+                if len(opaque_components(candidate_image)) < len(
+                    opaque_components(Image(image.width, image.height, bytes(out)))
+                ):
                     out = candidate
                     moved = True
                     break
@@ -235,8 +259,10 @@ def frame_position(frame_index: int, frame_count: int, preset: SwayPreset) -> in
     return min(preset.positions - 1, (frame_index * preset.positions) // frame_count)
 
 
-def generate_frame(base: Image, frame_index: int, frame_count: int, amplitude: int, preset: SwayPreset) -> Image:
-    _ = amplitude;
+def generate_frame(
+    base: Image, frame_index: int, frame_count: int, amplitude: int, preset: SwayPreset
+) -> Image:
+    _ = amplitude
     position = frame_position(frame_index, frame_count, preset)
     bounds = opaque_bounds(base)
     out = bytearray(base.width * base.height * 4)
@@ -365,13 +391,22 @@ def write_frames(frames: list[Image], output_dir: Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input", type=Path, required=True, help="single foreground grass PNG")
-    parser.add_argument("--output-root", type=Path, default=Path("assets/Animations/foreground"))
+    parser.add_argument(
+        "--input", type=Path, required=True, help="single foreground grass PNG"
+    )
+    parser.add_argument(
+        "--output-root", type=Path, default=Path("assets/generated/foreground")
+    )
     parser.add_argument("--name", required=True)
     parser.add_argument("--frames", type=int, default=42)
     parser.add_argument("--fps", type=int, default=24)
     parser.add_argument("--preset", choices=["auto", *PRESETS.keys()], default="auto")
-    parser.add_argument("--amplitude", type=int, default=3, help="reserved for future presets; grass1 preset uses fixed positions")
+    parser.add_argument(
+        "--amplitude",
+        type=int,
+        default=3,
+        help="reserved for future presets; grass1 preset uses fixed positions",
+    )
     parser.add_argument("--mirror", action="store_true", help="force mirrored output")
     parser.add_argument("--no-mirror", action="store_true", help="skip mirrored output")
     parser.add_argument("--no-gif", action="store_true")
@@ -385,7 +420,10 @@ def main() -> int:
     if args.no_mirror:
         write_mirror = False
 
-    normal = [generate_frame(base, index, args.frames, args.amplitude, preset) for index in range(args.frames)]
+    normal = [
+        generate_frame(base, index, args.frames, args.amplitude, preset)
+        for index in range(args.frames)
+    ]
 
     normal_dir = args.output_root / args.name
     mirror_dir = args.output_root / f"{args.name}_mirror"
@@ -393,7 +431,10 @@ def main() -> int:
     mirrored = []
     if write_mirror:
         mirrored_base = mirror_image(base)
-        mirrored = [generate_frame(mirrored_base, index, args.frames, args.amplitude, preset) for index in range(args.frames)]
+        mirrored = [
+            generate_frame(mirrored_base, index, args.frames, args.amplitude, preset)
+            for index in range(args.frames)
+        ]
         write_frames(mirrored, mirror_dir)
     elif mirror_dir.exists():
         shutil.rmtree(mirror_dir)
@@ -424,7 +465,9 @@ def main() -> int:
         if write_mirror:
             write_gif(mirror_dir / f"{args.name}_mirror.gif", mirrored, args.fps)
     if write_mirror:
-        print(f"generated {args.frames} {preset.name} frames each: {normal_dir} and {mirror_dir}")
+        print(
+            f"generated {args.frames} {preset.name} frames each: {normal_dir} and {mirror_dir}"
+        )
     else:
         print(f"generated {args.frames} {preset.name} frames: {normal_dir}")
     return 0

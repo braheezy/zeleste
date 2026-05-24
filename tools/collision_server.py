@@ -52,97 +52,104 @@ class AnnotationHandler(SimpleHTTPRequestHandler):
             self.send_json(400, {"ok": False, "error": str(exc)})
             return
 
-        self.send_json(200, {"ok": True, "path": str(relative_path), "bundle": str(bundle_path)})
+        self.send_json(
+            200, {"ok": True, "path": str(relative_path), "bundle": str(bundle_path)}
+        )
 
     def backgrounds(self) -> list[dict]:
         backgrounds = []
-        roots = [
-            self.repo_root / "assets" / "rooms",
-            self.repo_root / "assets" / "backgrounds",
-        ]
-        for root in roots:
-            if not root.exists():
+        root = self.repo_root / "assets" / "chapters"
+        if not root.exists():
+            return backgrounds
+        for path in sorted(root.rglob("*.png")):
+            if self.is_entity_art(path):
                 continue
-            paths = root.rglob("*.png") if root.name == "rooms" else root.glob("*.png")
-            for path in sorted(paths):
-                if self.is_entity_art(path):
-                    continue
-                relative = path.relative_to(self.repo_root)
-                annotation = self.annotation_path_for_image(str(relative))
-                backgrounds.append(
-                    {
-                        "image": str(relative),
-                        "annotation": str(annotation),
-                        "hasAnnotation": (self.repo_root / annotation).exists(),
-                    }
-                )
+            relative = path.relative_to(self.repo_root)
+            annotation = self.annotation_path_for_image(str(relative))
+            backgrounds.append(
+                {
+                    "image": str(relative),
+                    "annotation": str(annotation),
+                    "hasAnnotation": (self.repo_root / annotation).exists(),
+                }
+            )
         return backgrounds
 
     def foreground_stamps(self) -> list[dict]:
         stamps = []
-        roots = [
-            self.repo_root / "assets" / "Animations" / "foreground",
-            self.repo_root / "assets" / "Animations" / "foregound",
-        ]
-        for root in roots:
-            if not root.exists():
-                continue
-            generated_grass = root / "grass_generated"
-            if generated_grass.exists():
-                frames = sorted(
-                    generated_grass.glob("*.png"),
-                    key=lambda path: int(path.stem) if path.stem.isdigit() else path.stem,
-                )
-                mirror_frames = sorted(
-                    (root / "grass_generated_mirror").glob("*.png"),
-                    key=lambda path: int(path.stem) if path.stem.isdigit() else path.stem,
-                )
-                if frames:
-                    metadata = self.stamp_metadata(generated_grass)
-                    stamps.append(
-                        {
-                            "id": "grass1",
-                            "name": "grass1",
-                            "preview": str(frames[0].relative_to(self.repo_root)),
-                            "mirrorPreview": str(mirror_frames[0].relative_to(self.repo_root)) if mirror_frames else None,
-                            "anchorX": metadata.get("anchorX", 8),
-                            "anchorY": metadata.get("anchorY", 8),
-                        }
-                    )
-            for directory in sorted(path for path in root.iterdir() if path.is_dir()):
-                if directory.name in {"grass1", "grass_generated", "grass_generated_mirror"}:
-                    continue
-                if directory.name.endswith("_mirror"):
-                    continue
-                metadata = self.stamp_metadata(directory)
-                if not metadata:
-                    continue
-                frames = sorted(
-                    directory.glob("*.png"),
-                    key=lambda path: int(path.stem) if path.stem.isdigit() else path.stem,
-                )
-                if not frames:
-                    continue
-                relative = frames[0].relative_to(self.repo_root)
-                mirror_directory = root / f"{directory.name}_mirror"
-                mirror_frames = sorted(
-                    mirror_directory.glob("*.png"),
-                    key=lambda path: int(path.stem) if path.stem.isdigit() else path.stem,
-                ) if mirror_directory.exists() else []
-                stamp_id = directory.name.removesuffix("_generated")
-                source_preview = root / f"{stamp_id}.png"
-                preview = source_preview if source_preview.exists() else frames[0]
+        root = self.repo_root / "assets" / "generated" / "foreground"
+        if not root.exists():
+            return stamps
+
+        generated_grass = root / "grass_generated"
+        if generated_grass.exists():
+            frames = sorted(
+                generated_grass.glob("*.png"),
+                key=lambda path: int(path.stem) if path.stem.isdigit() else path.stem,
+            )
+            mirror_frames = sorted(
+                (root / "grass_generated_mirror").glob("*.png"),
+                key=lambda path: int(path.stem) if path.stem.isdigit() else path.stem,
+            )
+            if frames:
+                metadata = self.stamp_metadata(generated_grass)
                 stamps.append(
                     {
-                        "id": stamp_id,
-                        "name": stamp_id,
-                        "preview": str(preview.relative_to(self.repo_root)),
-                        "generatedPreview": str(relative),
-                        "mirrorPreview": str(mirror_frames[0].relative_to(self.repo_root)) if mirror_frames else None,
+                        "id": "grass1",
+                        "name": "grass1",
+                        "preview": str(frames[0].relative_to(self.repo_root)),
+                        "mirrorPreview": str(
+                            mirror_frames[0].relative_to(self.repo_root)
+                        )
+                        if mirror_frames
+                        else None,
                         "anchorX": metadata.get("anchorX", 8),
                         "anchorY": metadata.get("anchorY", 8),
                     }
                 )
+
+        for directory in sorted(path for path in root.iterdir() if path.is_dir()):
+            if directory.name in {"grass_generated", "grass_generated_mirror"}:
+                continue
+            if directory.name.endswith("_mirror"):
+                continue
+            metadata = self.stamp_metadata(directory)
+            if not metadata:
+                continue
+            frames = sorted(
+                directory.glob("*.png"),
+                key=lambda path: int(path.stem) if path.stem.isdigit() else path.stem,
+            )
+            if not frames:
+                continue
+            relative = frames[0].relative_to(self.repo_root)
+            mirror_directory = root / f"{directory.name}_mirror"
+            mirror_frames = (
+                sorted(
+                    mirror_directory.glob("*.png"),
+                    key=lambda path: (
+                        int(path.stem) if path.stem.isdigit() else path.stem
+                    ),
+                )
+                if mirror_directory.exists()
+                else []
+            )
+            stamp_id = directory.name.removesuffix("_generated")
+            source_preview = root / f"{stamp_id}.png"
+            preview = source_preview if source_preview.exists() else frames[0]
+            stamps.append(
+                {
+                    "id": stamp_id,
+                    "name": stamp_id,
+                    "preview": str(preview.relative_to(self.repo_root)),
+                    "generatedPreview": str(relative),
+                    "mirrorPreview": str(mirror_frames[0].relative_to(self.repo_root))
+                    if mirror_frames
+                    else None,
+                    "anchorX": metadata.get("anchorX", 8),
+                    "anchorY": metadata.get("anchorY", 8),
+                }
+            )
         return stamps
 
     @staticmethod
@@ -174,7 +181,9 @@ class AnnotationHandler(SimpleHTTPRequestHandler):
             annotation_path = self.annotation_path_for_image(image_path)
             full_path = self.repo_root / annotation_path
             if not full_path.exists():
-                self.send_json(200, {"ok": True, "path": str(annotation_path), "data": None})
+                self.send_json(
+                    200, {"ok": True, "path": str(annotation_path), "data": None}
+                )
                 return
             self.send_json(
                 200,
@@ -189,15 +198,19 @@ class AnnotationHandler(SimpleHTTPRequestHandler):
 
     @staticmethod
     def annotation_path_for_image(image_path: str) -> Path:
-        relative = AnnotationHandler.safe_relative_path(image_path, expected_suffix=".png")
+        relative = AnnotationHandler.safe_relative_path(
+            image_path, expected_suffix=".png"
+        )
         return relative.with_name(f"{relative.stem}_annotations.json")
 
     def generate_collision_bundle(self, request: dict, annotation_path: Path) -> Path:
         if "image" not in request:
             return Path()
-        image_path = self.safe_relative_path(str(request["image"]), expected_suffix=".png")
+        image_path = self.safe_relative_path(
+            str(request["image"]), expected_suffix=".png"
+        )
         room_id = self.room_id_for_image(image_path)
-        output_dir = Path("assets/generated/rooms") / room_id
+        output_dir = Path("assets/generated/chapters") / room_id
         subprocess.run(
             [
                 sys.executable,

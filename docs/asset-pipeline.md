@@ -16,19 +16,21 @@ binary blobs for the ROM. Do not hand-edit generated binaries.
 
 ## Source Asset Layout
 
-Room source:
+Chapter source:
 
-- `assets/rooms/prologue_a/room.json`: room graph and per-room metadata.
-- `assets/rooms/prologue_a/*.png`: source room images.
-- `assets/rooms/prologue_a/*_annotations.json`: source annotation data saved
+- `assets/chapters/prologue_a/room.json`: chapter graph and per-room metadata.
+- `assets/chapters/prologue_a/*.png`: source room images.
+- `assets/chapters/prologue_a/*_annotations.json`: source annotation data saved
   by the collision editor.
-- `assets/rooms/prologue_a/0-plx.png`: room `0` parallax/foreground occlusion.
-- `assets/rooms/prologue_a/prologue-a-block1.png`: falling ice block entity
+- `assets/chapters/prologue_a/backgrounds/*.png`: chapter background/reference
+  art.
+- `assets/chapters/prologue_a/0-plx.png`: room `0` parallax/foreground occlusion.
+- `assets/chapters/prologue_a/prologue-a-block1.png`: falling ice block entity
   source art.
 
 Player source:
 
-- `assets/Animations/player/<animation>/`: individual player animation frames.
+- `assets/animations/player/<animation>/`: individual player animation frames.
 - `hair_anchors.json` beside animation frames: per-frame hair root anchor and
   facing metadata.
 - Current annotated player animations include `idle`, `idleA`, `idleB`,
@@ -36,21 +38,21 @@ Player source:
 
 Hair source:
 
-- `assets/Animations/hair/`: small hair root/tile pieces.
+- `assets/animations/hair/`: small hair root/tile pieces.
 - Runtime currently uses `root1` for the scalp/front root and generates the
   rest procedurally.
 
 Foreground source:
 
-- `assets/Animations/foreground/grassN.png`: authored base grass stamps.
-- `assets/Animations/foreground/grassN_generated/`: generated sway frames.
-- `assets/Animations/foreground/grassN_generated_mirror/`: generated mirrored
-  sway frames.
+- `assets/animations/foreground/grassN.png`: authored base grass stamps.
+- Generated sway frames live under `assets/generated/foreground/grass*_generated/`.
+- Generated mirrored sway frames live under
+  `assets/generated/foreground/grass*_generated_mirror/`.
 
 ## Level Build Flow
 
 `zig build assets` calls `tools/build_level_assets.py` with
-`assets/rooms/prologue_a/room.json`.
+`assets/chapters/prologue_a/room.json`.
 
 For each room, it calls `tools/build_room_bundle.py`, which:
 
@@ -64,9 +66,10 @@ For each room, it calls `tools/build_room_bundle.py`, which:
 - writes a room summary.
 
 Then `build_level_assets.py` writes `src/generated_rooms.zig`, which embeds all
-room output paths and graph metadata. `worldX` and `worldY` in `room.json`
-become room origins used by side transitions to preserve world-space player
-position across visually staggered rooms.
+room output paths and graph metadata under `src/generated/assets/chapters/`.
+`worldX` and `worldY` in `room.json` become room origins used by side
+transitions to preserve world-space player position across visually staggered
+rooms.
 
 ## Collision Editor UX
 

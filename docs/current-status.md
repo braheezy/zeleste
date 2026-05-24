@@ -16,7 +16,7 @@ changing gameplay, assets, or room tooling.
 
 ## Current Playable Slice
 
-The active level is `assets/rooms/prologue_a/room.json`.
+The active level is `assets/chapters/prologue_a/room.json`.
 
 Rooms currently in the graph:
 
@@ -27,7 +27,8 @@ Rooms currently in the graph:
 
 Each room has a same-named annotation JSON beside the PNG. The annotation file
 is source data for collision, one-way platforms, respawn points, foreground
-stamps, and lightweight entities.
+stamps, and lightweight entities. Chapter-specific reference art lives beside
+those room sources under `assets/chapters/prologue_a/backgrounds/`.
 
 ## Runtime Features Implemented
 

@@ -11,7 +11,6 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-
 FRAME_RE = re.compile(r"^f(\d+)\.png$")
 
 
@@ -44,7 +43,9 @@ class HairAnchorHandler(SimpleHTTPRequestHandler):
         try:
             length = int(self.headers.get("content-length", "0"))
             request = json.loads(self.rfile.read(length))
-            animation = self.safe_relative_path(str(request["animation"]), expected_suffix="")
+            animation = self.safe_relative_path(
+                str(request["animation"]), expected_suffix=""
+            )
             self.validate_animation_path(animation)
             output_path = self.anchor_path(animation)
             output_path.write_text(json.dumps(request["data"], indent=2) + "\n")
@@ -52,10 +53,12 @@ class HairAnchorHandler(SimpleHTTPRequestHandler):
             self.send_json(400, {"ok": False, "error": str(exc)})
             return
 
-        self.send_json(200, {"ok": True, "path": str(output_path.relative_to(self.repo_root))})
+        self.send_json(
+            200, {"ok": True, "path": str(output_path.relative_to(self.repo_root))}
+        )
 
     def animations(self) -> list[dict]:
-        root = self.repo_root / "assets" / "Animations" / "player"
+        root = self.repo_root / "assets" / "animations" / "player"
         animations = []
         for directory in sorted(path for path in root.iterdir() if path.is_dir()):
             frames = sorted(directory.glob("f*.png"), key=frame_index)
@@ -67,8 +70,12 @@ class HairAnchorHandler(SimpleHTTPRequestHandler):
                     "name": directory.name,
                     "path": str(relative),
                     "frameCount": len(frames),
-                    "frames": [str(path.relative_to(self.repo_root)) for path in frames],
-                    "anchorPath": str(self.anchor_path(relative).relative_to(self.repo_root)),
+                    "frames": [
+                        str(path.relative_to(self.repo_root)) for path in frames
+                    ],
+                    "anchorPath": str(
+                        self.anchor_path(relative).relative_to(self.repo_root)
+                    ),
                     "hasAnchors": self.anchor_path(relative).exists(),
                 }
             )
@@ -83,15 +90,24 @@ class HairAnchorHandler(SimpleHTTPRequestHandler):
                 data = json.loads(path.read_text())
             else:
                 data = None
-            self.send_json(200, {"ok": True, "path": str(path.relative_to(self.repo_root)), "data": data})
+            self.send_json(
+                200,
+                {
+                    "ok": True,
+                    "path": str(path.relative_to(self.repo_root)),
+                    "data": data,
+                },
+            )
         except Exception as exc:
             self.send_json(400, {"ok": False, "error": str(exc)})
 
     def validate_animation_path(self, animation: Path) -> None:
         full = self.repo_root / animation
-        root = self.repo_root / "assets" / "Animations" / "player"
+        root = self.repo_root / "assets" / "animations" / "player"
         if not full.is_dir() or root not in full.parents:
-            raise ValueError("animation must be a directory under assets/Animations/player")
+            raise ValueError(
+                "animation must be a directory under assets/animations/player"
+            )
 
     def anchor_path(self, animation: Path) -> Path:
         return self.repo_root / animation / "hair_anchors.json"

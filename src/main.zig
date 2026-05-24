@@ -127,7 +127,7 @@ const hair_object = 34;
 const dust_first_object = 35;
 const wind_snow_first_object = dust_first_object + max_dust_particles;
 const sweat_object = wind_snow_first_object + max_wind_snow_particles;
-const hair_node_count = 3;
+const hair_node_count = 4;
 const hair_sprite_size = 16;
 const falling_block_first_object = sweat_object + 1;
 const falling_block_objects_per_block = 3;
@@ -273,6 +273,12 @@ const HairAnchor = struct {
     dir: i16,
 };
 
+const HairRootRect = struct {
+    x: i16,
+    y: i16,
+    flip_x: bool,
+};
+
 const rooms = level.rooms;
 
 var room_states: [rooms.len]RoomState = [_]RoomState{.{}} ** rooms.len;
@@ -379,6 +385,7 @@ pub export fn main() void {
                 loadRoomBackground(room_index);
                 loadFallingBlocks(room_index);
                 loadForegroundStamps(room_index);
+                loadObjectSprites();
                 loadRoomParallax(room_index);
                 clearDustParticles();
                 player = spawnPlayerAt(respawn);
@@ -418,6 +425,7 @@ pub export fn main() void {
             loadRoomBackground(room_index);
             loadFallingBlocks(room_index);
             loadForegroundStamps(room_index);
+            loadObjectSprites();
             loadRoomParallax(room_index);
             clearDustParticles();
             player.hair_initialized = false;
@@ -1225,11 +1233,14 @@ fn trySwitchRoom(player: *Player, input: gba.input.BufferedKeysState, room_index
     const player_y = fixedToPixel(player.y);
     if (input.isPressed(.right) and player_x >= room.width_pixels - player_body_width) {
         if (room.right) |next_room| {
+            const source_floor_world_y = if (player.grounded or floorContact(player.*, room_index.*))
+                sideTransitionSourceFloorWorldY(player.*, room_index.*)
+            else
+                null;
             alignPlayerBetweenRooms(player, room_index.*, next_room);
             room_index.* = next_room;
             enterRoomFromLeft(player);
-            fitPlayerAfterRoomEntry(player, room_index.*);
-            settlePlayerOnFloorAfterSideEntry(player, room_index.*);
+            fitOrSnapPlayerAfterSideRoomEntry(player, room_index.*, source_floor_world_y);
             respawn.* = rooms[room_index.*].spawn_left;
             startRoomTransitionCooldown(player);
             return true;
@@ -1237,11 +1248,14 @@ fn trySwitchRoom(player: *Player, input: gba.input.BufferedKeysState, room_index
     }
     if (input.isPressed(.left) and player_x <= 0) {
         if (room.left) |next_room| {
+            const source_floor_world_y = if (player.grounded or floorContact(player.*, room_index.*))
+                sideTransitionSourceFloorWorldY(player.*, room_index.*)
+            else
+                null;
             alignPlayerBetweenRooms(player, room_index.*, next_room);
             room_index.* = next_room;
             enterRoomFromRight(player, room_index.*);
-            fitPlayerAfterRoomEntry(player, room_index.*);
-            settlePlayerOnFloorAfterSideEntry(player, room_index.*);
+            fitOrSnapPlayerAfterSideRoomEntry(player, room_index.*, source_floor_world_y);
             respawn.* = rooms[room_index.*].spawn_right;
             startRoomTransitionCooldown(player);
             return true;
@@ -1486,77 +1500,66 @@ fn updateHair(player: *Player) void {
     const anchor = hairAnchorWorld(player.*);
     const dir = anchor.dir;
     const falling_hair = player.animation == .fall;
+    const climb_hair = player.animation == .climb or player.animation == .dangling or player.animation == .climb_pull or player.animation == .wallslide;
+    const root = hairRootTailAnchorWorld(anchor, player.animation);
+    const root_x = root.x;
+    const root_y = root.y;
     if (!player.hair_initialized) {
         var index: usize = 0;
         while (index < hair_node_count) : (index += 1) {
             player.hair_nodes[index] = .{
-                .x = anchor.x,
-                .y = anchor.y,
+                .x = root_x + @as(i32, dir) * @as(i32, @intCast(index + 1)) * fixed_one * 2,
+                .y = root_y + @as(i32, @intCast(index)) * (fixed_one / 2),
             };
         }
         player.hair_initialized = true;
     }
 
-    var target_x = anchor.x + (@as(i32, dir) << fixed_shift);
-    var target_y = if (falling_hair) anchor.y else anchor.y - fixed_one;
+    const speed_x = absI32(player.vx);
+    const speed_y = absI32(player.vy);
+    const lateral_push = fixed_one / 4 + @divTrunc(minI32(speed_x, fixed_one + fixed_one / 2), 7);
+    const vertical_push: i32 = if (falling_hair)
+        -(fixed_one / 2 + @divTrunc(minI32(speed_y, fixed_one * 3), 5))
+    else if (player.animation == .jump)
+        fixed_one / 8
+    else if (climb_hair)
+        fixed_one / 3
+    else
+        fixed_one / 2;
+    const desired_dist: i32 = if (climb_hair) fixed_one * 2 else fixed_one + fixed_one / 2;
+
+    var prev_x = root_x;
+    var prev_y = root_y;
     var index: usize = 0;
     while (index < hair_node_count) : (index += 1) {
-        const spacing_x: i32 = if (falling_hair)
-            switch (index) {
-                0 => 0,
-                1 => 0,
-                else => @as(i32, -dir),
-            }
-        else if (index == 0)
-            @as(i32, dir)
-        else
-            0;
-        target_x += spacing_x << fixed_shift;
-        const spacing_y: i32 = if (falling_hair)
-            switch (index) {
-                0 => -2,
-                1 => -2,
-                else => -1,
-            }
-        else switch (index) {
-            0 => 1,
-            1 => 2,
-            else => 2,
-        };
-        target_y += spacing_y << fixed_shift;
-        if (index == 0) {
-            player.hair_nodes[index].x = target_x;
-            player.hair_nodes[index].y = target_y;
-        } else {
-            player.hair_nodes[index].x += @divTrunc(target_x - player.hair_nodes[index].x, 2);
-            const y_ease: i32 = if (falling_hair) 2 else 4;
-            player.hair_nodes[index].y += @divTrunc(target_y - player.hair_nodes[index].y, y_ease);
-        }
-        target_x = player.hair_nodes[index].x;
-        target_y = player.hair_nodes[index].y;
+        const segment_push = @as(i32, @intCast(hair_node_count - index));
+        player.hair_nodes[index].x += @as(i32, dir) * @divTrunc(lateral_push * segment_push, @as(i32, hair_node_count));
+        player.hair_nodes[index].y += vertical_push - @as(i32, @intCast(index)) * (fixed_one / 12);
+
+        constrainHairNode(&player.hair_nodes[index], prev_x, prev_y, desired_dist);
+        prev_x = player.hair_nodes[index].x;
+        prev_y = player.hair_nodes[index].y;
     }
 }
 
 fn drawHair(player: Player, camera: Camera) void {
     const anchor = hairAnchorWorld(player);
-    const dir = anchor.dir;
     const falling_hair = player.animation == .fall;
-    const sprite_offset_x: i16 = if (anchor.dir > 0) -4 else -12;
-    const sprite_x = fixedToPixel(anchor.x) - camera.x + sprite_offset_x;
-    const sprite_offset_y: i16 = if (falling_hair) 9 else 5;
-    const sprite_y = fixedToPixel(anchor.y) - camera.y - sprite_offset_y;
+    const climb_hair = player.animation == .climb or player.animation == .dangling or player.animation == .climb_pull or player.animation == .wallslide;
+    const root = hairRootTailAnchorWorld(anchor, player.animation);
+    const sprite_x = fixedToPixel(root.x) - camera.x - 8;
+    const sprite_offset_y: i16 = if (falling_hair) 11 else 9;
+    const sprite_y = fixedToPixel(root.y) - camera.y - sprite_offset_y;
     clearHairPixels();
 
     var index: usize = 0;
-    var prev_x = anchor.x + (@as(i32, dir) << fixed_shift);
-    const prev_y_offset: i32 = if (falling_hair) fixed_one * 2 else fixed_one * 2;
-    var prev_y = anchor.y - prev_y_offset;
+    var prev_x = root.x;
+    var prev_y = root.y;
     drawHairMaskBlobWorld(prev_x, prev_y, sprite_x + camera.x, sprite_y + camera.y, 1);
     while (index < hair_node_count) : (index += 1) {
-        const size: u8 = if (falling_hair and index == 1) 2 else if (!falling_hair and index == 1) 2 else 1;
-        const node_x_offset_shift: u5 = if (falling_hair) fixed_shift + 1 else fixed_shift + 1;
-        const node_x = player.hair_nodes[index].x + (@as(i32, dir) << node_x_offset_shift);
-        const node_y = if (falling_hair) player.hair_nodes[index].y else player.hair_nodes[index].y - fixed_one;
+        const size: u8 = if ((falling_hair or climb_hair) and index == 1) 2 else 1;
+        const node_x = player.hair_nodes[index].x;
+        const node_y = player.hair_nodes[index].y;
         drawHairMaskStrokeWorld(prev_x, prev_y, node_x, node_y, sprite_x + camera.x, sprite_y + camera.y, size);
         prev_x = node_x;
         prev_y = node_y;
@@ -1575,22 +1578,59 @@ fn drawHair(player: Player, camera: Camera) void {
     drawHairRoot(anchor, camera);
 }
 
+fn constrainHairNode(node: *HairNode, prev_x: i32, prev_y: i32, desired_dist: i32) void {
+    const diff_x = node.x - prev_x;
+    const diff_y = node.y - prev_y;
+    const dist_sq = @as(i64, diff_x) * diff_x + @as(i64, diff_y) * diff_y;
+    if (dist_sq == 0) {
+        node.y = prev_y + desired_dist;
+        return;
+    }
+    const dist: i32 = @intCast(sqrtU64(@intCast(dist_sq)));
+    if (dist <= desired_dist) return;
+
+    node.x = prev_x + @as(i32, @intCast(@divTrunc(@as(i64, diff_x) * desired_dist, dist)));
+    node.y = prev_y + @as(i32, @intCast(@divTrunc(@as(i64, diff_y) * desired_dist, dist)));
+}
+
 fn drawHairRoot(anchor: HairAnchor, camera: Camera) void {
-    const anchor_x = fixedToPixel(anchor.x) - camera.x;
-    const anchor_y = fixedToPixel(anchor.y) - camera.y;
-    const flip_x = anchor.dir > 0;
-    const root_offset_x: i16 = if (flip_x) -4 else -3;
-    const root_x = anchor_x + root_offset_x;
-    const root_y = anchor_y - 7;
+    const root = hairRootRect(anchor);
     gba.display.objects[hair_root_object] = gba.display.Object.init(.{
         .size = .size_8x8,
-        .x = objX(root_x),
-        .y = objY(root_y),
+        .x = objX(root.x - camera.x),
+        .y = objY(root.y - camera.y),
         .base_tile = hair_root_base_tile,
         .priority = 0,
         .palette = hair_palette_bank,
-        .flip = gba.math.Vec2B.init(flip_x, false),
+        .flip = gba.math.Vec2B.init(root.flip_x, false),
     });
+}
+
+fn hairRootRect(anchor: HairAnchor) HairRootRect {
+    const anchor_x = fixedToPixel(anchor.x);
+    const anchor_y = fixedToPixel(anchor.y);
+    const flip_x = anchor.dir > 0;
+    const root_offset_x: i16 = if (flip_x) -4 else -3;
+    return .{
+        .x = anchor_x + root_offset_x,
+        .y = anchor_y - 7,
+        .flip_x = flip_x,
+    };
+}
+
+fn hairRootTailAnchorWorld(anchor: HairAnchor, animation: PlayerAnimation) HairNode {
+    const root = hairRootRect(anchor);
+    const tail_offset_x: i16 = if (anchor.dir > 0) 7 else 0;
+    const tail_x: i16 = root.x + tail_offset_x;
+    const tail_offset_y: i16 = switch (animation) {
+        .idle, .jump, .fall, .wallslide, .climb, .dangling, .climb_pull => 5,
+        .run => 6,
+    };
+    const tail_y: i16 = root.y + tail_offset_y;
+    return .{
+        .x = pixelToFixed(tail_x),
+        .y = pixelToFixed(tail_y),
+    };
 }
 
 fn hairAnchorWorld(player: Player) HairAnchor {
@@ -2009,6 +2049,8 @@ fn drawForegroundStampObjects(camera: Camera) void {
         const stamp = foreground_stamps[source_index];
         if (!stamp.active) continue;
 
+        if (stamp.kind > 1) continue;
+
         const occludes = (stamp.flags & 4) != 0;
         const object_index = if (occludes)
             foreground_occluding_stamp_first_object + occluding_index
@@ -2020,8 +2062,6 @@ fn drawForegroundStampObjects(camera: Camera) void {
             behind_index += 1;
         }
         if (occluding_index > max_foreground_stamps or behind_index > max_foreground_stamps) continue;
-
-        if (stamp.kind > 1) continue;
 
         const frame = foregroundStampFrame();
         const flip_x = (stamp.flags & 1) != 0;
@@ -2146,12 +2186,12 @@ fn spawnPlayerAt(spawn: Spawn) Player {
 
 fn enterRoomFromLeft(player: *Player) void {
     player.x = pixelToFixed(1);
-    resetPlayerMotionForRoomEntry(player);
+    resetPlayerStateForSideRoomEntry(player);
 }
 
 fn enterRoomFromRight(player: *Player, room_index: usize) void {
     player.x = pixelToFixed(rooms[room_index].width_pixels - player_body_width - 1);
-    resetPlayerMotionForRoomEntry(player);
+    resetPlayerStateForSideRoomEntry(player);
 }
 
 fn enterRoomFromTop(player: *Player) void {
@@ -2174,6 +2214,10 @@ fn alignPlayerBetweenRooms(player: *Player, from_room: usize, to_room: usize) vo
 fn resetPlayerMotionForRoomEntry(player: *Player) void {
     player.vx = 0;
     player.vy = 0;
+    resetPlayerStateForSideRoomEntry(player);
+}
+
+fn resetPlayerStateForSideRoomEntry(player: *Player) void {
     player.grounded = false;
     player.dust_suppress_timer = 2;
     player.climbing = false;
@@ -2185,12 +2229,12 @@ fn fitPlayerAfterRoomEntry(player: *Player, room_index: usize) void {
     const room = rooms[room_index];
     const clamped_y = clampI16(fixedToPixel(player.y), -player_body_height + 1, room.height_pixels - player_body_height - 1);
     player.y = pixelToFixed(clamped_y);
-    if (!collidesAt(fixedToPixel(player.x), fixedToPixel(player.y), room_index)) return;
+    if (!roomEntryCollidesAt(fixedToPixel(player.x), fixedToPixel(player.y), room_index)) return;
 
     var offset: i16 = 1;
     while (offset <= 64) : (offset += 1) {
         const up_y = clamped_y - offset;
-        if (up_y >= -player_body_height + 1 and !collidesAt(fixedToPixel(player.x), up_y, room_index)) {
+        if (up_y >= -player_body_height + 1 and !roomEntryCollidesAt(fixedToPixel(player.x), up_y, room_index)) {
             player.y = pixelToFixed(up_y);
             player.vy = 0;
             player.grounded = false;
@@ -2198,7 +2242,7 @@ fn fitPlayerAfterRoomEntry(player: *Player, room_index: usize) void {
         }
 
         const down_y = clamped_y + offset;
-        if (down_y <= room.height_pixels - player_body_height - 1 and !collidesAt(fixedToPixel(player.x), down_y, room_index)) {
+        if (down_y <= room.height_pixels - player_body_height - 1 and !roomEntryCollidesAt(fixedToPixel(player.x), down_y, room_index)) {
             player.y = pixelToFixed(down_y);
             player.vy = 0;
             player.grounded = false;
@@ -2207,24 +2251,69 @@ fn fitPlayerAfterRoomEntry(player: *Player, room_index: usize) void {
     }
 }
 
-fn settlePlayerOnFloorAfterSideEntry(player: *Player, room_index: usize) void {
-    if (collidesAt(fixedToPixel(player.x), fixedToPixel(player.y), room_index)) return;
-
+fn sideTransitionSourceFloorWorldY(player: Player, room_index: usize) ?i16 {
     const room = rooms[room_index];
-    const x = fixedToPixel(player.x);
+    const x = clampI16(fixedToPixel(player.x), 1, room.width_pixels - player_body_width - 1);
     const start_y = fixedToPixel(player.y);
+    var best_y: i16 = 0;
+    var best_distance: i16 = 32767;
+
     var offset: i16 = 0;
-    while (offset <= 12) : (offset += 1) {
-        const y = start_y + offset;
-        if (y > room.height_pixels - player_body_height - 1) break;
-        if (collidesAt(x, y, room_index)) break;
-        if (floorContactAt(x, y, room_index)) {
-            player.y = pixelToFixed(y);
-            player.vy = 0;
-            player.grounded = true;
-            return;
+    while (offset <= 32) : (offset += 1) {
+        if (sideTransitionFloorCandidate(x, start_y - offset, room_index)) |candidate_y| {
+            best_y = candidate_y;
+            best_distance = offset;
+            break;
+        }
+        if (offset != 0) {
+            if (sideTransitionFloorCandidate(x, start_y + offset, room_index)) |candidate_y| {
+                best_y = candidate_y;
+                best_distance = offset;
+                break;
+            }
         }
     }
+
+    if (best_distance == 32767) return null;
+    return best_y + room.world_y;
+}
+
+fn fitOrSnapPlayerAfterSideRoomEntry(player: *Player, room_index: usize, source_floor_world_y: ?i16) void {
+    if (source_floor_world_y) |floor_world_y| {
+        if (snapPlayerToMatchingWorldFloorAfterSideEntry(player, room_index, floor_world_y)) return;
+    }
+    fitPlayerAfterRoomEntry(player, room_index);
+}
+
+fn snapPlayerToMatchingWorldFloorAfterSideEntry(player: *Player, room_index: usize, source_floor_world_y: i16) bool {
+    const room = rooms[room_index];
+    const x = fixedToPixel(player.x);
+    var best_y: i16 = 0;
+    var best_distance: i16 = 32767;
+
+    var y: i16 = -player_body_height + 1;
+    while (y <= room.height_pixels - player_body_height - 1) : (y += 1) {
+        if (sideTransitionFloorCandidate(x, y, room_index)) |candidate_y| {
+            const candidate_world_y = candidate_y + room.world_y;
+            const distance = absI16(candidate_world_y - source_floor_world_y);
+            if (distance < best_distance) {
+                best_distance = distance;
+                best_y = candidate_y;
+            }
+        }
+    }
+
+    if (best_distance == 32767 or best_distance > 24) return false;
+    player.y = pixelToFixed(best_y);
+    player.vy = 0;
+    player.grounded = true;
+    return true;
+}
+
+fn sideTransitionFloorCandidate(x: i16, y: i16, room_index: usize) ?i16 {
+    if (roomEntryCollidesAt(x, y, room_index)) return null;
+    if (!roomEntryFloorContactAt(x, y, room_index)) return null;
+    return y;
 }
 
 fn clampPlayerToRoom(player: *Player, room_index: usize) void {
@@ -2337,6 +2426,14 @@ fn tryResolvePlayerEmbeddingAt(player: *Player, room_index: usize, x: i16, y: i1
 fn collidesAt(x: i16, y: i16, room_index: usize) bool {
     return solidRectAt(x, y, player_body_width, player_body_height, room_index) or
         dynamicSolidRectAt(x, y, player_body_width, player_body_height);
+}
+
+fn roomEntryCollidesAt(x: i16, y: i16, room_index: usize) bool {
+    return solidRectAt(x, y, player_body_width, player_body_height, room_index);
+}
+
+fn roomEntryFloorContactAt(x: i16, y: i16, room_index: usize) bool {
+    return roomEntryCollidesAt(x, y + 1, room_index) or oneWayFloorAt(x, y, room_index);
 }
 
 fn solidAtPixel(x: i16, y: i16, room_index: usize) bool {
@@ -2469,6 +2566,10 @@ fn absI32(value: i32) i32 {
     return if (value < 0) -value else value;
 }
 
+fn minI32(a: i32, b: i32) i32 {
+    return if (a < b) a else b;
+}
+
 fn absI16(value: i16) i16 {
     return if (value < 0) -value else value;
 }
@@ -2481,6 +2582,22 @@ fn signI32(value: i32) i16 {
     if (value < 0) return -1;
     if (value > 0) return 1;
     return 0;
+}
+
+fn sqrtU64(value: u64) u64 {
+    var result: u64 = 0;
+    var bit: u64 = 1 << 62;
+    while (bit > value) : (bit >>= 2) {}
+    var remainder = value;
+    while (bit != 0) : (bit >>= 2) {
+        if (remainder >= result + bit) {
+            remainder -= result + bit;
+            result = (result >> 1) + bit;
+        } else {
+            result >>= 1;
+        }
+    }
+    return result;
 }
 
 fn clampI16(value: i16, min_value: i16, max_value: i16) i16 {

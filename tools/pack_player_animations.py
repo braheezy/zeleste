@@ -12,7 +12,6 @@ from pathlib import Path
 
 from split_foreground_tileset import Image, read_png_rgba, write_png_rgba
 
-
 FRAME_RE = re.compile(r"^f(\d+)\.png$")
 
 
@@ -35,8 +34,10 @@ def animation_dirs(root: Path, names: list[str] | None) -> list[Path]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input", type=Path, default=Path("assets/Animations/player"))
-    parser.add_argument("--output-dir", type=Path, default=Path("assets/generated/player_animations"))
+    parser.add_argument("--input", type=Path, default=Path("assets/animations/player"))
+    parser.add_argument(
+        "--output-dir", type=Path, default=Path("assets/generated/player_animations")
+    )
     parser.add_argument("--animations", nargs="*", default=None)
     parser.add_argument("--columns", type=int, default=16)
     parser.add_argument("--cell-width", type=int, default=None)
@@ -82,7 +83,9 @@ def main() -> int:
     cell_width = align_up(args.cell_width or max_width, 8)
     cell_height = align_up(args.cell_height or max_height, 8)
     if cell_width < max_width or cell_height < max_height:
-        raise ValueError(f"cell {cell_width}x{cell_height} is smaller than largest frame {max_width}x{max_height}")
+        raise ValueError(
+            f"cell {cell_width}x{cell_height} is smaller than largest frame {max_width}x{max_height}"
+        )
 
     columns = max(1, args.columns)
     rows = math.ceil(len(frames) / columns)
@@ -143,8 +146,13 @@ def main() -> int:
     }
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    write_png_rgba(args.output_dir / "player_animations.png", Image(atlas_width, atlas_height, bytes(atlas_pixels)))
-    (args.output_dir / "player_animations.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    write_png_rgba(
+        args.output_dir / "player_animations.png",
+        Image(atlas_width, atlas_height, bytes(atlas_pixels)),
+    )
+    (args.output_dir / "player_animations.json").write_text(
+        json.dumps(manifest, indent=2) + "\n"
+    )
 
     report = [
         f"animations: {len(animations)}",

@@ -1,10 +1,11 @@
-generated
-src/generated
+assets/generated/
+src/generated/
 src/generated_rooms.zig
 __pycache__
 raw
 *.zip
 foreground-tilesets.png
-assets/source
+assets/source/
 berrycamp.github.io-dev
-assets/Animations
+audio/
+raw_source

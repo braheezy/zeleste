@@ -14,7 +14,6 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from split_foreground_tileset import Image, read_png_rgba, write_png_rgba
 
-
 FRAME_RE = re.compile(r"^(\d+)\.png$")
 
 
@@ -35,7 +34,9 @@ class GrassFrameHandler(SimpleHTTPRequestHandler):
             return
         if parsed.path == "/api/grass/frame":
             query = parse_qs(parsed.query)
-            self.send_frame(query.get("set", [""])[0], int(query.get("frame", ["1"])[0]))
+            self.send_frame(
+                query.get("set", [""])[0], int(query.get("frame", ["1"])[0])
+            )
             return
         super().do_GET()
 
@@ -46,14 +47,19 @@ class GrassFrameHandler(SimpleHTTPRequestHandler):
         self.send_error(404)
 
     def grass_sets(self) -> list[dict]:
-        root = self.repo_root / "assets" / "Animations" / "foreground"
+        root = self.repo_root / "assets" / "generated" / "foreground"
         sets = []
         if not root.exists():
             return sets
         for directory in sorted(path for path in root.iterdir() if path.is_dir()):
-            if not directory.name.endswith("_generated") and not directory.name.endswith("_generated_mirror"):
+            if not directory.name.endswith(
+                "_generated"
+            ) and not directory.name.endswith("_generated_mirror"):
                 continue
-            frames = sorted((path for path in directory.glob("*.png") if FRAME_RE.match(path.name)), key=frame_sort_key)
+            frames = sorted(
+                (path for path in directory.glob("*.png") if FRAME_RE.match(path.name)),
+                key=frame_sort_key,
+            )
             if not frames:
                 continue
             metadata = self.read_metadata(directory)
@@ -69,7 +75,9 @@ class GrassFrameHandler(SimpleHTTPRequestHandler):
                     "preset": metadata.get("preset"),
                     "positions": metadata.get("positions"),
                     "source": metadata.get("source"),
-                    "frames": [str(path.relative_to(self.repo_root)) for path in frames],
+                    "frames": [
+                        str(path.relative_to(self.repo_root)) for path in frames
+                    ],
                 }
             )
         return sets
@@ -110,7 +118,9 @@ class GrassFrameHandler(SimpleHTTPRequestHandler):
             if not frame_path.exists():
                 raise ValueError("frame does not exist")
             write_png_rgba(frame_path, Image(width, height, pixels))
-            self.send_json(200, {"ok": True, "path": str(frame_path.relative_to(self.repo_root))})
+            self.send_json(
+                200, {"ok": True, "path": str(frame_path.relative_to(self.repo_root))}
+            )
         except Exception as exc:
             self.send_json(400, {"ok": False, "error": str(exc)})
 
@@ -120,10 +130,12 @@ class GrassFrameHandler(SimpleHTTPRequestHandler):
         if relative.is_absolute() or ".." in relative.parts:
             raise ValueError("path must stay inside the project")
         full = self.repo_root / relative
-        root = self.repo_root / "assets" / "Animations" / "foreground"
+        root = self.repo_root / "assets" / "generated" / "foreground"
         if not full.is_dir() or root not in full.parents:
-            raise ValueError("set must be under assets/Animations/foreground")
-        if not full.name.endswith("_generated") and not full.name.endswith("_generated_mirror"):
+            raise ValueError("set must be under assets/generated/foreground")
+        if not full.name.endswith("_generated") and not full.name.endswith(
+            "_generated_mirror"
+        ):
             raise ValueError("set must be a generated grass directory")
         return full
 

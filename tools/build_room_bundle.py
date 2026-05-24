@@ -43,10 +43,15 @@ def nearest_to_edge(points: list[dict], width: int, height: int, edge: str) -> d
 
 def foreground_stamp_metadata(stamp_id: str) -> dict:
     repo_root = Path(__file__).resolve().parents[1]
-    path = repo_root / "assets" / "Animations" / "foreground" / f"{stamp_id}_generated" / "sway.json"
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text())
+    candidates = [
+        repo_root / "assets" / "generated" / "foreground" / f"{stamp_id}_generated" / "sway.json",
+        repo_root / "assets" / "animations" / "foreground" / f"{stamp_id}_generated" / "sway.json",
+        repo_root / "assets" / "Animations" / "foreground" / f"{stamp_id}_generated" / "sway.json",
+    ]
+    for path in candidates:
+        if path.exists():
+            return json.loads(path.read_text())
+    return {}
 
 
 def build_collision(annotations_json: Path, output_dir: Path) -> None:
