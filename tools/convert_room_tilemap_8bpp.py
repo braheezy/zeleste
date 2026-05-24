@@ -16,9 +16,9 @@ from split_foreground_tileset import Image, write_png_rgba  # noqa: E402
 
 
 MAX_COLORS = 256
-# BG0 uses screenblock 28 for a 64x32 map. In 8bpp each tile is 64 bytes,
-# so tile data must stay below screenblock 28 to avoid overwriting the map.
-MAX_TILES = 896
+# BG0 uses screenblock 29 for a 64x32 map. In 8bpp each tile is 64 bytes,
+# so tile data must stay below screenblock 29 to avoid overwriting the map.
+MAX_TILES = 928
 
 
 def gba_rgb555(color: tuple[int, int, int, int]) -> int:
@@ -99,12 +99,12 @@ def reconstruct_pixels(
     palette: list[tuple[int, int, int, int]],
     width: int,
     height: int,
-    map_width_tiles: int,
+    source_width_tiles: int,
 ) -> bytes:
     out = bytearray(width * height * 4)
     for tile_y in range(height // 8):
         for tile_x in range(width // 8):
-            entry = tilemap[normal_map_index(tile_x, tile_y, map_width_tiles)]
+            entry = tilemap[tile_y * source_width_tiles + tile_x]
             tile_index = entry & 0x03FF
             flip_x = (entry & 0x0400) != 0
             flip_y = (entry & 0x0800) != 0
@@ -146,11 +146,7 @@ def main() -> int:
 
     source_width_tiles = image.width // 8
     source_height_tiles = image.height // 8
-    if source_width_tiles > 64 or source_height_tiles > 64:
-        raise ValueError("normal BG map is too large")
-    map_width_tiles = 32 if source_width_tiles <= 32 else 64
-    map_height_tiles = 32 if source_height_tiles <= 32 else 64
-    tilemap = [0] * (map_width_tiles * map_height_tiles)
+    tilemap = [0] * (source_width_tiles * source_height_tiles)
     tiles: list[bytes] = []
     approximated_tiles = 0
 
@@ -177,7 +173,7 @@ def main() -> int:
                         f"try lowering --rgb-bits or splitting/streaming the room"
                     )
             index, flip_x, flip_y = match
-            tilemap[normal_map_index(tile_x, tile_y, map_width_tiles)] = screen_entry(index, flip_x, flip_y)
+            tilemap[tile_y * source_width_tiles + tile_x] = screen_entry(index, flip_x, flip_y)
 
     args.tiles_output.parent.mkdir(parents=True, exist_ok=True)
     args.map_output.parent.mkdir(parents=True, exist_ok=True)
@@ -187,7 +183,7 @@ def main() -> int:
     palette = colors + [(0, 0, 0, 255)] * (MAX_COLORS - len(colors))
     args.palette_output.write_bytes(b"".join(struct.pack("<H", gba_rgb555(color)) for color in palette))
 
-    reconstructed = reconstruct_pixels(tiles, tilemap, palette, image.width, image.height, map_width_tiles)
+    reconstructed = reconstruct_pixels(tiles, tilemap, palette, image.width, image.height, source_width_tiles)
     expected = bytearray()
     for color in pixels:
         expected.extend(color)
@@ -214,8 +210,9 @@ def main() -> int:
             "sourceHeight": image.height,
             "sourceWidthTiles": source_width_tiles,
             "sourceHeightTiles": source_height_tiles,
-            "mapWidthTiles": map_width_tiles,
-            "mapHeightTiles": map_height_tiles,
+            "mapWidthTiles": source_width_tiles,
+            "mapHeightTiles": source_height_tiles,
+            "mapLayout": "linear-logical",
             "tileCount": len(tiles),
             "colorCount": len(colors),
             "rgbBits": args.rgb_bits,
@@ -228,7 +225,7 @@ def main() -> int:
 
     print(
         f"wrote 8bpp tilemap: {len(tiles)} tiles, {len(colors)} colors, "
-        f"{map_width_tiles}x{map_height_tiles} map"
+        f"{source_width_tiles}x{source_height_tiles} logical map"
         + (f", approximated {approximated_tiles} overflow tiles" if approximated_tiles else "")
     )
     return 0

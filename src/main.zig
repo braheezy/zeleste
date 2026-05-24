@@ -21,7 +21,9 @@ const grass2_palette_data align(4) = @embedFile("generated/assets/foreground/gra
 const grass2_mirror_tiles_data align(4) = @embedFile("generated/assets/foreground/grass2_mirror_tiles.bin").*;
 const grass2_mirror_palette_data align(4) = @embedFile("generated/assets/foreground/grass2_mirror_palette.bin").*;
 
-const bg_screenblock: u5 = 28;
+const bg_screenblock: u5 = 29;
+const bg_hardware_width_tiles: usize = 64;
+const bg_hardware_height_tiles: usize = 32;
 const screen_width = 240;
 const screen_height = 160;
 
@@ -150,6 +152,8 @@ pub const RoomBackground = struct {
     height_tiles: usize,
     width_pixels: i16,
     height_pixels: i16,
+    world_x: i16 = 0,
+    world_y: i16 = 0,
     tiles: []align(4) const u8,
     map: []align(4) const u8,
     palette: []align(4) const u8,
@@ -278,6 +282,9 @@ var foreground_stamps: [max_foreground_stamps]ForegroundStamp = [_]ForegroundSta
 var foreground_stamp_count: usize = 0;
 var foreground_anim_counter: u16 = 0;
 var current_room_index: usize = 0;
+var bg_stream_room_index: usize = rooms.len;
+var bg_stream_tile_x: i16 = -32768;
+var bg_stream_tile_y: i16 = -32768;
 var rng_state: u16 = 0xACE1;
 var dust_particles: [max_dust_particles]DustParticle = [_]DustParticle{.{}} ** max_dust_particles;
 
@@ -447,10 +454,10 @@ pub export fn main() void {
 
 fn loadRoomBackground(room_index: usize) void {
     current_room_index = room_index;
+    bg_stream_room_index = rooms.len;
     const room = rooms[room_index];
     gba.mem.memcpy(gba.display.bg_palette, room.palette.ptr, room.palette.len);
     gba.display.memcpyBackgroundTiles8Bpp(0, @ptrCast(room.tiles));
-    gba.mem.memcpy16(&gba.display.screenblocks[bg_screenblock], @ptrCast(room.map.ptr), room.map.len / 2);
 }
 
 fn loadFallingBlocks(room_index: usize) void {
@@ -1218,7 +1225,7 @@ fn trySwitchRoom(player: *Player, input: gba.input.BufferedKeysState, room_index
     const player_y = fixedToPixel(player.y);
     if (input.isPressed(.right) and player_x >= room.width_pixels - player_body_width) {
         if (room.right) |next_room| {
-            alignPlayerYBetweenRooms(player, room_index.*, next_room);
+            alignPlayerBetweenRooms(player, room_index.*, next_room);
             room_index.* = next_room;
             enterRoomFromLeft(player);
             fitPlayerAfterRoomEntry(player, room_index.*);
@@ -1230,7 +1237,7 @@ fn trySwitchRoom(player: *Player, input: gba.input.BufferedKeysState, room_index
     }
     if (input.isPressed(.left) and player_x <= 0) {
         if (room.left) |next_room| {
-            alignPlayerYBetweenRooms(player, room_index.*, next_room);
+            alignPlayerBetweenRooms(player, room_index.*, next_room);
             room_index.* = next_room;
             enterRoomFromRight(player, room_index.*);
             fitPlayerAfterRoomEntry(player, room_index.*);
@@ -1294,7 +1301,111 @@ fn updateCamera(player: Player, room_index: usize) Camera {
 }
 
 fn applyCamera(camera: Camera) void {
+    streamRoomBackground(current_room_index, camera);
     gba.display.bg_scroll[0] = .init(@intCast(camera.x), @intCast(camera.y));
+}
+
+fn streamRoomBackground(room_index: usize, camera: Camera) void {
+    const tile_x = @divTrunc(camera.x, 8);
+    const tile_y = @divTrunc(camera.y, 8);
+    if (bg_stream_room_index != room_index) {
+        streamRoomBackgroundFull(room_index, tile_x, tile_y);
+        return;
+    }
+
+    const delta_x = tile_x - bg_stream_tile_x;
+    const delta_y = tile_y - bg_stream_tile_y;
+    if (delta_x == 0 and delta_y == 0) return;
+
+    if (delta_x < -1 or delta_x > 1 or delta_y < -1 or delta_y > 1) {
+        streamRoomBackgroundFull(room_index, tile_x, tile_y);
+        return;
+    }
+
+    if (delta_x > 0) {
+        streamRoomBackgroundColumn(room_index, tile_x + @as(i16, @intCast(bg_hardware_width_tiles - 1)), tile_y);
+    } else if (delta_x < 0) {
+        streamRoomBackgroundColumn(room_index, tile_x, tile_y);
+    }
+
+    if (delta_y > 0) {
+        streamRoomBackgroundRow(room_index, tile_x, tile_y + @as(i16, @intCast(bg_hardware_height_tiles - 1)));
+    } else if (delta_y < 0) {
+        streamRoomBackgroundRow(room_index, tile_x, tile_y);
+    }
+
+    bg_stream_tile_x = tile_x;
+    bg_stream_tile_y = tile_y;
+}
+
+fn streamRoomBackgroundFull(room_index: usize, source_tile_x: i16, source_tile_y: i16) void {
+    const room = rooms[room_index];
+    const entries: [*]volatile gba.display.Screenblock.Entry = @ptrCast(&gba.display.screenblocks[bg_screenblock].entries);
+
+    var dest_y: usize = 0;
+    while (dest_y < bg_hardware_height_tiles) : (dest_y += 1) {
+        const src_y = source_tile_y + @as(i16, @intCast(dest_y));
+        var dest_x: usize = 0;
+        while (dest_x < bg_hardware_width_tiles) : (dest_x += 1) {
+            const src_x = source_tile_x + @as(i16, @intCast(dest_x));
+            const raw_entry = logicalRoomMapEntry(room, src_x, src_y);
+            const hardware_x = wrapTileIndex(src_x, bg_hardware_width_tiles);
+            const hardware_y = wrapTileIndex(src_y, bg_hardware_height_tiles);
+            entries[normalBgMapIndex(hardware_x, hardware_y, bg_hardware_width_tiles)] = @bitCast(raw_entry);
+        }
+    }
+    bg_stream_room_index = room_index;
+    bg_stream_tile_x = source_tile_x;
+    bg_stream_tile_y = source_tile_y;
+}
+
+fn streamRoomBackgroundColumn(room_index: usize, src_x: i16, source_tile_y: i16) void {
+    const room = rooms[room_index];
+    const entries: [*]volatile gba.display.Screenblock.Entry = @ptrCast(&gba.display.screenblocks[bg_screenblock].entries);
+    const hardware_x = wrapTileIndex(src_x, bg_hardware_width_tiles);
+    var offset_y: usize = 0;
+    while (offset_y < bg_hardware_height_tiles) : (offset_y += 1) {
+        const src_y = source_tile_y + @as(i16, @intCast(offset_y));
+        const hardware_y = wrapTileIndex(src_y, bg_hardware_height_tiles);
+        const raw_entry = logicalRoomMapEntry(room, src_x, src_y);
+        entries[normalBgMapIndex(hardware_x, hardware_y, bg_hardware_width_tiles)] = @bitCast(raw_entry);
+    }
+}
+
+fn streamRoomBackgroundRow(room_index: usize, source_tile_x: i16, src_y: i16) void {
+    const room = rooms[room_index];
+    const entries: [*]volatile gba.display.Screenblock.Entry = @ptrCast(&gba.display.screenblocks[bg_screenblock].entries);
+    const hardware_y = wrapTileIndex(src_y, bg_hardware_height_tiles);
+    var offset_x: usize = 0;
+    while (offset_x < bg_hardware_width_tiles) : (offset_x += 1) {
+        const src_x = source_tile_x + @as(i16, @intCast(offset_x));
+        const hardware_x = wrapTileIndex(src_x, bg_hardware_width_tiles);
+        const raw_entry = logicalRoomMapEntry(room, src_x, src_y);
+        entries[normalBgMapIndex(hardware_x, hardware_y, bg_hardware_width_tiles)] = @bitCast(raw_entry);
+    }
+}
+
+fn logicalRoomMapEntry(room: RoomBackground, x: i16, y: i16) u16 {
+    if (x < 0 or y < 0) return 0;
+    const ux: usize = @intCast(x);
+    const uy: usize = @intCast(y);
+    if (ux >= room.width_tiles or uy >= room.height_tiles) return 0;
+    const offset = (uy * room.width_tiles + ux) * 2;
+    if (offset + 1 >= room.map.len) return 0;
+    return @as(u16, room.map[offset]) | (@as(u16, room.map[offset + 1]) << 8);
+}
+
+fn normalBgMapIndex(x: usize, y: usize, map_width_tiles: usize) usize {
+    const screenblock_x = x >> 5;
+    const screenblock_y = y >> 5;
+    const screenblock_columns = map_width_tiles >> 5;
+    const screenblock_index = screenblock_x + (screenblock_y * screenblock_columns);
+    return (screenblock_index << 10) + (x & 31) + ((y & 31) << 5);
+}
+
+fn wrapTileIndex(value: i16, comptime modulo: usize) usize {
+    const wrapped = @mod(value, @as(i16, @intCast(modulo)));
+    return @intCast(wrapped);
 }
 
 fn drawPlayer(player: Player, camera: Camera) void {
@@ -2053,10 +2164,11 @@ fn enterRoomFromBottom(player: *Player, room_index: usize) void {
     resetPlayerMotionForRoomEntry(player);
 }
 
-fn alignPlayerYBetweenRooms(player: *Player, from_room: usize, to_room: usize) void {
-    const old_height = rooms[from_room].height_pixels;
-    const new_height = rooms[to_room].height_pixels;
-    player.y += @as(i32, new_height - old_height) << fixed_shift;
+fn alignPlayerBetweenRooms(player: *Player, from_room: usize, to_room: usize) void {
+    const from = rooms[from_room];
+    const to = rooms[to_room];
+    player.x += @as(i32, from.world_x - to.world_x) << fixed_shift;
+    player.y += @as(i32, from.world_y - to.world_y) << fixed_shift;
 }
 
 fn resetPlayerMotionForRoomEntry(player: *Player) void {

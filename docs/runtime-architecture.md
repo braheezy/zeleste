@@ -42,6 +42,7 @@ over stale room art.
 the room graph and per-room binary blobs. Runtime room fields include:
 
 - dimensions and tile counts;
+- authored world origin (`world_x`, `world_y`) for transition alignment;
 - background tiles/map/palette;
 - collision bytes;
 - one-way platform bytes;
@@ -90,6 +91,9 @@ Avoid large movement refactors without focused testing. Fragile areas:
   correct sweep/collision logic.
 - Room side transitions call `settlePlayerOnFloorAfterSideEntry` to avoid
   falling through a connected floor after a screen swap.
+- Side transitions preserve player world-space Y by converting through room
+  `world_y` origins from `room.json`. Use this for vertically staggered rooms
+  like prologue `1 -> 2`; do not special-case individual room IDs in runtime.
 - Respawn points are only for death. Screen transitions preserve continuity.
 
 ## Rendering Layers
@@ -97,7 +101,11 @@ Avoid large movement refactors without focused testing. Fragile areas:
 Background:
 
 - BG0 is the current room tilemap.
-- Room backgrounds are packed as 8bpp tiles/maps.
+- Room backgrounds are packed as 8bpp tiles plus logical maps.
+- `applyCamera` keeps full BG scroll and streams logical map entries into the
+  wrapped 64x32 hardware BG map only when the camera crosses tile boundaries.
+  This supports rooms wider than the hardware map, such as the 992px-wide
+  prologue room `3`, without rewriting the full map every frame.
 
 Objects:
 
@@ -117,6 +125,9 @@ Palettes:
 - Parallax bank 5.
 - Grass banks 6 and 7 for `grass1` and `grass2`.
 
+BG tile graphics must not overlap the BG screenblocks. The current BG map base
+is screenblock 29, leaving room for 928 unique 8bpp BG tiles.
+
 Player tired flashing is palette-based. `drawPlayer` rewrites OBJ palette bank
 0 to either the normal player palette or a red-tinted version.
 
@@ -131,4 +142,3 @@ transitions and deaths. Keep this distinction clear:
   room reloads.
 
 This will eventually need a cleaner session/level state module.
-

@@ -116,6 +116,8 @@ def emit_generated_zig(
                 f"        .height_tiles = {((height + 7) // 8)},",
                 f"        .width_pixels = {width},",
                 f"        .height_pixels = {height},",
+                f"        .world_x = {int(room.get('worldX', 0))},",
+                f"        .world_y = {int(room.get('worldY', 0))},",
                 f"        .tiles = &{room_name}_bg_tiles,",
                 f"        .map = &{room_name}_bg_map,",
                 f"        .palette = &{room_name}_bg_palette,",

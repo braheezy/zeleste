@@ -32,6 +32,8 @@ stamps, and lightweight entities.
 ## Runtime Features Implemented
 
 - BG0 scrolling 8bpp tile background per room.
+- Room backgrounds are generated as logical maps and incrementally streamed
+  into a wrapped 64x32 hardware BG map, so rooms can exceed 512px in width.
 - 4bpp OBJ player sprite from packed Madeline animation PNGs.
 - Runtime procedural hair:
   - bald body animation frames are packed as the player sprite;
@@ -78,6 +80,9 @@ stamps, and lightweight entities.
   full port of Celeste `Player.cs`.
 - Dash is not implemented yet.
 - Debug overlays do not exist yet.
+- BG tile graphics still share VRAM with the hardware BG map; with the current
+  map base at screenblock 29, each room can use up to 928 unique 8bpp tiles
+  before additional tile streaming/compression is needed.
 - `PLAN.md` still describes the intended modular architecture. The prototype
   has not been split into those modules.
 
@@ -122,4 +127,3 @@ Collision and movement are sensitive to operation order. Keep changes small:
 - `../CelesteNES`: demake reference for visual compromise and level structure.
 - `../Celeste-For-GBA`: GBA-specific reference, but do not port its framework.
 - `~/personal/gba/ziggba`: SDK and build helper reference.
-

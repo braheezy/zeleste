@@ -64,7 +64,9 @@ For each room, it calls `tools/build_room_bundle.py`, which:
 - writes a room summary.
 
 Then `build_level_assets.py` writes `src/generated_rooms.zig`, which embeds all
-room output paths and graph metadata.
+room output paths and graph metadata. `worldX` and `worldY` in `room.json`
+become room origins used by side transitions to preserve world-space player
+position across visually staggered rooms.
 
 ## Collision Editor UX
 
@@ -135,7 +137,13 @@ Hair anchor workflow:
 ## Room Art Strategy
 
 Current room PNGs are full captured/reduced room images. The pipeline dedupes
-8x8 tiles for BG0, so a direct full-room tilemap can work for the prototype.
+8x8 tiles for BG0 and writes a logical tilemap in row-major order. Runtime
+incrementally streams that logical map into the wrapped 64x32 GBA BG map
+window, so source rooms can be wider than 512px.
+
+The current BG map starts at screenblock 29, which leaves room for 928 unique
+8bpp BG tiles. If a room exceeds that, lower color/tile variation, clean up the
+source art, or add a true tile-graphics streaming/compression pass.
 
 Interactive or animated foreground elements should be removed from the room PNG
 and represented separately when they need to move, occlude, or collide:
@@ -146,4 +154,3 @@ and represented separately when they need to move, occlude, or collide:
 
 If an object is baked into the background and later moves, it will leave a
 visual hole unless the background has been painted clean behind it.
-
