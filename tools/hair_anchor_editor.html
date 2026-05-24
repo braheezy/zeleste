@@ -144,6 +144,23 @@
 
       <button id="flipDirButton" type="button">Flip Hair Direction</button>
 
+      <label for="editModeSelect">Edit Mode</label>
+      <select id="editModeSelect">
+        <option value="anchor">Anchor</option>
+        <option value="tail">Tail Bias</option>
+      </select>
+
+      <div class="row">
+        <div>
+          <label for="tailXInput">Tail X</label>
+          <input id="tailXInput" type="number" step="1">
+        </div>
+        <div>
+          <label for="tailYInput">Tail Y</label>
+          <input id="tailYInput" type="number" step="1">
+        </div>
+      </div>
+
       <label for="zoomInput">Zoom</label>
       <input id="zoomInput" type="number" min="4" max="16" value="15">
 
@@ -160,7 +177,7 @@
         <div>JSON: <span id="jsonStats">none</span></div>
       </div>
       <div class="hint">
-        Drag the anchor to where root1's lower forward hair pixel should attach to Madeline's head. Arrow keys nudge it. Bracket keys move frames.
+        Drag the anchor to where root1's lower forward hair pixel should attach to Madeline's head. Switch to Tail Bias to nudge the procedural tail start for head-turn frames. Arrow keys nudge the active mode. Bracket keys move frames.
         Press X or use Flip Hair Direction to choose which way the hair trails.
         Use apply-current controls when the same placement works across several frames.
         Save writes <code>hair_anchors.json</code> into the selected animation folder.
@@ -184,6 +201,9 @@
     const xInput = document.getElementById('xInput');
     const yInput = document.getElementById('yInput');
     const flipDirButton = document.getElementById('flipDirButton');
+    const editModeSelect = document.getElementById('editModeSelect');
+    const tailXInput = document.getElementById('tailXInput');
+    const tailYInput = document.getElementById('tailYInput');
     const zoomInput = document.getElementById('zoomInput');
     const resetButton = document.getElementById('resetButton');
     const applyFollowingButton = document.getElementById('applyFollowingButton');
@@ -214,12 +234,13 @@
 
     function emptyAnchorData(animation) {
       return {
-        version: 2,
+        version: 3,
         animation: animation.path,
         frames: animation.frames.map((path, index) => ({
           index,
           source: path,
           anchor: defaultAnchor(),
+          tailBias: defaultTailBias(),
           dir: -1,
         })),
       };
@@ -227,6 +248,10 @@
 
     function defaultAnchor() {
       return { x: 18, y: 19 };
+    }
+
+    function defaultTailBias() {
+      return { x: 0, y: 0 };
     }
 
     async function loadImage(path) {
@@ -284,12 +309,13 @@
     function fillMissingAnchors() {
       for (const frame of anchors.frames) {
         if (!frame.anchor) frame.anchor = defaultAnchor();
+        if (!frame.tailBias) frame.tailBias = defaultTailBias();
         if (frame.dir !== -1 && frame.dir !== 1) frame.dir = -1;
       }
     }
 
     function normalizeAnchorData() {
-      anchors.version = 2;
+      anchors.version = 3;
       delete anchors.parts;
       for (const frame of anchors.frames) {
         if (!frame.anchor && frame.root1) {
@@ -300,6 +326,11 @@
           x: Math.round(frame.anchor.x),
           y: Math.round(frame.anchor.y),
         };
+        if (!frame.tailBias) frame.tailBias = defaultTailBias();
+        frame.tailBias = {
+          x: Math.round(frame.tailBias.x || 0),
+          y: Math.round(frame.tailBias.y || 0),
+        };
         if (frame.dir !== -1 && frame.dir !== 1) frame.dir = -1;
         delete frame.root1;
         delete frame.root2;
@@ -308,12 +339,13 @@
     }
 
     function clonePlacement(frame) {
-      return { anchor: { ...frame.anchor }, dir: frame.dir };
+      return { anchor: { ...frame.anchor }, tailBias: { ...frame.tailBias }, dir: frame.dir };
     }
 
     function applyPlacement(startIndex, endIndex, placement) {
       for (let index = startIndex; index <= endIndex; index += 1) {
         anchors.frames[index].anchor = { ...placement.anchor };
+        anchors.frames[index].tailBias = { ...placement.tailBias };
         anchors.frames[index].dir = placement.dir;
       }
       render();
@@ -347,12 +379,13 @@
         overlayCtx.stroke();
       }
 
-      drawAnchor(currentFrame().anchor);
+      drawAnchor(currentFrame());
       updateInputs();
       frameLabel.textContent = `${frameIndex} / ${frames.length - 1}`;
     }
 
-    function drawAnchor(point) {
+    function drawAnchor(frame) {
+      const point = frame.anchor;
       if (!point) return;
       const z = zoom();
       const x = point.x * z;
@@ -386,13 +419,43 @@
       overlayCtx.lineTo(arrow_x - dir * z * 0.25, y + z * 2.0);
       overlayCtx.closePath();
       overlayCtx.fill();
+
+      const tail = tailPoint(frame);
+      overlayCtx.strokeStyle = '#ff69d2';
+      overlayCtx.fillStyle = editModeSelect.value === 'tail' ? 'rgba(255, 105, 210, 0.45)' : 'rgba(255, 105, 210, 0.22)';
+      overlayCtx.lineWidth = 2;
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(x, y);
+      overlayCtx.lineTo(tail.x * z, tail.y * z);
+      overlayCtx.stroke();
+      overlayCtx.beginPath();
+      overlayCtx.arc(tail.x * z, tail.y * z, Math.max(4, z * 0.33), 0, Math.PI * 2);
+      overlayCtx.fill();
+      overlayCtx.stroke();
     }
 
     function updateInputs() {
-      const point = currentFrame().anchor;
+      const frame = currentFrame();
+      const point = frame.anchor;
       xInput.value = point ? point.x : 0;
       yInput.value = point ? point.y : 0;
-      directionStats.textContent = (currentFrame().dir || -1) < 0 ? 'left' : 'right';
+      tailXInput.value = frame.tailBias ? frame.tailBias.x : 0;
+      tailYInput.value = frame.tailBias ? frame.tailBias.y : 0;
+      directionStats.textContent = (frame.dir || -1) < 0 ? 'left' : 'right';
+    }
+
+    function tailPoint(frame) {
+      const dir = frame.dir || -1;
+      const rootOffsetX = dir > 0 ? -4 : -3;
+      const rootX = frame.anchor.x + rootOffsetX;
+      const rootY = frame.anchor.y - 7;
+      const tailOffsetX = dir > 0 ? 7 : 0;
+      const tailOffsetY = currentAnimation && currentAnimation.name === 'runSlow' ? 6 : 5;
+      const bias = frame.tailBias || defaultTailBias();
+      return {
+        x: rootX + tailOffsetX + bias.x,
+        y: rootY + tailOffsetY + bias.y,
+      };
     }
 
     function setAnchorPosition(x, y) {
@@ -402,6 +465,23 @@
         y: Math.max(-8, Math.min(image.height, Math.round(y))),
       };
       render();
+    }
+
+    function setTailBias(x, y) {
+      currentFrame().tailBias = {
+        x: Math.max(-8, Math.min(8, Math.round(x))),
+        y: Math.max(-8, Math.min(8, Math.round(y))),
+      };
+      render();
+    }
+
+    function setTailPoint(x, y) {
+      const frame = currentFrame();
+      const savedBias = frame.tailBias || defaultTailBias();
+      frame.tailBias = { x: 0, y: 0 };
+      const base = tailPoint(frame);
+      frame.tailBias = savedBias;
+      setTailBias(x - base.x, y - base.y);
     }
 
     function flipDirection() {
@@ -421,7 +501,7 @@
     overlay.addEventListener('pointerdown', (event) => {
       const pixel = pointerToPixel(event);
       draggingAnchor = true;
-      const point = currentFrame().anchor;
+      const point = editModeSelect.value === 'tail' ? tailPoint(currentFrame()) : currentFrame().anchor;
       dragOffset = { x: pixel.x - point.x, y: pixel.y - point.y };
       overlay.setPointerCapture(event.pointerId);
       render();
@@ -430,7 +510,11 @@
     overlay.addEventListener('pointermove', (event) => {
       if (!draggingAnchor) return;
       const pixel = pointerToPixel(event);
-      setAnchorPosition(pixel.x - dragOffset.x, pixel.y - dragOffset.y);
+      if (editModeSelect.value === 'tail') {
+        setTailPoint(pixel.x - dragOffset.x, pixel.y - dragOffset.y);
+      } else {
+        setAnchorPosition(pixel.x - dragOffset.x, pixel.y - dragOffset.y);
+      }
     });
 
     overlay.addEventListener('pointerup', () => {
@@ -448,11 +532,15 @@
     prevButton.addEventListener('click', () => setFrame(frameIndex - 1));
     nextButton.addEventListener('click', () => setFrame(frameIndex + 1));
     zoomInput.addEventListener('change', render);
+    editModeSelect.addEventListener('change', render);
     xInput.addEventListener('change', () => setAnchorPosition(Number(xInput.value), Number(yInput.value)));
     yInput.addEventListener('change', () => setAnchorPosition(Number(xInput.value), Number(yInput.value)));
+    tailXInput.addEventListener('change', () => setTailBias(Number(tailXInput.value), Number(tailYInput.value)));
+    tailYInput.addEventListener('change', () => setTailBias(Number(tailXInput.value), Number(tailYInput.value)));
     flipDirButton.addEventListener('click', flipDirection);
     resetButton.addEventListener('click', () => {
       currentFrame().anchor = defaultAnchor();
+      currentFrame().tailBias = defaultTailBias();
       render();
     });
     applyFollowingButton.addEventListener('click', () => {
@@ -468,6 +556,7 @@
       const previous = anchors.frames[frameIndex - 1];
       const frame = currentFrame();
       frame.anchor = { ...previous.anchor };
+      frame.tailBias = { ...previous.tailBias };
       frame.dir = previous.dir;
       render();
     });
@@ -488,10 +577,18 @@
       const point = currentFrame().anchor;
       if (!point) return;
       if (event.key === 'x' || event.key === 'X') flipDirection();
-      if (event.key === 'ArrowLeft') setAnchorPosition(point.x - 1, point.y);
-      if (event.key === 'ArrowRight') setAnchorPosition(point.x + 1, point.y);
-      if (event.key === 'ArrowUp') setAnchorPosition(point.x, point.y - 1);
-      if (event.key === 'ArrowDown') setAnchorPosition(point.x, point.y + 1);
+      const bias = currentFrame().tailBias || defaultTailBias();
+      if (editModeSelect.value === 'tail') {
+        if (event.key === 'ArrowLeft') setTailBias(bias.x - 1, bias.y);
+        if (event.key === 'ArrowRight') setTailBias(bias.x + 1, bias.y);
+        if (event.key === 'ArrowUp') setTailBias(bias.x, bias.y - 1);
+        if (event.key === 'ArrowDown') setTailBias(bias.x, bias.y + 1);
+      } else {
+        if (event.key === 'ArrowLeft') setAnchorPosition(point.x - 1, point.y);
+        if (event.key === 'ArrowRight') setAnchorPosition(point.x + 1, point.y);
+        if (event.key === 'ArrowUp') setAnchorPosition(point.x, point.y - 1);
+        if (event.key === 'ArrowDown') setAnchorPosition(point.x, point.y + 1);
+      }
     });
 
     loadAnimations().catch((error) => setStatus(String(error)));

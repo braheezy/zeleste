@@ -64,8 +64,8 @@ const player_climb_ledge_frames = 8;
 const player_climb_ledge_hop_pixels = 6;
 const player_climb_ledge_min_body_above = 10;
 const player_climb_jump_lockout_frames = 8;
-const player_death_anim_frames = 52;
-const player_respawn_burst_frames = 16;
+const player_death_anim_frames = 46;
+const player_respawn_burst_frames = 12;
 const player_var_jump_frames = 11;
 const player_wall_jump_var_jump_frames = 10;
 const player_coyote_frames = 6;
@@ -277,6 +277,8 @@ const HairAnchor = struct {
     x: i32,
     y: i32,
     dir: i16,
+    tail_bias_x: i16,
+    tail_bias_y: i16,
 };
 
 const HairRootRect = struct {
@@ -1696,12 +1698,12 @@ fn hairRootRect(anchor: HairAnchor) HairRootRect {
 fn hairRootTailAnchorWorld(anchor: HairAnchor, animation: PlayerAnimation) HairNode {
     const root = hairRootRect(anchor);
     const tail_offset_x: i16 = if (anchor.dir > 0) 7 else 0;
-    const tail_x: i16 = root.x + tail_offset_x;
+    const tail_x: i16 = root.x + tail_offset_x + anchor.tail_bias_x;
     const tail_offset_y: i16 = switch (animation) {
         .idle, .jump, .fall, .wallslide, .climb, .dangling, .climb_pull => 5,
         .run => 6,
     };
-    const tail_y: i16 = root.y + tail_offset_y;
+    const tail_y: i16 = root.y + tail_offset_y + anchor.tail_bias_y;
     return .{
         .x = pixelToFixed(tail_x),
         .y = pixelToFixed(tail_y),
@@ -1709,18 +1711,23 @@ fn hairRootTailAnchorWorld(anchor: HairAnchor, animation: PlayerAnimation) HairN
 }
 
 fn hairAnchorWorld(player: Player) HairAnchor {
-    const anchor_offset = @as(usize, player.frame) * 3;
+    const anchor_offset = @as(usize, player.frame) * 5;
     var anchor_x: i16 = 18;
     var anchor_y: i16 = 19;
     var dir: i16 = -1;
-    if (anchor_offset + 2 < player_hair_anchors_data.len) {
+    var tail_bias_x: i16 = 0;
+    var tail_bias_y: i16 = 0;
+    if (anchor_offset + 4 < player_hair_anchors_data.len) {
         anchor_x = player_hair_anchors_data[anchor_offset];
         anchor_y = player_hair_anchors_data[anchor_offset + 1];
         dir = if (player_hair_anchors_data[anchor_offset + 2] == 0) -1 else 1;
+        tail_bias_x = signedAnchorByte(player_hair_anchors_data[anchor_offset + 3]);
+        tail_bias_y = signedAnchorByte(player_hair_anchors_data[anchor_offset + 4]);
     }
     if (player.facing_left) {
         anchor_x = 31 - anchor_x;
         dir = -dir;
+        tail_bias_x = -tail_bias_x;
     }
     const body_x = fixedToPixel(player.x) + player_draw_offset_x;
     const body_y = fixedToPixel(player.y) + player_draw_offset_y;
@@ -1728,7 +1735,13 @@ fn hairAnchorWorld(player: Player) HairAnchor {
         .x = pixelToFixed(body_x + anchor_x),
         .y = pixelToFixed(body_y + anchor_y),
         .dir = dir,
+        .tail_bias_x = tail_bias_x,
+        .tail_bias_y = tail_bias_y,
     };
+}
+
+fn signedAnchorByte(value: u8) i16 {
+    return if (value < 128) @intCast(value) else @as(i16, @intCast(value)) - 256;
 }
 
 fn clearHairPixels() void {
