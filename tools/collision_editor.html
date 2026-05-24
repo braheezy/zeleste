@@ -17,6 +17,7 @@
       --oneway: rgba(92, 188, 255, 0.64);
       --spawn: rgba(80, 255, 136, 0.88);
       --falling: rgba(255, 205, 74, 0.88);
+      --stamp: rgba(180, 255, 92, 0.88);
     }
 
     * { box-sizing: border-box; }
@@ -78,6 +79,32 @@
 
     button:hover { border-color: var(--accent); }
 
+    .stamp-atlas {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .stamp-button {
+      height: 48px;
+      margin: 0;
+      padding: 4px;
+      display: grid;
+      place-items: center;
+    }
+
+    .stamp-button.selected {
+      border-color: var(--stamp);
+      background: #304022;
+    }
+
+    .stamp-button img {
+      max-width: 32px;
+      max-height: 32px;
+      image-rendering: pixelated;
+    }
+
     .row {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -129,7 +156,35 @@
         <option value="oneWay">One-way Platform</option>
         <option value="spawn">Spawn Point</option>
         <option value="fallingBlock">Falling Block</option>
+        <option value="foregroundStamp">Foreground Stamp</option>
       </select>
+
+      <div id="stampPanel">
+        <label>Foreground Stamps</label>
+        <div id="stampAtlas" class="stamp-atlas"></div>
+        <label>
+          <input id="stampOccludes" type="checkbox" style="width:auto; margin-right:6px;">
+          Occludes player
+        </label>
+        <label>
+          <input id="stampFlipX" type="checkbox" style="width:auto; margin-right:6px;">
+          Flip X
+        </label>
+        <label>
+          <input id="stampFlipY" type="checkbox" style="width:auto; margin-right:6px;">
+          Flip Y
+        </label>
+        <div class="row">
+          <div>
+            <label for="stampAnchorX">Anchor X</label>
+            <input id="stampAnchorX" type="number" min="0" max="16" value="8">
+          </div>
+          <div>
+            <label for="stampAnchorY">Anchor Y</label>
+            <input id="stampAnchorY" type="number" min="0" max="16" value="8">
+          </div>
+        </div>
+      </div>
 
       <div class="row">
         <div>
@@ -156,14 +211,16 @@
         <div>One-way: <span id="oneWayStats">0</span></div>
         <div>Spawn: <span id="spawnStats">none</span></div>
         <div>Falling Blocks: <span id="fallingBlockStats">0</span></div>
+        <div>Foreground Stamps: <span id="foregroundStampStats">0</span></div>
         <div>JSON: <span id="annotationStats">none</span></div>
       </div>
 
       <div class="hint">
         Solid and one-way modes: click or drag to mark collision. Right click or hold Option/Alt to erase.
-        Spawn mode: click a tile to place the player's collision-box top-left.
+        Spawn mode: click to add respawn points. Right click or hold Option/Alt to erase one.
         Falling Block mode: drag a rectangle around the block tiles, click a block to select it.
         Shift-click sets the selected block's landing row.
+        Foreground Stamp mode: choose a stamp, click to place, right click or Option-click to erase.
       </div>
     </aside>
 
@@ -191,7 +248,14 @@
     const oneWayStats = document.getElementById('oneWayStats');
     const spawnStats = document.getElementById('spawnStats');
     const fallingBlockStats = document.getElementById('fallingBlockStats');
+    const foregroundStampStats = document.getElementById('foregroundStampStats');
     const annotationStats = document.getElementById('annotationStats');
+    const stampAtlas = document.getElementById('stampAtlas');
+    const stampOccludesInput = document.getElementById('stampOccludes');
+    const stampFlipXInput = document.getElementById('stampFlipX');
+    const stampFlipYInput = document.getElementById('stampFlipY');
+    const stampAnchorXInput = document.getElementById('stampAnchorX');
+    const stampAnchorYInput = document.getElementById('stampAnchorY');
     const stage = document.getElementById('stage');
     const base = document.getElementById('base');
     const overlay = document.getElementById('overlay');
@@ -205,14 +269,18 @@
     let gridH = 0;
     let tiles = new Set();
     let oneWayTiles = new Set();
-    let spawn = null;
+    let respawnPoints = [];
     let fallingBlocks = [];
+    let foregroundStampDefs = [];
+    let foregroundStamps = [];
+    let selectedStampId = null;
     let selectedFallingBlock = -1;
     let isPointerDown = false;
     let eraseMode = false;
     let lastKey = '';
     let dragStartTile = null;
     let dragExistingBlock = -1;
+    let hoverTile = null;
 
     function key(x, y) {
       return `${x},${y}`;
@@ -259,6 +327,49 @@
         return;
       }
       await loadSelectedBackground();
+      await loadForegroundStamps();
+    }
+
+    async function loadForegroundStamps() {
+      const result = await apiJson('/api/foreground-stamps');
+      foregroundStampDefs = result.stamps || [];
+      if (!selectedStampId && foregroundStampDefs.length) {
+        selectedStampId = foregroundStampDefs[0].id;
+      }
+      applySelectedStampAnchor();
+      renderStampAtlas();
+      redraw();
+    }
+
+    function selectedStampDef() {
+      return foregroundStampDefs.find((item) => item.id === selectedStampId) || null;
+    }
+
+    function applySelectedStampAnchor() {
+      const def = selectedStampDef();
+      if (!def) return;
+      stampAnchorXInput.value = String(Number.isFinite(def.anchorX) ? def.anchorX : 8);
+      stampAnchorYInput.value = String(Number.isFinite(def.anchorY) ? def.anchorY : 8);
+    }
+
+    function renderStampAtlas() {
+      stampAtlas.replaceChildren();
+      for (const stamp of foregroundStampDefs) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `stamp-button${stamp.id === selectedStampId ? ' selected' : ''}`;
+        button.title = stamp.name;
+        const img = document.createElement('img');
+        img.src = `/${stamp.preview}?t=${Date.now()}`;
+        img.alt = stamp.name;
+        button.append(img);
+        button.addEventListener('click', () => {
+          selectedStampId = stamp.id;
+          applySelectedStampAnchor();
+          renderStampAtlas();
+        });
+        stampAtlas.append(button);
+      }
     }
 
     async function loadSelectedBackground() {
@@ -281,8 +392,9 @@
     async function loadAnnotation(imagePath) {
       tiles = new Set();
       oneWayTiles = new Set();
-      spawn = null;
+      respawnPoints = [];
       fallingBlocks = [];
+      foregroundStamps = [];
       selectedFallingBlock = -1;
       const result = await apiJson(`/api/annotation?image=${encodeURIComponent(imagePath)}`);
       annotationStats.textContent = result.path;
@@ -290,10 +402,31 @@
         tileSizeInput.value = result.data.tileSize;
       }
       if (result.data && result.data.spawn) {
-        spawn = {
+        respawnPoints.push({
           x: Number(result.data.spawn.x) || 0,
           y: Number(result.data.spawn.y) || 0
+        });
+      }
+      for (const point of (result.data && result.data.respawnPoints) || []) {
+        const next = {
+          x: Number(point.x) || 0,
+          y: Number(point.y) || 0
         };
+        if (!respawnPoints.some((existing) => existing.x === next.x && existing.y === next.y)) {
+          respawnPoints.push(next);
+        }
+      }
+      const loadedRespawns = result.data && result.data.respawns || {};
+      for (const kind of ['left', 'right', 'top', 'bottom']) {
+        if (loadedRespawns[kind]) {
+          const next = {
+            x: Number(loadedRespawns[kind].x) || 0,
+            y: Number(loadedRespawns[kind].y) || 0
+          };
+          if (!respawnPoints.some((existing) => existing.x === next.x && existing.y === next.y)) {
+            respawnPoints.push(next);
+          }
+        }
       }
       for (const tile of (result.data && result.data.tiles) || []) {
         const kind = tile.kind || 'solid';
@@ -310,6 +443,17 @@
           w: Math.max(8, Number(block.w) || 8),
           h: Math.max(8, Number(block.h) || 8),
           maxY: Number(block.maxY ?? block.y) || 0
+        });
+      }
+      for (const stamp of (result.data && result.data.foregroundStamps) || []) {
+        foregroundStamps.push({
+          id: String(stamp.id || 'grass1'),
+          x: Number(stamp.x) || 0,
+          y: Number(stamp.y) || 0,
+          phase: Math.max(0, Number(stamp.phase) || 0),
+          flipX: Boolean(stamp.flipX),
+          flipY: Boolean(stamp.flipY),
+          occludes: Boolean(stamp.occludes)
         });
       }
     }
@@ -349,18 +493,8 @@
         overlayCtx.fillRect(tile.x * tileSize, tile.y * tileSize, tileSize, 1);
       }
 
-      if (spawn) {
-        overlayCtx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--spawn');
-        overlayCtx.fillStyle = 'rgba(80,255,136,0.22)';
-        overlayCtx.lineWidth = 2;
-        overlayCtx.fillRect(spawn.x, spawn.y, 8, 16);
-        overlayCtx.strokeRect(spawn.x + 0.5, spawn.y + 0.5, 7, 15);
-        overlayCtx.beginPath();
-        overlayCtx.moveTo(spawn.x - 4, spawn.y);
-        overlayCtx.lineTo(spawn.x + 12, spawn.y);
-        overlayCtx.moveTo(spawn.x, spawn.y - 4);
-        overlayCtx.lineTo(spawn.x, spawn.y + 20);
-        overlayCtx.stroke();
+      for (let index = 0; index < respawnPoints.length; index += 1) {
+        drawSpawnMarker(respawnPoints[index], String(index + 1), index === 0);
       }
 
       for (let index = 0; index < fallingBlocks.length; index += 1) {
@@ -383,6 +517,22 @@
         overlayCtx.stroke();
       }
 
+      for (const stamp of foregroundStamps) {
+        drawForegroundStampPreview(stamp, 0.78);
+      }
+
+      if (modeSelect.value === 'foregroundStamp' && !eraseMode && hoverTile && selectedStampId) {
+        const position = foregroundStampPosition(hoverTile);
+        drawForegroundStampPreview({
+          id: selectedStampId,
+          x: position.x,
+          y: position.y,
+          flipX: stampFlipXInput.checked,
+          flipY: stampFlipYInput.checked,
+          occludes: stampOccludesInput.checked
+        }, 0.46);
+      }
+
       overlayCtx.strokeStyle = 'rgba(255,255,255,0.48)';
       overlayCtx.lineWidth = 1;
       overlayCtx.beginPath();
@@ -400,8 +550,81 @@
       gridStats.textContent = `${gridW}x${gridH}`;
       markedStats.textContent = String(tiles.size);
       oneWayStats.textContent = String(oneWayTiles.size);
-      spawnStats.textContent = spawn ? `${spawn.x},${spawn.y}` : 'none';
+      spawnStats.textContent = respawnPoints.length
+        ? respawnPoints.map((point, index) => `${index + 1}:${point.x},${point.y}`).join(' ')
+        : 'none';
       fallingBlockStats.textContent = `${fallingBlocks.length}${selectedFallingBlock >= 0 ? ` (${selectedFallingBlock + 1} selected)` : ''}`;
+      foregroundStampStats.textContent = String(foregroundStamps.length);
+    }
+
+    function drawForegroundStampPreview(stamp, alpha) {
+        const def = foregroundStampDefs.find((item) => item.id === stamp.id);
+        const preview = def && stampPreviewImage(def.id, stamp.flipX);
+        const x = stamp.x;
+        const y = stamp.y;
+        if (preview && preview.complete) {
+          overlayCtx.save();
+          overlayCtx.globalAlpha = alpha;
+          const usesMirrorPreview = stamp.flipX && def && def.mirrorPreview;
+          overlayCtx.translate(x + (!usesMirrorPreview && stamp.flipX ? 16 : 0), y + (stamp.flipY ? 16 : 0));
+          overlayCtx.scale(!usesMirrorPreview && stamp.flipX ? -1 : 1, stamp.flipY ? -1 : 1);
+          overlayCtx.drawImage(preview, 0, 0);
+          overlayCtx.restore();
+          overlayCtx.globalAlpha = 1;
+        }
+        overlayCtx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--stamp');
+        if (stamp.occludes) {
+          overlayCtx.fillStyle = 'rgba(180,255,92,0.16)';
+          overlayCtx.fillRect(x, y, 16, 16);
+        }
+        overlayCtx.lineWidth = 1;
+        overlayCtx.strokeRect(x + 0.5, y + 0.5, 15, 15);
+    }
+
+    function drawSpawnMarker(point, label, selected) {
+      if (!point) return;
+      overlayCtx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--spawn');
+      overlayCtx.fillStyle = selected ? 'rgba(80,255,136,0.34)' : 'rgba(80,255,136,0.18)';
+      overlayCtx.lineWidth = selected ? 3 : 2;
+      overlayCtx.fillRect(point.x, point.y, 8, 16);
+      overlayCtx.strokeRect(point.x + 0.5, point.y + 0.5, 7, 15);
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(point.x - 4, point.y);
+      overlayCtx.lineTo(point.x + 12, point.y);
+      overlayCtx.moveTo(point.x, point.y - 4);
+      overlayCtx.lineTo(point.x, point.y + 20);
+      overlayCtx.stroke();
+      overlayCtx.fillStyle = 'rgba(255,255,255,0.92)';
+      overlayCtx.font = '8px monospace';
+      overlayCtx.fillText(label, point.x + 10, point.y + 8);
+    }
+
+    function findRespawnPointAt(tile) {
+      const tileSize = currentTileSize();
+      const x = tile.x * tileSize;
+      const y = tile.y * tileSize;
+      for (let index = respawnPoints.length - 1; index >= 0; index -= 1) {
+        const point = respawnPoints[index];
+        if (x >= point.x && x < point.x + 8 && y >= point.y && y < point.y + 16) {
+          return index;
+        }
+      }
+      return -1;
+    }
+
+    const stampPreviewCache = new Map();
+    function stampPreviewImage(id, flipX = false) {
+      const def = foregroundStampDefs.find((item) => item.id === id);
+      if (!def) return null;
+      const previewPath = flipX && def.mirrorPreview ? def.mirrorPreview : def.preview;
+      const cacheKey = `${id}:${previewPath}`;
+      if (!stampPreviewCache.has(cacheKey)) {
+        const img = new Image();
+        img.onload = redraw;
+        img.src = `/${previewPath}?t=${Date.now()}`;
+        stampPreviewCache.set(cacheKey, img);
+      }
+      return stampPreviewCache.get(cacheKey);
     }
 
     function setTile(x, y, erase, kind = 'solid') {
@@ -457,6 +680,29 @@
       return -1;
     }
 
+    function findForegroundStampAt(tile) {
+      const tileSize = currentTileSize();
+      const x = tile.x * tileSize;
+      const y = tile.y * tileSize;
+      for (let index = foregroundStamps.length - 1; index >= 0; index -= 1) {
+        const stamp = foregroundStamps[index];
+        if (x >= stamp.x && x < stamp.x + 16 && y >= stamp.y && y < stamp.y + 16) {
+          return index;
+        }
+      }
+      return -1;
+    }
+
+    function foregroundStampPosition(tile) {
+      const tileSize = currentTileSize();
+      const anchorX = Math.max(0, Math.min(16, Number(stampAnchorXInput.value) || 0));
+      const anchorY = Math.max(0, Math.min(16, Number(stampAnchorYInput.value) || 0));
+      return {
+        x: tile.x * tileSize - anchorX,
+        y: tile.y * tileSize - anchorY
+      };
+    }
+
     function paintEvent(event) {
       if (!image) return;
       const tile = eventToTile(event);
@@ -479,12 +725,43 @@
         }
         return;
       }
+      if (modeSelect.value === 'foregroundStamp') {
+        const tileSize = currentTileSize();
+        const tileKey = key(tile.x, tile.y);
+        if (tileKey === lastKey) return;
+        lastKey = tileKey;
+        const existing = findForegroundStampAt(tile);
+        if (eraseMode) {
+          if (existing >= 0) foregroundStamps.splice(existing, 1);
+        } else if (selectedStampId) {
+          const position = foregroundStampPosition(tile);
+          foregroundStamps.push({
+            id: selectedStampId,
+            x: position.x,
+            y: position.y,
+            phase: foregroundStamps.length % 8,
+            flipX: stampFlipXInput.checked,
+            flipY: stampFlipYInput.checked,
+            occludes: stampOccludesInput.checked
+          });
+        }
+        redraw();
+        return;
+      }
       if (modeSelect.value === 'spawn') {
         const tileSize = currentTileSize();
-        spawn = {
+        const point = {
           x: Math.max(0, Math.min(image.width - 8, tile.x * tileSize)),
           y: Math.max(0, Math.min(image.height - 16, tile.y * tileSize))
         };
+        const existing = findRespawnPointAt(tile);
+        if (eraseMode) {
+          if (existing >= 0) respawnPoints.splice(existing, 1);
+        } else if (existing >= 0) {
+          respawnPoints[existing] = point;
+        } else {
+          respawnPoints.push(point);
+        }
         redraw();
         return;
       }
@@ -508,13 +785,23 @@
         tileSize: currentTileSize(),
         width: image.width,
         height: image.height,
-        spawn: spawn || { x: 24, y: 128 },
+        spawn: respawnPoints[0] || { x: 24, y: 128 },
+        respawnPoints: respawnPoints,
         fallingBlocks: fallingBlocks.map((block) => ({
           x: block.x,
           y: block.y,
           w: block.w,
           h: block.h,
           maxY: block.maxY
+        })),
+        foregroundStamps: foregroundStamps.map((stamp) => ({
+          id: stamp.id,
+          x: stamp.x,
+          y: stamp.y,
+          phase: stamp.phase,
+          flipX: stamp.flipX,
+          flipY: stamp.flipY,
+          occludes: stamp.occludes
         })),
         tiles: [
           ...sorted.map((tile) => ({
@@ -559,6 +846,12 @@
         if (!confirm('Clear all falling blocks for this background?')) return;
         fallingBlocks = [];
         selectedFallingBlock = -1;
+      } else if (modeSelect.value === 'foregroundStamp') {
+        if (!confirm('Clear all foreground stamps for this background?')) return;
+        foregroundStamps = [];
+      } else if (modeSelect.value === 'spawn') {
+        if (!confirm('Clear all respawn points for this background?')) return;
+        respawnPoints = [];
       } else if (modeSelect.value === 'oneWay') {
         if (!confirm('Clear all one-way platform tiles for this background?')) return;
         oneWayTiles.clear();
@@ -580,11 +873,22 @@
       loadSelectedBackground().catch((error) => setStatus(`Reload failed: ${error}`));
     });
 
-    tileSizeInput.addEventListener('change', redraw);
-    zoomInput.addEventListener('change', redraw);
+    function resetPaintAndRedraw() {
+      lastKey = '';
+      redraw();
+    }
+
+    tileSizeInput.addEventListener('change', resetPaintAndRedraw);
+    zoomInput.addEventListener('change', resetPaintAndRedraw);
+    stampFlipXInput.addEventListener('change', resetPaintAndRedraw);
+    stampFlipYInput.addEventListener('change', resetPaintAndRedraw);
+    stampOccludesInput.addEventListener('change', resetPaintAndRedraw);
+    stampAnchorXInput.addEventListener('input', resetPaintAndRedraw);
+    stampAnchorYInput.addEventListener('input', resetPaintAndRedraw);
 
     overlay.addEventListener('contextmenu', (event) => event.preventDefault());
     overlay.addEventListener('pointerdown', (event) => {
+      hoverTile = eventToTile(event);
       isPointerDown = true;
       eraseMode = event.button === 2 || event.altKey;
       lastKey = '';
@@ -598,7 +902,12 @@
       paintEvent(event);
     });
     overlay.addEventListener('pointermove', (event) => {
-      if (isPointerDown) paintEvent(event);
+      hoverTile = eventToTile(event);
+      if (isPointerDown) {
+        paintEvent(event);
+      } else {
+        redraw();
+      }
     });
     overlay.addEventListener('pointerup', (event) => {
       if (modeSelect.value === 'fallingBlock' && dragStartTile && dragExistingBlock < 0 && !eraseMode) {
@@ -615,6 +924,7 @@
       lastKey = '';
       dragStartTile = null;
       dragExistingBlock = -1;
+      redraw();
     });
     overlay.addEventListener('pointercancel', () => {
       isPointerDown = false;
@@ -622,6 +932,25 @@
       lastKey = '';
       dragStartTile = null;
       dragExistingBlock = -1;
+      redraw();
+    });
+    overlay.addEventListener('pointerleave', () => {
+      hoverTile = null;
+      redraw();
+    });
+    window.addEventListener('keydown', (event) => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
+      if (modeSelect.value !== 'foregroundStamp') return;
+      if (event.key.toLowerCase() === 'x') {
+        stampFlipXInput.checked = !stampFlipXInput.checked;
+        redraw();
+      } else if (event.key.toLowerCase() === 'y') {
+        stampFlipYInput.checked = !stampFlipYInput.checked;
+        redraw();
+      } else if (event.key.toLowerCase() === 'o') {
+        stampOccludesInput.checked = !stampOccludesInput.checked;
+        redraw();
+      }
     });
 
     loadBackgroundList().catch((error) => setStatus(`Startup failed: ${error}`));

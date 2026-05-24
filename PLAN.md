@@ -289,25 +289,21 @@ Those are too broad and will damage coherence.
 ## Current Progress
 
 - ZigGBA project skeleton exists and builds `zig-out/zeleste.gba`.
-- `zig build run` is wired to launch the built ROM in mGBA.
-- `zig build assets` regenerates Prologue room bundles from full unedited room PNGs plus matching collision annotation JSON.
+- `zig build run` launches the built ROM in mGBA.
+- `zig build assets` regenerates generated assets under `src/generated/**` and writes `src/generated_rooms.zig`.
+- Active source room graph lives in `assets/rooms/prologue_a/room.json` with rooms `-1`, `0`, `0b`, and `1`.
 - Prologue rooms render as 8bpp scrolling tile backgrounds on BG0 using per-room palettes.
-- Annotation JSON produces `collision.bin` and `spawn.bin`; the ROM embeds them for current player rectangle collision and room spawn placement.
-- `tools/pack_player_obj_tiles.py` packs the `idle` and `runSlow` frames from `assets/Animations/player/` into 4bpp OBJ tile data and an OBJ palette.
-- A 32x32 Madeline OBJ sprite renders, flips horizontally, switches between idle and slow-run animation, moves left/right from input, jumps from A or B, and lands against `collision.bin`.
-- Player normal movement now uses 8-bit fixed-point position/velocity with first-pass Celeste-derived walk acceleration, air acceleration, gravity, max fall, variable jump height, coyote time, and jump buffering.
-- The annotated `assets/backgrounds/-1.png` and `0.png` rooms build as full 64x32-map scrolling backgrounds; walking off the left/right room edge swaps between them.
-- The annotation server now auto-loads backgrounds, saves matching annotation JSON, and generates per-room collision bundles under `assets/generated/rooms/<room_id>/`.
-- Runtime uses each room bundle's `collision.bin` and spawn point instead of the earlier temporary flat floor and hardcoded start position.
-- The room editor can now mark falling block rectangles and landing rows; the asset step emits `falling_blocks.bin` for later runtime behavior.
-- Prologue source room assets are being organized under `assets/rooms/prologue_a/`, with generated ROM bundles still emitted under `assets/generated/rooms/`.
-- The first falling block is now extracted as room entity art and packed into 4bpp OBJ tiles, instead of being moved around by rewriting background map tiles.
-- Basic wall slide and wall jump behavior is in the prototype movement loop, with the `wallslide` player animation packed into the object sprite sheet.
-- Hair is moving toward Celeste-style runtime composition: `assets/Animations/hair/` parts are packed as small 4bpp OBJ tiles, with root pieces anchored to the current player sprite and tail pieces following with simple node motion.
-- A local hair anchor editor now supports choosing a player animation directory, guessing per-frame root/tail placement, dragging hair pieces over frames, and saving `hair_anchors.json` next to the source animation frames.
-- Player sprite packing now emits `madeline_hair_anchors.bin` in packed-frame order. Runtime uses that table to drive a first-pass generated 16x16 OBJ hair sprite, while the player body frames remain bald.
-- Procedural hair now also uses the authored `root1` tile as the scalp/front root piece, while generated red/dark/black blobs form the trailing segments from the anchor direction.
-- Remaining Milestone 0 gap: split the single-file prototype into the planned source modules once the first movement loop stabilizes.
+- Annotation JSON now drives collision, one-way platforms, respawn points, falling blocks, and foreground stamp placement.
+- Room transitions work left/right/up/down from the room graph, with black transition hiding while room data reloads.
+- Death/respawn works for pit deaths, using respawn points selected from room-entry context.
+- Player movement uses 8-bit fixed-point position/velocity with tuned run, jump, variable jump, coyote time, jump buffering, wall slide, wall jump, wall grab, climbing, climb ledge hop, stamina, tired state, and palette flashing.
+- Madeline sprite packing uses multiple animation folders and `hair_anchors.json` data. Runtime draws bald body frames, an authored hair root tile, and procedural trailing hair.
+- The first falling ice block is a persistent room entity with dynamic collision, shaking, falling, and loose snow particles.
+- Wind snow particles are procedural and configurable per room through `room.json`.
+- Room `0` has a foreground/parallax occlusion image packed into OBJ chunks.
+- Foreground grass stamp editing and sway generation exist, but runtime drawing currently supports only `grass1` and `grass2`.
+- Project handoff docs now live under `docs/`: `current-status.md`, `runtime-architecture.md`, and `asset-pipeline.md`.
+- Remaining Milestone 0 gap: split the single-file prototype into planned source modules only after the first movement loop stabilizes further.
 
 ## Milestones
 
@@ -377,9 +373,9 @@ This should be treated as a learning/fan demake unless original branding and ass
 
 ## Immediate Next Steps
 
-1. Tune the first fixed-point movement pass in emulator against the local Celeste references.
-2. Move the current input, player, and collision code out of `main.zig` into small modules.
-3. Add `src/player_constants.zig` with converted first-pass constants from `Player.cs`.
-4. Add dash, dash freeze, dash attack timing, and dash refill.
+1. Continue tuning climb, wall jump, stamina, and collision order against `Player.cs` and observed Celeste behavior.
+2. Add dash, dash freeze, dash attack timing, and dash refill.
+3. Add a simple debug collision/player overlay before making more complex movement changes.
+4. Extend runtime foreground stamp support beyond `grass1` and `grass2` only after the grass art workflow is satisfying.
 5. Add `docs/reference-map.md` linking each mechanic to official, NES, and GBA reference files.
-6. Add a simple debug collision/player overlay once basic jump tuning stabilizes.
+6. Move input, player, collision, and rendering code out of `main.zig` into small modules once mechanics are less volatile.

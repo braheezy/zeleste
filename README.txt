@@ -6,3 +6,8 @@ The Animations folder contains all animations with their original names from the
 Do note, the animations are made out of the raw sprites, but not all raw sprites are used in animations.
 
 Credits to EXOK if these sprites are used.
+
+## Grass Animations
+1.75s
+up to 7 sway positions
+~7 frames each 

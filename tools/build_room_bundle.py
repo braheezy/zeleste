@@ -14,6 +14,41 @@ def room_id_from_background(path: Path) -> str:
     return path.stem.replace("-", "_")
 
 
+def unique_points(points: list[dict]) -> list[dict]:
+    out = []
+    seen = set()
+    for point in points:
+        next_point = {"x": int(point.get("x", 24)), "y": int(point.get("y", 128))}
+        key = (next_point["x"], next_point["y"])
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(next_point)
+    return out
+
+
+def nearest_to_edge(points: list[dict], width: int, height: int, edge: str) -> dict:
+    if not points:
+        return {"x": 24, "y": 128}
+    if edge == "left":
+        return min(points, key=lambda point: (point["x"], abs(point["y"] - height // 2)))
+    if edge == "right":
+        return min(points, key=lambda point: (width - point["x"], abs(point["y"] - height // 2)))
+    if edge == "top":
+        return min(points, key=lambda point: (point["y"], abs(point["x"] - width // 2)))
+    if edge == "bottom":
+        return min(points, key=lambda point: (height - point["y"], abs(point["x"] - width // 2)))
+    raise ValueError(f"unknown edge: {edge}")
+
+
+def foreground_stamp_metadata(stamp_id: str) -> dict:
+    repo_root = Path(__file__).resolve().parents[1]
+    path = repo_root / "assets" / "Animations" / "foreground" / f"{stamp_id}_generated" / "sway.json"
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text())
+
+
 def build_collision(annotations_json: Path, output_dir: Path) -> None:
     data = json.loads(annotations_json.read_text())
     tile_size = int(data["tileSize"])
@@ -22,6 +57,13 @@ def build_collision(annotations_json: Path, output_dir: Path) -> None:
     spawn = data.get("spawn") or {"x": 24, "y": 128}
     spawn_x = int(spawn.get("x", 24))
     spawn_y = int(spawn.get("y", 128))
+    source_respawn_points = data.get("respawnPoints") or []
+    old_respawns = data.get("respawns") or {}
+    respawn_points = unique_points(
+        [{"x": spawn_x, "y": spawn_y}]
+        + list(source_respawn_points)
+        + [point for point in old_respawns.values() if point]
+    )
     width_tiles = (width + tile_size - 1) // tile_size
     height_tiles = (height + tile_size - 1) // tile_size
     collision = bytearray(width_tiles * height_tiles)
@@ -48,9 +90,18 @@ def build_collision(annotations_json: Path, output_dir: Path) -> None:
 
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "collision.bin").write_bytes(bytes(collision))
-    (output_dir / "spawn.bin").write_bytes(spawn_x.to_bytes(2, "little", signed=True))
-    with (output_dir / "spawn.bin").open("ab") as file:
-        file.write(spawn_y.to_bytes(2, "little", signed=True))
+    spawn_points = [
+        {"x": spawn_x, "y": spawn_y},
+        nearest_to_edge(respawn_points, width, height, "left"),
+        nearest_to_edge(respawn_points, width, height, "right"),
+        nearest_to_edge(respawn_points, width, height, "top"),
+        nearest_to_edge(respawn_points, width, height, "bottom"),
+    ]
+    spawn_binary = bytearray()
+    for point in spawn_points:
+        spawn_binary.extend(int(point["x"]).to_bytes(2, "little", signed=True))
+        spawn_binary.extend(int(point["y"]).to_bytes(2, "little", signed=True))
+    (output_dir / "spawn.bin").write_bytes(bytes(spawn_binary))
     rows = []
     for y in range(height_tiles):
         row = collision[y * width_tiles : (y + 1) * width_tiles]
@@ -87,6 +138,43 @@ def build_collision(annotations_json: Path, output_dir: Path) -> None:
         + "\n"
     )
 
+    stamp_kind = {f"grass{index}": index - 1 for index in range(1, 9)}
+    source_stamps = data.get("foregroundStamps", [])
+    foreground_stamps = []
+    foreground_binary = bytearray()
+    foreground_binary.extend(len(source_stamps).to_bytes(2, "little"))
+    for stamp in source_stamps:
+        stamp_id = str(stamp.get("id", "grass1"))
+        if stamp_id not in stamp_kind:
+            raise ValueError(f"unknown foreground stamp id: {stamp_id}")
+        metadata = foreground_stamp_metadata(stamp_id)
+        x = int(stamp.get("x", 0)) + int(metadata.get("cropX", 0))
+        y = int(stamp.get("y", 0)) + int(metadata.get("cropY", 0))
+        phase = max(0, min(255, int(stamp.get("phase", 0))))
+        flags = (1 if stamp.get("flipX") else 0) | (2 if stamp.get("flipY") else 0)
+        if stamp.get("occludes"):
+            flags |= 4
+        foreground_stamps.append({"id": stamp_id, "x": x, "y": y, "phase": phase, "flags": flags})
+        foreground_binary.extend(x.to_bytes(2, "little", signed=True))
+        foreground_binary.extend(y.to_bytes(2, "little", signed=True))
+        foreground_binary.append(stamp_kind[stamp_id])
+        foreground_binary.append(phase)
+        foreground_binary.append(flags)
+        foreground_binary.append(0)
+    (output_dir / "foreground_stamps.bin").write_bytes(bytes(foreground_binary))
+    (output_dir / "foreground_stamps.json").write_text(
+        json.dumps(
+            {
+                "count": len(foreground_stamps),
+                "recordBytes": 8,
+                "binary": "foreground_stamps.bin",
+                "stamps": foreground_stamps,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+
     metadata = {
         "tileSize": tile_size,
         "width": width,
@@ -97,8 +185,17 @@ def build_collision(annotations_json: Path, output_dir: Path) -> None:
         "spawn": "spawn.bin",
         "spawnX": spawn_x,
         "spawnY": spawn_y,
+        "respawnPoints": respawn_points,
+        "respawns": {
+            "left": spawn_points[1],
+            "right": spawn_points[2],
+            "top": spawn_points[3],
+            "bottom": spawn_points[4],
+        },
         "fallingBlocks": "falling_blocks.bin",
         "fallingBlockCount": len(falling_blocks),
+        "foregroundStamps": "foreground_stamps.bin",
+        "foregroundStampCount": len(foreground_stamps),
     }
     (output_dir / "collision.json").write_text(json.dumps(metadata, indent=2) + "\n")
 
@@ -150,6 +247,7 @@ def main() -> int:
             "collision": "collision.bin" if annotations.exists() else None,
             "spawn": "spawn.bin" if annotations.exists() else None,
             "fallingBlocks": "falling_blocks.bin" if annotations.exists() else None,
+            "foregroundStamps": "foreground_stamps.bin" if annotations.exists() else None,
         },
     }
     (args.output_dir / "room.json").write_text(json.dumps(room, indent=2) + "\n")

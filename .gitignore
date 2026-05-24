@@ -1,4 +1,6 @@
 generated
+src/generated
+src/generated_rooms.zig
 __pycache__
 raw
 *.zip

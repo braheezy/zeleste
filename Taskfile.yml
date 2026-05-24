@@ -10,3 +10,29 @@ tasks:
     desc: Open the player hair anchor editor
     cmds:
       - python3 tools/hair_anchor_server.py
+
+  grass-edit:
+    desc: Open the generated grass frame editor
+    cmds:
+      - python3 tools/grass_frame_server.py
+
+  grass-sway:
+    desc: Generate sway frames for a foreground grass PNG
+    silent: true
+    cmds:
+      - |
+        set -- {{.CLI_ARGS}}
+        input="$1"
+        if [ -z "$input" ]; then
+          echo "usage: task grass-sway -- assets/Animations/foreground/grass2.png"
+          exit 1
+        fi
+        shift
+        dir="$(basename "$(dirname "$input")")"
+        if [ "$dir" = "foreground" ]; then
+          file="$(basename "$input")"
+          name="${file%.*}"
+        else
+          name="$dir"
+        fi
+        python3 tools/generate_grass_sway.py --input "$input" --name "${name}_generated" "$@"

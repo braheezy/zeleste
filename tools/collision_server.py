@@ -21,6 +21,9 @@ class AnnotationHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/backgrounds":
             self.send_json(200, {"backgrounds": self.backgrounds()})
             return
+        if parsed.path == "/api/foreground-stamps":
+            self.send_json(200, {"stamps": self.foreground_stamps()})
+            return
         if parsed.path == "/api/annotation":
             query = parse_qs(parsed.query)
             image_path = query.get("image", [""])[0]
@@ -74,6 +77,84 @@ class AnnotationHandler(SimpleHTTPRequestHandler):
                     }
                 )
         return backgrounds
+
+    def foreground_stamps(self) -> list[dict]:
+        stamps = []
+        roots = [
+            self.repo_root / "assets" / "Animations" / "foreground",
+            self.repo_root / "assets" / "Animations" / "foregound",
+        ]
+        for root in roots:
+            if not root.exists():
+                continue
+            generated_grass = root / "grass_generated"
+            if generated_grass.exists():
+                frames = sorted(
+                    generated_grass.glob("*.png"),
+                    key=lambda path: int(path.stem) if path.stem.isdigit() else path.stem,
+                )
+                mirror_frames = sorted(
+                    (root / "grass_generated_mirror").glob("*.png"),
+                    key=lambda path: int(path.stem) if path.stem.isdigit() else path.stem,
+                )
+                if frames:
+                    metadata = self.stamp_metadata(generated_grass)
+                    stamps.append(
+                        {
+                            "id": "grass1",
+                            "name": "grass1",
+                            "preview": str(frames[0].relative_to(self.repo_root)),
+                            "mirrorPreview": str(mirror_frames[0].relative_to(self.repo_root)) if mirror_frames else None,
+                            "anchorX": metadata.get("anchorX", 8),
+                            "anchorY": metadata.get("anchorY", 8),
+                        }
+                    )
+            for directory in sorted(path for path in root.iterdir() if path.is_dir()):
+                if directory.name in {"grass1", "grass_generated", "grass_generated_mirror"}:
+                    continue
+                if directory.name.endswith("_mirror"):
+                    continue
+                metadata = self.stamp_metadata(directory)
+                if not metadata:
+                    continue
+                frames = sorted(
+                    directory.glob("*.png"),
+                    key=lambda path: int(path.stem) if path.stem.isdigit() else path.stem,
+                )
+                if not frames:
+                    continue
+                relative = frames[0].relative_to(self.repo_root)
+                mirror_directory = root / f"{directory.name}_mirror"
+                mirror_frames = sorted(
+                    mirror_directory.glob("*.png"),
+                    key=lambda path: int(path.stem) if path.stem.isdigit() else path.stem,
+                ) if mirror_directory.exists() else []
+                stamp_id = directory.name.removesuffix("_generated")
+                source_preview = root / f"{stamp_id}.png"
+                preview = source_preview if source_preview.exists() else frames[0]
+                stamps.append(
+                    {
+                        "id": stamp_id,
+                        "name": stamp_id,
+                        "preview": str(preview.relative_to(self.repo_root)),
+                        "generatedPreview": str(relative),
+                        "mirrorPreview": str(mirror_frames[0].relative_to(self.repo_root)) if mirror_frames else None,
+                        "anchorX": metadata.get("anchorX", 8),
+                        "anchorY": metadata.get("anchorY", 8),
+                    }
+                )
+        return stamps
+
+    @staticmethod
+    def stamp_metadata(directory: Path) -> dict:
+        for name in ("stamp.json", "sway.json"):
+            path = directory / name
+            if path.exists():
+                try:
+                    return json.loads(path.read_text())
+                except json.JSONDecodeError:
+                    return {}
+        return {}
 
     @staticmethod
     def is_entity_art(path: Path) -> bool:

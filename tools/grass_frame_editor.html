@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Grass Frame Editor</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #17191d;
+      color: #e9edf2;
+    }
+    body {
+      margin: 0;
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      min-height: 100vh;
+    }
+    aside {
+      border-right: 1px solid #343943;
+      padding: 14px;
+      background: #20242b;
+      overflow: auto;
+    }
+    main {
+      padding: 14px;
+      overflow: auto;
+    }
+    label, .label {
+      display: block;
+      margin: 12px 0 6px;
+      color: #b9c0ca;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    select, input, button {
+      font: inherit;
+      color: #eef2f7;
+      background: #2b3038;
+      border: 1px solid #444b57;
+      border-radius: 6px;
+      padding: 7px 9px;
+    }
+    select, input[type="number"] {
+      width: 100%;
+      box-sizing: border-box;
+    }
+    button {
+      cursor: pointer;
+    }
+    button:hover {
+      background: #363d48;
+    }
+    button.active {
+      border-color: #76b7ff;
+      background: #244766;
+    }
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .row > button {
+      flex: 1;
+    }
+    canvas {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+    #editorWrap {
+      display: inline-block;
+      background: #101216;
+      border: 1px solid #3d4450;
+      padding: 8px;
+    }
+    #editor {
+      display: block;
+      cursor: crosshair;
+    }
+    #filmstrip {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+      gap: 6px;
+      margin-top: 14px;
+      max-width: 900px;
+    }
+    .thumb {
+      border: 1px solid #39404b;
+      background: #11151b;
+      border-radius: 5px;
+      padding: 4px;
+      text-align: center;
+      color: #aeb6c1;
+      font-size: 11px;
+    }
+    .thumb.active {
+      border-color: #76b7ff;
+      background: #1f3d56;
+    }
+    .thumb canvas {
+      width: 32px;
+      height: 32px;
+      display: block;
+      margin: 0 auto 2px;
+    }
+    #palette {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .swatch {
+      width: 28px;
+      height: 28px;
+      border-radius: 5px;
+      border: 2px solid #525a66;
+      background-image:
+        linear-gradient(45deg, #6b7280 25%, transparent 25%),
+        linear-gradient(-45deg, #6b7280 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #6b7280 75%),
+        linear-gradient(-45deg, transparent 75%, #6b7280 75%);
+      background-size: 10px 10px;
+      background-position: 0 0, 0 5px, 5px -5px, -5px 0;
+    }
+    .swatch.active {
+      border-color: #ffffff;
+    }
+    .hint {
+      color: #98a2af;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .status {
+      margin-top: 10px;
+      min-height: 20px;
+      color: #b9d8ff;
+      font-size: 13px;
+    }
+    .danger {
+      color: #ffb4b4;
+    }
+  </style>
+</head>
+<body>
+  <aside>
+    <label for="setSelect">Grass Set</label>
+    <select id="setSelect"></select>
+
+    <label for="frameInput">Frame</label>
+    <div class="row">
+      <button id="prevFrame">Prev</button>
+      <input id="frameInput" type="number" min="1" value="1">
+      <button id="nextFrame">Next</button>
+    </div>
+
+    <label>Tool</label>
+    <div class="row">
+      <button id="paintTool" class="active">Paint</button>
+      <button id="eraseTool">Erase</button>
+    </div>
+
+    <label>Palette</label>
+    <div id="palette"></div>
+
+    <label>Nudge</label>
+    <div class="row">
+      <button data-nudge="-1,0">Left</button>
+      <button data-nudge="1,0">Right</button>
+      <button data-nudge="0,-1">Up</button>
+      <button data-nudge="0,1">Down</button>
+    </div>
+
+    <label>Frame</label>
+    <div class="row">
+      <button id="copyFrame">Copy</button>
+      <button id="pasteFrame">Paste</button>
+      <button id="saveFrame">Save</button>
+    </div>
+
+    <label for="zoomInput">Zoom</label>
+    <input id="zoomInput" type="number" min="8" max="48" value="28">
+
+    <p class="hint">
+      Click paints a pixel. Right click erases. Arrow keys nudge opaque pixels.
+      Hold Shift with arrow keys to nudge only the current row under the mouse.
+    </p>
+    <div id="status" class="status"></div>
+  </aside>
+
+  <main>
+    <div id="editorWrap">
+      <canvas id="editor"></canvas>
+    </div>
+    <div id="filmstrip"></div>
+  </main>
+
+  <script>
+    const setSelect = document.getElementById('setSelect');
+    const frameInput = document.getElementById('frameInput');
+    const editor = document.getElementById('editor');
+    const ctx = editor.getContext('2d');
+    const filmstrip = document.getElementById('filmstrip');
+    const paletteEl = document.getElementById('palette');
+    const statusEl = document.getElementById('status');
+    const zoomInput = document.getElementById('zoomInput');
+    const paintTool = document.getElementById('paintTool');
+    const eraseTool = document.getElementById('eraseTool');
+
+    let sets = [];
+    let currentSet = null;
+    let currentFrame = 1;
+    let width = 8;
+    let height = 8;
+    let pixels = new Uint8ClampedArray(width * height * 4);
+    let selectedColor = [96, 196, 50, 255];
+    let tool = 'paint';
+    let mousePixel = { x: 0, y: 0 };
+    let clipboard = null;
+
+    async function apiJson(url, options) {
+      const response = await fetch(url, options);
+      const data = await response.json();
+      if (!response.ok || data.ok === false) throw new Error(data.error || response.statusText);
+      return data;
+    }
+
+    function setStatus(text, danger = false) {
+      statusEl.textContent = text;
+      statusEl.className = `status${danger ? ' danger' : ''}`;
+    }
+
+    async function loadSets() {
+      const result = await apiJson('/api/grass/sets');
+      sets = result.sets || [];
+      setSelect.replaceChildren();
+      for (const set of sets) {
+        const option = document.createElement('option');
+        option.value = set.path;
+        option.textContent = `${set.name} (${set.frameCount})`;
+        setSelect.append(option);
+      }
+      if (sets.length) {
+        setSelect.value = sets[0].path;
+        await selectSet();
+      }
+    }
+
+    async function selectSet() {
+      currentSet = sets.find(item => item.path === setSelect.value);
+      currentFrame = 1;
+      frameInput.min = 1;
+      frameInput.max = currentSet.frameCount;
+      frameInput.value = currentFrame;
+      await loadFrame();
+      renderFilmstrip();
+    }
+
+    async function loadFrame() {
+      if (!currentSet) return;
+      const result = await apiJson(`/api/grass/frame?set=${encodeURIComponent(currentSet.path)}&frame=${currentFrame}`);
+      width = result.width;
+      height = result.height;
+      pixels = base64ToBytes(result.pixels);
+      frameInput.value = currentFrame;
+      renderPalette();
+      drawEditor();
+      setStatus(`${currentSet.name} frame ${currentFrame}`);
+    }
+
+    function base64ToBytes(value) {
+      const binary = atob(value);
+      const out = new Uint8ClampedArray(binary.length);
+      for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
+      return out;
+    }
+
+    function bytesToBase64(bytes) {
+      let binary = '';
+      for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+      return btoa(binary);
+    }
+
+    function zoom() {
+      return Math.max(8, Math.min(48, Number(zoomInput.value) || 28));
+    }
+
+    function drawChecker(context, scale, w, h) {
+      context.fillStyle = '#20242b';
+      context.fillRect(0, 0, w * scale, h * scale);
+      context.fillStyle = '#2f3640';
+      for (let y = 0; y < h; y += 1) {
+        for (let x = 0; x < w; x += 1) {
+          if ((x + y) % 2 === 0) context.fillRect(x * scale, y * scale, scale, scale);
+        }
+      }
+    }
+
+    function drawFrameToCanvas(canvas, data, w, h, scale, grid) {
+      canvas.width = w * scale;
+      canvas.height = h * scale;
+      const context = canvas.getContext('2d');
+      drawChecker(context, scale, w, h);
+      for (let y = 0; y < h; y += 1) {
+        for (let x = 0; x < w; x += 1) {
+          const index = (y * w + x) * 4;
+          const a = data[index + 3];
+          if (a === 0) continue;
+          context.fillStyle = `rgba(${data[index]},${data[index + 1]},${data[index + 2]},${a / 255})`;
+          context.fillRect(x * scale, y * scale, scale, scale);
+        }
+      }
+      if (grid) {
+        context.strokeStyle = 'rgba(255,255,255,.22)';
+        context.lineWidth = 1;
+        for (let x = 0; x <= w; x += 1) {
+          context.beginPath();
+          context.moveTo(x * scale + .5, 0);
+          context.lineTo(x * scale + .5, h * scale);
+          context.stroke();
+        }
+        for (let y = 0; y <= h; y += 1) {
+          context.beginPath();
+          context.moveTo(0, y * scale + .5);
+          context.lineTo(w * scale, y * scale + .5);
+          context.stroke();
+        }
+      }
+    }
+
+    function drawEditor() {
+      drawFrameToCanvas(editor, pixels, width, height, zoom(), true);
+    }
+
+    function renderPalette() {
+      const colors = [];
+      const seen = new Set();
+      for (let i = 0; i < pixels.length; i += 4) {
+        if (pixels[i + 3] === 0) continue;
+        const key = `${pixels[i]},${pixels[i + 1]},${pixels[i + 2]},${pixels[i + 3]}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          colors.push([pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3]]);
+        }
+      }
+      if (!colors.length) colors.push(selectedColor);
+      if (!seen.has(selectedColor.join(','))) selectedColor = colors[0];
+      paletteEl.replaceChildren();
+      for (const color of colors) {
+        const button = document.createElement('button');
+        button.className = `swatch${color.join(',') === selectedColor.join(',') ? ' active' : ''}`;
+        button.style.backgroundColor = `rgba(${color[0]},${color[1]},${color[2]},${color[3] / 255})`;
+        button.title = color.join(',');
+        button.addEventListener('click', () => {
+          selectedColor = color;
+          renderPalette();
+        });
+        paletteEl.append(button);
+      }
+    }
+
+    async function renderFilmstrip() {
+      filmstrip.replaceChildren();
+      if (!currentSet) return;
+      for (let frame = 1; frame <= currentSet.frameCount; frame += 1) {
+        const item = document.createElement('button');
+        item.className = `thumb${frame === currentFrame ? ' active' : ''}`;
+        const canvas = document.createElement('canvas');
+        item.append(canvas, document.createTextNode(String(frame)));
+        item.addEventListener('click', async () => {
+          currentFrame = frame;
+          await loadFrame();
+          renderFilmstrip();
+        });
+        filmstrip.append(item);
+        apiJson(`/api/grass/frame?set=${encodeURIComponent(currentSet.path)}&frame=${frame}`)
+          .then(data => drawFrameToCanvas(canvas, base64ToBytes(data.pixels), data.width, data.height, 4, false))
+          .catch(() => {});
+      }
+    }
+
+    function eventPixel(event) {
+      const rect = editor.getBoundingClientRect();
+      const x = Math.floor((event.clientX - rect.left) / zoom());
+      const y = Math.floor((event.clientY - rect.top) / zoom());
+      return {
+        x: Math.max(0, Math.min(width - 1, x)),
+        y: Math.max(0, Math.min(height - 1, y)),
+      };
+    }
+
+    function setPixel(x, y, color) {
+      const index = (y * width + x) * 4;
+      pixels[index] = color[0];
+      pixels[index + 1] = color[1];
+      pixels[index + 2] = color[2];
+      pixels[index + 3] = color[3];
+    }
+
+    function paintAt(event) {
+      const point = eventPixel(event);
+      mousePixel = point;
+      if (event.button === 2 || tool === 'erase') {
+        setPixel(point.x, point.y, [0, 0, 0, 0]);
+      } else {
+        setPixel(point.x, point.y, selectedColor);
+      }
+      drawEditor();
+    }
+
+    function nudge(dx, dy, rowOnly = false) {
+      const next = new Uint8ClampedArray(pixels.length);
+      for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          const index = (y * width + x) * 4;
+          if (pixels[index + 3] === 0) continue;
+          const move = !rowOnly || y === mousePixel.y;
+          const nx = move ? x + dx : x;
+          const ny = move ? y + dy : y;
+          if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+          const dst = (ny * width + nx) * 4;
+          next[dst] = pixels[index];
+          next[dst + 1] = pixels[index + 1];
+          next[dst + 2] = pixels[index + 2];
+          next[dst + 3] = pixels[index + 3];
+        }
+      }
+      pixels = next;
+      drawEditor();
+    }
+
+    async function saveFrame() {
+      await apiJson('/api/grass/save-frame', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          set: currentSet.path,
+          frame: currentFrame,
+          width,
+          height,
+          pixels: bytesToBase64(pixels),
+        }),
+      });
+      setStatus(`saved frame ${currentFrame}`);
+      renderFilmstrip();
+    }
+
+    setSelect.addEventListener('change', selectSet);
+    zoomInput.addEventListener('change', drawEditor);
+    document.getElementById('prevFrame').addEventListener('click', async () => {
+      currentFrame = Math.max(1, currentFrame - 1);
+      await loadFrame();
+      renderFilmstrip();
+    });
+    document.getElementById('nextFrame').addEventListener('click', async () => {
+      currentFrame = Math.min(currentSet.frameCount, currentFrame + 1);
+      await loadFrame();
+      renderFilmstrip();
+    });
+    frameInput.addEventListener('change', async () => {
+      currentFrame = Math.max(1, Math.min(currentSet.frameCount, Number(frameInput.value) || 1));
+      await loadFrame();
+      renderFilmstrip();
+    });
+    paintTool.addEventListener('click', () => {
+      tool = 'paint';
+      paintTool.classList.add('active');
+      eraseTool.classList.remove('active');
+    });
+    eraseTool.addEventListener('click', () => {
+      tool = 'erase';
+      eraseTool.classList.add('active');
+      paintTool.classList.remove('active');
+    });
+    editor.addEventListener('contextmenu', event => event.preventDefault());
+    editor.addEventListener('mousedown', paintAt);
+    editor.addEventListener('mousemove', event => {
+      mousePixel = eventPixel(event);
+      if (event.buttons) paintAt(event);
+    });
+    document.querySelectorAll('[data-nudge]').forEach(button => {
+      button.addEventListener('click', () => {
+        const [dx, dy] = button.dataset.nudge.split(',').map(Number);
+        nudge(dx, dy, false);
+      });
+    });
+    document.getElementById('copyFrame').addEventListener('click', () => {
+      clipboard = new Uint8ClampedArray(pixels);
+      setStatus(`copied frame ${currentFrame}`);
+    });
+    document.getElementById('pasteFrame').addEventListener('click', () => {
+      if (!clipboard || clipboard.length !== pixels.length) return;
+      pixels = new Uint8ClampedArray(clipboard);
+      drawEditor();
+    });
+    document.getElementById('saveFrame').addEventListener('click', () => {
+      saveFrame().catch(error => setStatus(error.message, true));
+    });
+    window.addEventListener('keydown', event => {
+      const arrows = {
+        ArrowLeft: [-1, 0],
+        ArrowRight: [1, 0],
+        ArrowUp: [0, -1],
+        ArrowDown: [0, 1],
+      };
+      if (!(event.key in arrows)) return;
+      event.preventDefault();
+      const [dx, dy] = arrows[event.key];
+      nudge(dx, dy, event.shiftKey);
+    });
+
+    loadSets().catch(error => setStatus(error.message, true));
+  </script>
+</body>
+</html>
