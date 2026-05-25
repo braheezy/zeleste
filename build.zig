@@ -71,6 +71,26 @@ pub fn build(b: *std.Build) void {
     });
     assets_step.dependOn(&pack_falling_block.step);
 
+    const pack_bridge = b.addSystemCommand(&.{
+        "python3",
+        b.pathFromRoot("tools/pack_prologue_bridge.py"),
+        "--input-dir",
+        b.pathFromRoot("assets/source/prologue-bridge/chunks_8px"),
+        "--output-dir",
+        b.pathFromRoot("src/generated/assets/entities/prologue_bridge"),
+    });
+    assets_step.dependOn(&pack_bridge.step);
+
+    const pack_funny_car = b.addSystemCommand(&.{
+        "python3",
+        b.pathFromRoot("tools/pack_funny_car_obj.py"),
+        "--input",
+        b.pathFromRoot("assets/chapters/prologue_a/stamps/funny-car.png"),
+        "--output-dir",
+        b.pathFromRoot("src/generated/assets/entities/prologue_a"),
+    });
+    assets_step.dependOn(&pack_funny_car.step);
+
     const pack_hair = b.addSystemCommand(&.{
         "python3",
         b.pathFromRoot("tools/pack_hair_obj.py"),
@@ -80,6 +100,22 @@ pub fn build(b: *std.Build) void {
         b.pathFromRoot("src/generated/assets/player"),
     });
     assets_step.dependOn(&pack_hair.step);
+
+    const pack_bird = b.addSystemCommand(&.{
+        "python3",
+        b.pathFromRoot("tools/pack_bird_assets.py"),
+        "--intro",
+        b.pathFromRoot("assets/source/bird/intro.png"),
+        "--fly",
+        b.pathFromRoot("assets/source/bird/fly.png"),
+        "--hold-hint",
+        b.pathFromRoot("assets/chapters/prologue_a/hold-hint.png"),
+        "--climb-hint",
+        b.pathFromRoot("assets/chapters/prologue_a/climb-hint.png"),
+        "--output-dir",
+        b.pathFromRoot("src/generated/assets/bird"),
+    });
+    assets_step.dependOn(&pack_bird.step);
 
     const pack_grass1 = b.addSystemCommand(&.{
         "python3",

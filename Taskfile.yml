@@ -6,6 +6,11 @@ tasks:
     cmds:
       - python3 tools/collision_server.py
 
+  scene:
+    desc: Open the scene animation editor
+    cmds:
+      - python3 tools/scene_server.py
+
   hair:
     desc: Open the player hair anchor editor
     cmds:

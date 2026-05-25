@@ -12,6 +12,12 @@ const hair_tiles_data align(4) = @embedFile("generated/assets/player/hair_tiles.
 const hair_palette_data align(4) = @embedFile("generated/assets/player/hair_palette.bin").*;
 const falling_block_tiles_data align(4) = @embedFile("generated/assets/entities/prologue_a/falling_block_tiles.bin").*;
 const falling_block_palette_data align(4) = @embedFile("generated/assets/entities/prologue_a/falling_block_palette.bin").*;
+const funny_car_tiles_data align(4) = @embedFile("generated/assets/entities/prologue_a/funny_car_tiles.bin").*;
+const funny_car_palette_data align(4) = @embedFile("generated/assets/entities/prologue_a/funny_car_palette.bin").*;
+const bridge_tiles_data align(4) = @embedFile("generated/assets/entities/prologue_bridge/bridge_tiles.bin").*;
+const bridge_palette_data align(4) = @embedFile("generated/assets/entities/prologue_bridge/bridge_palette.bin").*;
+const bridge_layout_data align(4) = @embedFile("generated/assets/entities/prologue_bridge/bridge_layout.bin").*;
+const bridge_groups_data align(4) = @embedFile("generated/assets/entities/prologue_bridge/bridge_groups.bin").*;
 const grass1_tiles_data align(4) = @embedFile("generated/assets/foreground/grass1_tiles.bin").*;
 const grass1_palette_data align(4) = @embedFile("generated/assets/foreground/grass1_palette.bin").*;
 const grass1_mirror_tiles_data align(4) = @embedFile("generated/assets/foreground/grass1_mirror_tiles.bin").*;
@@ -20,6 +26,11 @@ const grass2_tiles_data align(4) = @embedFile("generated/assets/foreground/grass
 const grass2_palette_data align(4) = @embedFile("generated/assets/foreground/grass2_palette.bin").*;
 const grass2_mirror_tiles_data align(4) = @embedFile("generated/assets/foreground/grass2_mirror_tiles.bin").*;
 const grass2_mirror_palette_data align(4) = @embedFile("generated/assets/foreground/grass2_mirror_palette.bin").*;
+const bird_intro_tiles_data align(4) = @embedFile("generated/assets/bird/bird_intro_tiles.bin").*;
+const bird_palette_data align(4) = @embedFile("generated/assets/bird/bird_palette.bin").*;
+const bird_hold_hint_tiles_data align(4) = @embedFile("generated/assets/bird/hold_hint_tiles.bin").*;
+const bird_climb_hint_tiles_data align(4) = @embedFile("generated/assets/bird/climb_hint_tiles.bin").*;
+const bird_hint_palette_data align(4) = @embedFile("generated/assets/bird/hint_palette.bin").*;
 
 const bg_screenblock: u5 = 29;
 const bg_hardware_width_tiles: usize = 64;
@@ -106,6 +117,30 @@ const falling_block_gravity: i32 = 0x58;
 const falling_block_max_fall: i32 = 0x560;
 const falling_block_base_tile: u10 = 32;
 const falling_block_palette_bank: u4 = 1;
+const bridge_base_tile: u10 = parallax_base_tile;
+const bridge_palette_bank: u4 = parallax_palette_bank;
+const bridge_chunk_width = 8;
+const bridge_chunk_height = 32;
+const bridge_visual_height = 25;
+const bridge_tiles_per_chunk = 4;
+const bridge_empty_chunk = 255;
+const bridge_no_group = 255;
+const bridge_world_x: i16 = 64;
+const bridge_world_y: i16 = 126;
+const bridge_max_chunks = 128;
+const bridge_max_objects = 30;
+const bridge_first_object = foreground_behind_stamp_first_object;
+const bridge_shake_frames: u8 = 14;
+const bridge_fall_gravity: i32 = 0x48;
+const bridge_fall_max_speed: i32 = 0x4C0;
+const funny_car_base_tile: u10 = 560;
+const funny_car_palette_bank: u4 = 10;
+const funny_car_width = 47;
+const funny_car_height = 16;
+const funny_car_tiles_per_car = 12;
+const funny_car_object_count = 2;
+const max_funny_cars = 2;
+const funny_car_top = [_]i8{ 7, 6, 5, 4, 3, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 3, 4, 5, 6, 0, 7, 7, 7, 7, 7, 7, 7, 7, 8 };
 const hair_base_tile: u10 = 60;
 const hair_root_base_tile: u10 = 64;
 const hair_palette_bank: u4 = 2;
@@ -147,11 +182,43 @@ const foreground_stamp2_base_tile: u10 = foreground_stamp_mirror_base_tile + gra
 const foreground_stamp2_mirror_base_tile: u10 = foreground_stamp2_base_tile + grass2_frame_count * grass2_tiles_per_frame;
 const foreground_stamp_palette_bank: u4 = 6;
 const foreground_stamp2_palette_bank: u4 = 7;
+const bird_base_tile: u10 = foreground_stamp_base_tile;
+const bird_hint_base_tile: u10 = bird_base_tile + bird_tiles_per_frame;
+const bird_palette_bank: u4 = 8;
+const bird_hint_palette_bank: u4 = 9;
+const bird_object = foreground_behind_stamp_first_object + max_foreground_stamps;
+const bird_hint_object = bird_object + 1;
+const funny_car_first_object = bird_hint_object + 1;
 const grass1_frame_count = 42;
 const grass1_tiles_per_frame = 4;
 const grass2_frame_count = 42;
 const grass2_tiles_per_frame = 1;
 const foreground_stamp_anim_speed = 2;
+const bird_tiles_per_frame = 16;
+const bird_squawk_first_frame: u16 = 0;
+const bird_squawk_frame_count: u16 = 17;
+const bird_peck_first_frame: u16 = 17;
+const bird_peck_frame_count: u16 = 11;
+const bird_liftoff_first_frame: u16 = 28;
+const bird_liftoff_frame_count: u16 = 9;
+const bird_fly_first_frame: u16 = 49;
+const bird_fly_frame_count: u16 = 4;
+const bird_anim_speed = 4;
+const bird_total_frame_count: u16 = 53;
+const bird_fly_speed: i32 = 0x140;
+const bird_liftoff_vx: i32 = 0x90;
+const bird_liftoff_vy: i32 = -0xB0;
+const bird_flyaway_vx: i32 = 0x80;
+const bird_flyaway_vy: i32 = -0x170;
+const bird_flyaway_frames: u16 = 100;
+const bird_hint_show_delay_frames: u16 = 8 * bird_anim_speed;
+const bird_hold_hint_frames: u16 = 60;
+const bird_hint_hide_frames: u16 = 18;
+const bird_peck_cycle_frames: u16 = 180;
+const bird_origin_offset_x: i16 = 5;
+const bird_origin_offset_y: i16 = 9;
+const max_bird_path_points = 32;
+const max_bird_triggers = 8;
 
 pub const RoomBackground = struct {
     width_tiles: usize,
@@ -171,6 +238,8 @@ pub const RoomBackground = struct {
     spawn_bottom: Spawn,
     falling_blocks: []align(4) const u8,
     foreground_stamps: []align(4) const u8,
+    generic_stamps: []align(4) const u8,
+    bird_npcs: []align(4) const u8,
     parallax: ?ParallaxLayer = null,
     wind_snow_strength: u8 = 0,
     wind_snow_dir_x: i16 = -1,
@@ -209,6 +278,20 @@ const FallingBlockState = enum(u8) {
     landed,
 };
 
+const BirdState = enum(u8) {
+    inactive,
+    idle,
+    squawk,
+    hold_hint,
+    climb_hint,
+    hide_hint,
+    liftoff,
+    peck,
+    fly,
+    done,
+    gone,
+};
+
 const PlayerAnimation = enum(u8) {
     idle,
     run,
@@ -232,6 +315,63 @@ const FallingBlock = struct {
     vy: i32 = 0,
 };
 
+const BridgeChunkState = enum(u8) {
+    inactive,
+    solid,
+    shaking,
+    falling,
+    gone,
+};
+
+const BridgeChunk = struct {
+    state: BridgeChunkState = .inactive,
+    variant: u8 = bridge_empty_chunk,
+    group: u8 = bridge_no_group,
+    x: i16 = 0,
+    y: i32 = 0,
+    timer: u8 = 0,
+    vy: i32 = 0,
+};
+
+const BirdPathPoint = struct {
+    x: i16 = 0,
+    y: i16 = 0,
+};
+
+const BirdTriggerAction = enum(u8) {
+    none = 0,
+    squawk_hold_hint = 1,
+    show_climb_hint = 2,
+    peck_then_fly = 3,
+};
+
+const BirdTrigger = struct {
+    action: BirdTriggerAction = .none,
+    x: i16 = 0,
+    y: i16 = 0,
+    w: i16 = 0,
+    h: i16 = 0,
+};
+
+const BirdNpc = struct {
+    active: bool = false,
+    state: BirdState = .inactive,
+    x: i32 = 0,
+    y: i32 = 0,
+    home_x: i16 = 0,
+    home_y: i16 = 0,
+    hint_x: i16 = 0,
+    hint_y: i16 = 0,
+    path: [max_bird_path_points]BirdPathPoint = [_]BirdPathPoint{.{}} ** max_bird_path_points,
+    triggers: [max_bird_triggers]BirdTrigger = [_]BirdTrigger{.{}} ** max_bird_triggers,
+    path_count: u8 = 0,
+    trigger_count: u8 = 0,
+    path_index: u8 = 0,
+    timer: u16 = 0,
+    frame: u16 = 0,
+    facing_left: bool = false,
+};
+
 const RoomState = struct {
     falling_blocks_landed: u8 = 0,
 };
@@ -245,6 +385,13 @@ const ForegroundStamp = struct {
     flags: u8 = 0,
 };
 
+const FunnyCar = struct {
+    active: bool = false,
+    x: i16 = 0,
+    y: i16 = 0,
+    pressed: bool = false,
+};
+
 const DustParticle = struct {
     active: bool = false,
     x: i32 = 0,
@@ -256,6 +403,7 @@ const DustParticle = struct {
     shape: u8 = 0,
     landing: bool = false,
     snow: bool = false,
+    wall: bool = false,
 };
 
 const WindSnowParticle = struct {
@@ -292,9 +440,15 @@ const rooms = level.rooms;
 var room_states: [rooms.len]RoomState = [_]RoomState{.{}} ** rooms.len;
 var falling_blocks: [max_falling_blocks]FallingBlock = [_]FallingBlock{.{}} ** max_falling_blocks;
 var falling_block_count: usize = 0;
+var bridge_chunks: [bridge_max_chunks]BridgeChunk = [_]BridgeChunk{.{}} ** bridge_max_chunks;
+var bridge_chunk_count: usize = 0;
+var bridge_active: bool = false;
 var foreground_stamps: [max_foreground_stamps]ForegroundStamp = [_]ForegroundStamp{.{}} ** max_foreground_stamps;
 var foreground_stamp_count: usize = 0;
+var funny_cars: [max_funny_cars]FunnyCar = [_]FunnyCar{.{}} ** max_funny_cars;
+var funny_car_count: usize = 0;
 var foreground_anim_counter: u16 = 0;
+var bird_npc: BirdNpc = .{};
 var current_room_index: usize = 0;
 var bg_stream_room_index: usize = rooms.len;
 var bg_stream_tile_x: i16 = -32768;
@@ -314,6 +468,7 @@ const Player = struct {
     room_transition_cooldown: u8 = 0,
     force_move_x_timer: u8 = 0,
     dust_suppress_timer: u8 = 0,
+    wall_dust_timer: u8 = 0,
     force_move_x: i16 = 0,
     wall_slide_timer: u8 = player_wall_slide_frames,
     var_jump_speed: i32 = 0,
@@ -356,7 +511,10 @@ pub export fn main() void {
     loadRoomBackground(room_index);
     loadFallingBlocks(room_index);
     loadForegroundStamps(room_index);
+    loadFunnyCars(room_index);
     loadObjectSprites();
+    loadBridge(room_index);
+    loadBirdNpc(room_index);
     loadWindSnowTiles();
     loadRoomParallax(room_index);
     gba.display.hideAllObjects();
@@ -385,8 +543,11 @@ pub export fn main() void {
     applyCamera(camera);
     drawParallaxObjects(camera, room_index);
     drawForegroundStampObjects(camera);
+    drawFunnyCars(camera);
+    drawBridgeObjects(camera);
     drawPlayer(player, camera);
     drawFallingBlockObjects(camera);
+    drawBirdNpc(camera);
 
     while (true) {
         input.poll();
@@ -397,7 +558,10 @@ pub export fn main() void {
                 hideDeathBurstObjects();
                 drawParallaxObjects(camera, room_index);
                 drawForegroundStampObjects(camera);
+                drawFunnyCars(camera);
                 drawFallingBlockObjects(camera);
+                drawBridgeObjects(camera);
+                drawBirdNpc(camera);
                 drawHair(player, camera);
                 drawPlayer(player, camera);
             } else {
@@ -408,13 +572,19 @@ pub export fn main() void {
 
         if (death_timer > 0) {
             death_timer -= 1;
+            if (death_timer != 0) {
+                updateFallingBlocksDuringDeath();
+            }
             gba.display.naiveVSync();
             if (death_timer == 0) {
                 hideDeathBurstObjects();
                 loadRoomBackground(room_index);
                 loadFallingBlocks(room_index);
                 loadForegroundStamps(room_index);
+                loadFunnyCars(room_index);
                 loadObjectSprites();
+                loadBridge(room_index);
+                loadBirdNpc(room_index);
                 loadRoomParallax(room_index);
                 clearDustParticles();
                 player = spawnPlayerAt(respawn);
@@ -424,7 +594,10 @@ pub export fn main() void {
                 applyCamera(camera);
                 drawParallaxObjects(camera, room_index);
                 drawForegroundStampObjects(camera);
+                drawFunnyCars(camera);
                 drawFallingBlockObjects(camera);
+                drawBridgeObjects(camera);
+                drawBirdNpc(camera);
                 death_origin_x = player.x + (player_body_width / 2) * fixed_one;
                 death_origin_y = player.y + (player_body_height / 2) * fixed_one;
                 hideObject(player_object);
@@ -436,13 +609,21 @@ pub export fn main() void {
                 gba.display.ctrl.bg0 = true;
                 gba.display.ctrl.obj = true;
             } else {
+                drawFallingBlockObjects(camera);
+                drawBridgeObjects(camera);
                 drawDeathBurst(camera, death_timer);
             }
             continue;
         }
 
         updatePlayer(&player, input, room_index);
-        updateFallingBlocks(&player);
+        if (updateFallingBlocks(&player)) {
+            beginPlayerDeath(&death_timer, player);
+            continue;
+        }
+        updateBridge(&player, room_index);
+        updateFunnyCars(player);
+        updateBirdNpc(player, camera);
         updateHair(&player);
         updateDustParticles();
         const next_camera = updateCamera(player, room_index);
@@ -461,7 +642,10 @@ pub export fn main() void {
             loadRoomBackground(room_index);
             loadFallingBlocks(room_index);
             loadForegroundStamps(room_index);
+            loadFunnyCars(room_index);
             loadObjectSprites();
+            loadBridge(room_index);
+            loadBirdNpc(room_index);
             loadRoomParallax(room_index);
             clearDustParticles();
             player.hair_initialized = false;
@@ -471,12 +655,15 @@ pub export fn main() void {
             applyCamera(camera);
             drawParallaxObjects(camera, room_index);
             drawForegroundStampObjects(camera);
+            drawFunnyCars(camera);
+            drawBridgeObjects(camera);
             drawHair(player, camera);
             drawDust(camera);
             drawWindSnow(camera);
             drawPlayer(player, camera);
             drawSweat(&player, camera);
             drawFallingBlockObjects(camera);
+            drawBirdNpc(camera);
             gba.display.naiveVSync();
             gba.display.ctrl.bg0 = true;
             gba.display.ctrl.obj = true;
@@ -487,7 +674,10 @@ pub export fn main() void {
         applyCamera(camera);
         drawParallaxObjects(camera, room_index);
         drawForegroundStampObjects(camera);
+        drawFunnyCars(camera);
         drawFallingBlockObjects(camera);
+        drawBridgeObjects(camera);
+        drawBirdNpc(camera);
         drawHair(player, camera);
         drawDust(camera);
         drawWindSnow(camera);
@@ -546,6 +736,38 @@ fn loadFallingBlocks(room_index: usize) void {
     }
 }
 
+fn loadBridge(room_index: usize) void {
+    bridge_chunks = [_]BridgeChunk{.{}} ** bridge_max_chunks;
+    bridge_chunk_count = 0;
+    bridge_active = room_index + 1 == rooms.len;
+    hideBridgeObjects();
+    if (!bridge_active) return;
+
+    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, bridge_palette_bank) * 16], @ptrCast(&bridge_palette_data), 16);
+    gba.display.memcpyObjectTiles4Bpp(bridge_base_tile, @ptrCast(&bridge_tiles_data));
+
+    if (bridge_layout_data.len < 2) return;
+    const count = @min(readU16Le(&bridge_layout_data, 0), bridge_max_chunks);
+    var index: usize = 0;
+    while (index < count and 2 + index < bridge_layout_data.len) : (index += 1) {
+        const variant = bridge_layout_data[2 + index];
+        if (variant != bridge_empty_chunk) {
+            const group = if (bridge_groups_data.len >= 2 + count and 2 + index < bridge_groups_data.len)
+                bridge_groups_data[2 + index]
+            else
+                bridge_no_group;
+            bridge_chunks[index] = .{
+                .state = .solid,
+                .variant = variant,
+                .group = group,
+                .x = bridge_world_x + @as(i16, @intCast(index * bridge_chunk_width)),
+                .y = pixelToFixed(bridge_world_y),
+            };
+        }
+    }
+    bridge_chunk_count = count;
+}
+
 fn loadForegroundStamps(room_index: usize) void {
     foreground_stamps = [_]ForegroundStamp{.{}} ** max_foreground_stamps;
     foreground_stamp_count = 0;
@@ -573,6 +795,99 @@ fn loadForegroundStamps(room_index: usize) void {
     }
 }
 
+fn loadFunnyCars(room_index: usize) void {
+    funny_cars = [_]FunnyCar{.{}} ** max_funny_cars;
+    funny_car_count = 0;
+    hideFunnyCars();
+
+    const data = rooms[room_index].generic_stamps;
+    if (data.len < 2) return;
+
+    const count = @min(readU16Le(data, 0), max_funny_cars);
+    var source_offset: usize = 2;
+    var source_index: usize = 0;
+    while (source_index < count and source_offset + 8 <= data.len) : ({
+        source_index += 1;
+        source_offset += 8;
+    }) {
+        const kind = data[source_offset + 7];
+        if (kind != 0) continue;
+        funny_cars[funny_car_count] = .{
+            .active = true,
+            .x = readI16Le(data, source_offset),
+            .y = readI16Le(data, source_offset + 2),
+        };
+        funny_car_count += 1;
+        if (funny_car_count >= max_funny_cars) break;
+    }
+}
+
+fn loadBirdNpc(room_index: usize) void {
+    bird_npc = .{};
+    hideObject(bird_object);
+    hideObject(bird_hint_object);
+
+    const data = rooms[room_index].bird_npcs;
+    if (data.len < 2 or readU16Le(data, 0) == 0) return;
+    if (data.len < 12) return;
+
+    bird_npc = .{
+        .active = true,
+        .state = .idle,
+        .home_x = readI16Le(data, 2),
+        .home_y = readI16Le(data, 4),
+        .hint_x = readI16Le(data, 6),
+        .hint_y = readI16Le(data, 8),
+        .x = pixelToFixed(readI16Le(data, 2)),
+        .y = pixelToFixed(readI16Le(data, 4)),
+        .path_count = @min(data[10], max_bird_path_points),
+        .trigger_count = @min(data[11], max_bird_triggers),
+        .facing_left = true,
+    };
+
+    var offset: usize = 12;
+    var index: usize = 0;
+    while (index < bird_npc.path_count and offset + 4 <= data.len) : ({
+        index += 1;
+        offset += 4;
+    }) {
+        bird_npc.path[index] = .{
+            .x = readI16Le(data, offset),
+            .y = readI16Le(data, offset + 2),
+        };
+    }
+    while (index < data[10] and offset + 4 <= data.len) : ({
+        index += 1;
+        offset += 4;
+    }) {}
+
+    index = 0;
+    while (index < bird_npc.trigger_count and offset + 10 <= data.len) : ({
+        index += 1;
+        offset += 10;
+    }) {
+        bird_npc.triggers[index] = .{
+            .action = birdTriggerActionFromByte(data[offset]),
+            .x = readI16Le(data, offset + 2),
+            .y = readI16Le(data, offset + 4),
+            .w = readI16Le(data, offset + 6),
+            .h = readI16Le(data, offset + 8),
+        };
+    }
+
+    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, bird_palette_bank) * 16], @ptrCast(&bird_palette_data), 16);
+    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, bird_hint_palette_bank) * 16], @ptrCast(&bird_hint_palette_data), 16);
+}
+
+fn birdTriggerActionFromByte(value: u8) BirdTriggerAction {
+    return switch (value) {
+        1 => .squawk_hold_hint,
+        2 => .show_climb_hint,
+        3 => .peck_then_fly,
+        else => .none,
+    };
+}
+
 fn loadRoomParallax(room_index: usize) void {
     hideParallaxObjects();
     if (rooms[room_index].parallax) |parallax| {
@@ -596,7 +911,9 @@ fn loadObjectSprites() void {
     gba.mem.memcpy16(&gba.display.obj_palette.colors[64], @ptrCast(&player_sweat_palette_data), 16);
     gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, foreground_stamp_palette_bank) * 16], @ptrCast(&grass1_palette_data), 16);
     gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, foreground_stamp2_palette_bank) * 16], @ptrCast(&grass2_palette_data), 16);
+    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, funny_car_palette_bank) * 16], @ptrCast(&funny_car_palette_data), 16);
     gba.display.memcpyObjectTiles4Bpp(falling_block_base_tile, @ptrCast(&falling_block_tiles_data));
+    gba.display.memcpyObjectTiles4Bpp(funny_car_base_tile, @ptrCast(&funny_car_tiles_data));
     gba.display.memcpyObjectTiles4Bpp(hair_root_base_tile, @ptrCast(&hair_tiles_data));
     gba.display.memcpyObjectTiles4Bpp(foreground_stamp_base_tile, @ptrCast(&grass1_tiles_data));
     gba.display.memcpyObjectTiles4Bpp(foreground_stamp_mirror_base_tile, @ptrCast(&grass1_mirror_tiles_data));
@@ -690,6 +1007,9 @@ fn updatePlayer(player: *Player, input: gba.input.BufferedKeysState, room_index:
     if (player.climb_grab_lockout_timer > 0) {
         player.climb_grab_lockout_timer -= 1;
     }
+    if (player.wall_dust_timer > 0) {
+        player.wall_dust_timer -= 1;
+    }
     if (player.force_move_x_timer > 0) {
         player.force_move_x_timer -= 1;
     }
@@ -735,6 +1055,9 @@ fn updatePlayer(player: *Player, input: gba.input.BufferedKeysState, room_index:
     var jumped_this_frame = false;
 
     if (player.jump_buffer_timer > 0 and player.coyote_timer > 0) {
+        if (player.grounded) {
+            releaseFunnyCarAtPlayer(player.*);
+        }
         spawnJumpDustAtFeet(player.*);
         player.vy = player_jump_speed;
         player.var_jump_speed = player.vy;
@@ -803,6 +1126,9 @@ fn updatePlayer(player: *Player, input: gba.input.BufferedKeysState, room_index:
     if (player.grounded) {
         if (!was_grounded and player.dust_suppress_timer == 0) {
             spawnLandingDustAtFeet(player.*);
+        }
+        if (!was_grounded) {
+            triggerFunnyCarBounceAtPlayer(player.*);
         }
         player.var_jump_timer = 0;
         player.wall_slide_timer = player_wall_slide_frames;
@@ -912,6 +1238,9 @@ fn updateClimb(player: *Player, grab_held: bool, vertical: i16, room_index: usiz
         player.stamina = @max(0, player.stamina - player_climb_up_cost);
     } else if (vertical == 0) {
         player.stamina = @max(0, player.stamina - player_climb_still_cost);
+    } else if (!player.grounded and player.wall_dust_timer == 0 and player.vy > fixed_one / 3) {
+        spawnWallSlideDust(player.*, climb_dir);
+        player.wall_dust_timer = 5;
     }
 }
 
@@ -1122,6 +1451,27 @@ fn spawnDustAtFeet(player: Player, landing: bool) void {
     }
 }
 
+fn spawnWallSlideDust(player: Player, wall_dir: i16) void {
+    const slot = nextDustParticleIndex();
+    const body_x = fixedToPixel(player.x);
+    const body_y = fixedToPixel(player.y);
+    const contact_x = body_x + if (wall_dir < 0) @as(i16, -1) else @as(i16, player_body_width + 1);
+    const lag_y = body_y + 4 + @as(i16, @intCast(nextRandom() % 4));
+    const push_away = -@as(i32, wall_dir) * (0x10 + @as(i32, @intCast(nextRandom() % 0x18)));
+    const life = 14 + @as(u8, @intCast(nextRandom() % 8));
+    dust_particles[slot] = .{
+        .active = true,
+        .x = pixelToFixed(contact_x),
+        .y = pixelToFixed(lag_y),
+        .vx = push_away,
+        .vy = -(0x08 + @as(i32, @intCast(nextRandom() % 0x18))),
+        .life = life,
+        .max_life = life,
+        .shape = @intCast(nextRandom() % 4),
+        .wall = true,
+    };
+}
+
 fn spawnFallingBlockSnow(block: FallingBlock) void {
     const base_y = fixedToPixel(block.y) + 2;
     const count: u8 = 7;
@@ -1188,7 +1538,7 @@ fn clearDustParticles() void {
     }
 }
 
-fn updateFallingBlocks(player: *Player) void {
+fn updateFallingBlocks(player: *Player) bool {
     var index: usize = 0;
     while (index < falling_block_count) : (index += 1) {
         const block = &falling_blocks[index];
@@ -1211,6 +1561,7 @@ fn updateFallingBlocks(player: *Player) void {
                 }
             },
             .falling => {
+                const old_x = block.x;
                 const old_y = fixedToPixel(block.y);
                 block.vy = approach(block.vy, falling_block_max_fall, falling_block_gravity);
                 block.y += block.vy;
@@ -1224,11 +1575,128 @@ fn updateFallingBlocks(player: *Player) void {
                 const dy = fixedToPixel(block.y) - old_y;
                 if (dy > 0 and playerStandingOnBlock(player.*, block.*)) {
                     player.y += @as(i32, dy) << fixed_shift;
+                } else if (movingBlockCrushesPlayer(player.*, old_x, old_y, block.x, fixedToPixel(block.y), block.w, block.h)) {
+                    return true;
                 }
             },
             .landed => {},
         }
     }
+    return false;
+}
+
+fn updateFallingBlocksDuringDeath() void {
+    var index: usize = 0;
+    while (index < falling_block_count) : (index += 1) {
+        const block = &falling_blocks[index];
+        if (!block.active) continue;
+
+        switch (block.state) {
+            .idle => {},
+            .shaking => {
+                if (block.timer > 0) {
+                    block.timer -= 1;
+                } else {
+                    spawnFallingBlockSnow(block.*);
+                    block.state = .falling;
+                    block.vy = 0;
+                }
+            },
+            .falling => {
+                block.vy = approach(block.vy, falling_block_max_fall, falling_block_gravity);
+                block.y += block.vy;
+                if (fixedToPixel(block.y) >= block.max_y) {
+                    block.y = pixelToFixed(block.max_y);
+                    block.vy = 0;
+                    block.state = .landed;
+                    markRoomFallingBlockLanded(current_room_index, index);
+                }
+            },
+            .landed => {},
+        }
+    }
+}
+
+fn updateBridge(player: *Player, room_index: usize) void {
+    if (!bridge_active or room_index + 1 != rooms.len) return;
+
+    const player_center_x = fixedToPixel(player.x) + player_body_width / 2;
+    const player_bottom = fixedToPixel(player.y) + player_body_height;
+    const trigger_y_min = bridge_world_y - 4;
+    const trigger_y_max = bridge_world_y + 12;
+    if (player_bottom >= trigger_y_min and player_bottom <= trigger_y_max) {
+        if (bridgeChunkIndexAtX(player_center_x)) |chunk_index| {
+            const chunk = &bridge_chunks[chunk_index];
+            if (chunk.state == .solid and player_center_x >= chunk.x - 4 and player_center_x < chunk.x + bridge_chunk_width + 2) {
+                triggerBridgeChunkRun(chunk_index);
+            }
+        }
+    }
+
+    var index: usize = 0;
+    while (index < bridge_chunk_count) : (index += 1) {
+        const chunk = &bridge_chunks[index];
+        switch (chunk.state) {
+            .inactive, .solid, .gone => {},
+            .shaking => {
+                if (chunk.timer > 0) {
+                    chunk.timer -= 1;
+                } else {
+                    spawnBridgeSnow(chunk.*);
+                    chunk.state = .falling;
+                    chunk.vy = 0;
+                }
+            },
+            .falling => {
+                chunk.vy = approach(chunk.vy, bridge_fall_max_speed, bridge_fall_gravity);
+                chunk.y += chunk.vy;
+                if (fixedToPixel(chunk.y) > rooms[room_index].height_pixels + 40) {
+                    chunk.state = .gone;
+                }
+            },
+        }
+    }
+}
+
+fn triggerBridgeChunkRun(start_index: usize) void {
+    const group = bridge_chunks[start_index].group;
+    if (group == bridge_no_group) {
+        triggerBridgeChunk(start_index, 0);
+        return;
+    }
+
+    var index: usize = 0;
+    while (index < bridge_chunk_count) : (index += 1) {
+        if (bridge_chunks[index].group != group) continue;
+        triggerBridgeChunk(index, 0);
+    }
+}
+
+fn triggerBridgeChunk(index: usize, delay: u8) void {
+    const chunk = &bridge_chunks[index];
+    if (chunk.state != .solid) return;
+    chunk.state = .shaking;
+    chunk.timer = bridge_shake_frames + delay;
+}
+
+fn bridgeChunkIndexAtX(x: i16) ?usize {
+    if (!bridge_active or x < bridge_world_x) return null;
+    const relative = x - bridge_world_x;
+    const index: usize = @intCast(@divTrunc(relative, bridge_chunk_width));
+    if (index >= bridge_chunk_count) return null;
+    return index;
+}
+
+fn spawnBridgeSnow(chunk: BridgeChunk) void {
+    const block = FallingBlock{
+        .active = true,
+        .x = chunk.x,
+        .y = chunk.y,
+        .w = bridge_chunk_width,
+        .h = bridge_visual_height,
+        .max_y = fixedToPixel(chunk.y) + bridge_visual_height,
+    };
+    spawnFallingBlockSnow(block);
 }
 
 fn roomFallingBlockLanded(room_index: usize, block_index: usize) bool {
@@ -1266,6 +1734,36 @@ fn playerStandingOnBlock(player: Player, block: FallingBlock) bool {
         player_bottom <= block_top + 2;
 }
 
+fn movingBlockCrushesPlayer(player: Player, old_x: i16, old_y: i16, new_x: i16, new_y: i16, w: u8, h: u8) bool {
+    const player_left = fixedToPixel(player.x);
+    const player_top = fixedToPixel(player.y);
+    const player_right = player_left + player_body_width;
+    const player_bottom = player_top + player_body_height;
+
+    const block_left = new_x;
+    const block_top = new_y;
+    const block_right = new_x + @as(i16, @intCast(w));
+    const block_bottom = new_y + @as(i16, @intCast(h));
+    if (!rectsOverlap(player_left, player_top, player_right, player_bottom, block_left, block_top, block_right, block_bottom)) {
+        return false;
+    }
+
+    const old_right = old_x + @as(i16, @intCast(w));
+    const old_bottom = old_y + @as(i16, @intCast(h));
+    const dx = new_x - old_x;
+    const dy = new_y - old_y;
+
+    if (dy > 0 and old_bottom <= player_top + 1) return true;
+    if (dy < 0 and old_y >= player_bottom - 1) return true;
+    if (dx > 0 and old_right <= player_left + 1) return true;
+    if (dx < 0 and old_x >= player_right - 1) return true;
+    return dx != 0 or dy != 0;
+}
+
+fn rectsOverlap(a_left: i16, a_top: i16, a_right: i16, a_bottom: i16, b_left: i16, b_top: i16, b_right: i16, b_bottom: i16) bool {
+    return a_left < b_right and a_right > b_left and a_top < b_bottom and a_bottom > b_top;
+}
+
 fn wallSlideContact(player: Player, horizontal: i16, room_index: usize) bool {
     if (horizontal == 0) return false;
     return wallContact(player, horizontal, room_index);
@@ -1296,7 +1794,7 @@ fn floorContact(player: Player, room_index: usize) bool {
 }
 
 fn floorContactAt(x: i16, y: i16, room_index: usize) bool {
-    return collidesAt(x, y + 1, room_index) or oneWayFloorAt(x, y, room_index);
+    return collidesAt(x, y + 1, room_index) or oneWayFloorAt(x, y, room_index) or funnyCarFloorAt(x, y);
 }
 
 fn trySwitchRoom(player: *Player, input: gba.input.BufferedKeysState, room_index: *usize, respawn: *Spawn) bool {
@@ -1700,7 +2198,8 @@ fn hairRootTailAnchorWorld(anchor: HairAnchor, animation: PlayerAnimation) HairN
     const tail_offset_x: i16 = if (anchor.dir > 0) 7 else 0;
     const tail_x: i16 = root.x + tail_offset_x + anchor.tail_bias_x;
     const tail_offset_y: i16 = switch (animation) {
-        .idle, .jump, .fall, .wallslide, .climb, .dangling, .climb_pull => 5,
+        .idle => 4,
+        .jump, .fall, .wallslide, .climb, .dangling, .climb_pull => 5,
         .run => 6,
     };
     const tail_y: i16 = root.y + tail_offset_y + anchor.tail_bias_y;
@@ -1930,54 +2429,26 @@ fn drawDeathCore(camera: Camera, size: gba.display.Object.Size, base_tile: u10, 
 }
 
 fn drawDeathBalls(camera: Camera, progress: u8) void {
-    const circle = [_][2]i16{
+    const directions = [_][2]i16{
         .{ 0, -16 },
-        .{ 3, -16 },
-        .{ 6, -15 },
-        .{ 9, -13 },
         .{ 11, -11 },
-        .{ 13, -9 },
-        .{ 15, -6 },
-        .{ 16, -3 },
         .{ 16, 0 },
-        .{ 16, 3 },
-        .{ 15, 6 },
-        .{ 13, 9 },
         .{ 11, 11 },
-        .{ 9, 13 },
-        .{ 6, 15 },
-        .{ 3, 16 },
         .{ 0, 16 },
-        .{ -3, 16 },
-        .{ -6, 15 },
-        .{ -9, 13 },
         .{ -11, 11 },
-        .{ -13, 9 },
-        .{ -15, 6 },
-        .{ -16, 3 },
         .{ -16, 0 },
-        .{ -16, -3 },
-        .{ -15, -6 },
-        .{ -13, -9 },
         .{ -11, -11 },
-        .{ -9, -13 },
-        .{ -6, -15 },
-        .{ -3, -16 },
     };
     const origin_x = clampI16(fixedToPixel(death_origin_x) - camera.x - 4, 4, screen_width - 12);
     const origin_y = clampI16(fixedToPixel(death_origin_y) - camera.y - 4, 4, screen_height - 12);
-    const spread_progress: i16 = @intCast(@min(progress, 10));
-    const post_spread: i16 = @intCast(if (progress > 10) progress - 10 else 0);
-    const radius: i16 = 5 + spread_progress + @divTrunc(post_spread, 8);
+    const radius: i16 = deathBurstRadius(progress);
     const flash_white = (progress & 0x10) != 0;
     const ball_base_tile: u10 = death_burst_base_tile + if (flash_white) @as(u10, 0) else @as(u10, 1);
-    const phase: usize = @intCast(@divTrunc(progress, 5));
 
     var index: usize = 0;
     while (index < death_burst_spoke_count) : (index += 1) {
-        const direction_index = (index * 4 + phase) % circle.len;
-        const dx = @divTrunc(circle[direction_index][0] * radius, 16);
-        const dy = @divTrunc(circle[direction_index][1] * radius, 16);
+        const dx = @divTrunc(directions[index][0] * radius, 16);
+        const dy = @divTrunc(directions[index][1] * radius, 16);
         gba.display.objects[death_burst_first_object + index] = gba.display.Object.init(.{
             .size = .size_8x8,
             .x = objX(origin_x + dx),
@@ -1988,6 +2459,17 @@ fn drawDeathBalls(camera: Camera, progress: u8) void {
         });
     }
     hideObject(death_burst_first_object + death_burst_spoke_count);
+}
+
+fn deathBurstRadius(progress: u8) i16 {
+    const radii = [_]i16{
+        4,  5,  6,  7,  8,  9,  10, 11,
+        12, 13, 14, 15, 16, 17, 18, 19,
+        20, 20, 21, 21, 22, 22, 23, 23,
+        24, 24, 25, 25, 25, 25, 25, 25,
+    };
+    if (progress < radii.len) return radii[progress];
+    return 25;
 }
 
 fn hideDeathBurstObjects() void {
@@ -2021,6 +2503,16 @@ fn drawDustShape(tile_index: usize, particle: DustParticle) void {
         if (age > 7 and particle.life > particle.max_life / 3) {
             setDustTilePixel(tile_index, center_x - 1, center_y + 1, 1);
             setDustTilePixel(tile_index, center_x + 1, center_y + 1, 1);
+        }
+        return;
+    }
+    if (particle.wall) {
+        const center_x: i16 = 3 + @as(i16, @intCast(particle.shape & 1));
+        const center_y: i16 = 3 + @as(i16, @intCast((particle.shape >> 1) & 1));
+        const shrink = particle.life < particle.max_life / 3;
+        drawDustDisc(tile_index, center_x, center_y, if (shrink) 1 else 2);
+        if (!shrink and age > 3) {
+            drawDustDisc(tile_index, center_x - 1, center_y + 2, 1);
         }
         return;
     }
@@ -2287,6 +2779,219 @@ fn hideParallaxObjects() void {
     }
 }
 
+fn updateBirdNpc(player: Player, camera: Camera) void {
+    if (!bird_npc.active) return;
+
+    bird_npc.timer +%= 1;
+    if (birdClimbCompleteTriggered(player)) {
+        bird_npc.state = .liftoff;
+        bird_npc.timer = 0;
+        hideObject(bird_hint_object);
+    }
+    switch (bird_npc.state) {
+        .inactive, .gone => {},
+        .idle => {
+            bird_npc.frame = birdIdlePeckFrame();
+            if (birdTriggerActive(player, .squawk_hold_hint) or (bird_npc.trigger_count == 0 and birdPlayerLandedBelow(player))) {
+                bird_npc.state = .squawk;
+                bird_npc.timer = 0;
+            }
+        },
+        .squawk => {
+            const frame_offset = @divTrunc(bird_npc.timer, bird_anim_speed);
+            bird_npc.frame = bird_squawk_first_frame + @min(frame_offset, @as(u16, bird_squawk_frame_count - 1));
+            if (bird_npc.timer >= bird_hold_hint_frames) {
+                bird_npc.state = .hold_hint;
+                bird_npc.timer = 0;
+            }
+        },
+        .hold_hint => {
+            bird_npc.frame = birdIdlePeckFrame();
+            if (bird_npc.timer >= bird_hold_hint_frames) {
+                bird_npc.state = .climb_hint;
+                bird_npc.timer = 0;
+            }
+        },
+        .climb_hint => {
+            bird_npc.frame = birdIdlePeckFrame();
+            if (birdClimbCompleteTriggered(player)) {
+                bird_npc.state = .liftoff;
+                bird_npc.timer = 0;
+            }
+        },
+        .hide_hint => {
+            bird_npc.frame = birdIdlePeckFrame();
+            if (bird_npc.timer >= bird_hint_hide_frames) {
+                bird_npc.state = .done;
+                bird_npc.timer = 0;
+            }
+        },
+        .peck => {
+            const frame_offset = @divTrunc(bird_npc.timer, bird_anim_speed);
+            bird_npc.frame = bird_peck_first_frame + @min(frame_offset, @as(u16, bird_peck_frame_count - 1));
+            if (frame_offset >= bird_peck_frame_count) {
+                bird_npc.state = .fly;
+                bird_npc.timer = 0;
+                bird_npc.path_index = 0;
+                bird_npc.x = pixelToFixed(bird_npc.home_x);
+                bird_npc.y = pixelToFixed(bird_npc.home_y);
+            }
+        },
+        .fly => {
+            bird_npc.frame = bird_fly_first_frame + @as(u16, @intCast(@divTrunc(bird_npc.timer, bird_anim_speed) % bird_fly_frame_count));
+            bird_npc.x += bird_flyaway_vx;
+            bird_npc.y += bird_flyaway_vy;
+            bird_npc.facing_left = bird_npc.timer < bird_flyaway_frames / 3;
+            const draw_y = fixedToPixel(bird_npc.y) - bird_origin_offset_y - camera.y;
+            if (draw_y < -32 or bird_npc.timer >= bird_flyaway_frames) {
+                bird_npc.state = .gone;
+                hideObject(bird_object);
+                hideObject(bird_hint_object);
+            }
+        },
+        .liftoff => {
+            const frame_offset = @divTrunc(bird_npc.timer, bird_anim_speed);
+            bird_npc.frame = bird_liftoff_first_frame + @min(frame_offset, @as(u16, bird_liftoff_frame_count - 1));
+            bird_npc.x += bird_liftoff_vx;
+            bird_npc.y += bird_liftoff_vy;
+            bird_npc.facing_left = true;
+            if (frame_offset >= bird_liftoff_frame_count) {
+                bird_npc.state = .fly;
+                bird_npc.timer = 0;
+            }
+        },
+        .done => {
+            bird_npc.frame = birdIdlePeckFrame();
+        },
+    }
+}
+
+fn birdClimbCompleteTriggered(player: Player) bool {
+    return switch (bird_npc.state) {
+        .squawk, .hold_hint, .climb_hint, .hide_hint, .peck, .done =>
+            birdTriggerActive(player, .peck_then_fly) or
+                (bird_npc.trigger_count == 0 and playerReachedBirdClimbGoal(player)),
+        else => false,
+    };
+}
+
+fn birdIdlePeckFrame() u16 {
+    const cycle_frame = bird_npc.timer % bird_peck_cycle_frames;
+    const peck_total_frames = bird_peck_frame_count * bird_anim_speed;
+    if (cycle_frame < peck_total_frames) {
+        return bird_peck_first_frame + @min(@divTrunc(cycle_frame, bird_anim_speed), @as(u16, bird_peck_frame_count - 1));
+    }
+    return bird_squawk_first_frame;
+}
+
+fn birdPlayerLandedBelow(player: Player) bool {
+    if (!player.grounded) return false;
+    const player_x = fixedToPixel(player.x) + player_body_width / 2;
+    const player_y = fixedToPixel(player.y) + player_body_height;
+    return player_x >= bird_npc.home_x - 72 and
+        player_x <= bird_npc.home_x + 96 and
+        player_y >= bird_npc.home_y + 8;
+}
+
+fn playerReachedBirdClimbGoal(player: Player) bool {
+    const player_x = fixedToPixel(player.x) + player_body_width / 2;
+    const player_y = fixedToPixel(player.y);
+    return player_y <= bird_npc.home_y - 16 or
+        (player.grounded and player_x >= bird_npc.home_x + 64 and player_y <= bird_npc.home_y + 48);
+}
+
+fn birdTriggerActive(player: Player, action: BirdTriggerAction) bool {
+    if (bird_npc.trigger_count == 0) return false;
+    const player_left = fixedToPixel(player.x);
+    const player_top = fixedToPixel(player.y);
+    const player_right = player_left + player_body_width;
+    const player_bottom = player_top + player_body_height;
+    var index: usize = 0;
+    while (index < bird_npc.trigger_count) : (index += 1) {
+        const trigger = bird_npc.triggers[index];
+        if (trigger.action != action) continue;
+        const trigger_left = trigger.x;
+        const trigger_top = trigger.y;
+        const trigger_right = trigger.x + trigger.w;
+        const trigger_bottom = trigger.y + trigger.h;
+        if (rectsOverlap(player_left, player_top, player_right, player_bottom, trigger_left, trigger_top, trigger_right, trigger_bottom)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+fn advanceBirdAlongPath() bool {
+    if (bird_npc.path_count == 0 or bird_npc.path_index >= bird_npc.path_count) return false;
+    const target = bird_npc.path[bird_npc.path_index];
+    const target_x = pixelToFixed(target.x);
+    const target_y = pixelToFixed(target.y);
+    const dx = target_x - bird_npc.x;
+    const dy = target_y - bird_npc.y;
+    const dist_sq = @as(i64, dx) * dx + @as(i64, dy) * dy;
+    if (dist_sq <= @as(i64, bird_fly_speed) * bird_fly_speed) {
+        bird_npc.x = target_x;
+        bird_npc.y = target_y;
+        bird_npc.path_index += 1;
+        return bird_npc.path_index < bird_npc.path_count;
+    }
+    const dist: i32 = @intCast(sqrtU64(@intCast(dist_sq)));
+    bird_npc.x += @as(i32, @intCast(@divTrunc(@as(i64, dx) * bird_fly_speed, dist)));
+    bird_npc.y += @as(i32, @intCast(@divTrunc(@as(i64, dy) * bird_fly_speed, dist)));
+    bird_npc.facing_left = dx < 0;
+    return true;
+}
+
+fn drawBirdNpc(camera: Camera) void {
+    if (!bird_npc.active or bird_npc.state == .inactive or bird_npc.state == .gone) {
+        hideObject(bird_object);
+        hideObject(bird_hint_object);
+        return;
+    }
+
+    loadBirdFrame(bird_npc.frame);
+    const draw_x = fixedToPixel(bird_npc.x) - bird_origin_offset_x - camera.x;
+    const draw_y = fixedToPixel(bird_npc.y) - bird_origin_offset_y - camera.y;
+    gba.display.objects[bird_object] = gba.display.Object.init(.{
+        .size = .size_32x32,
+        .x = objX(draw_x),
+        .y = objY(draw_y),
+        .base_tile = bird_base_tile,
+        .priority = 0,
+        .palette = bird_palette_bank,
+        .flip = gba.math.Vec2B.init(bird_npc.facing_left, false),
+    });
+
+    const show_squawk_hint = bird_npc.state == .squawk and bird_npc.timer >= bird_hint_show_delay_frames;
+    const show_hide_hint = bird_npc.state == .hide_hint or (bird_npc.state == .liftoff and bird_npc.timer < bird_hint_hide_frames);
+    if (show_squawk_hint or bird_npc.state == .hold_hint or bird_npc.state == .climb_hint or show_hide_hint) {
+        if (bird_npc.state == .squawk or bird_npc.state == .hold_hint) {
+            gba.display.memcpyObjectTiles4Bpp(bird_hint_base_tile, @ptrCast(&bird_hold_hint_tiles_data));
+        } else {
+            gba.display.memcpyObjectTiles4Bpp(bird_hint_base_tile, @ptrCast(&bird_climb_hint_tiles_data));
+        }
+        const hide_lift: i16 = if (bird_npc.state == .hide_hint) @intCast(@divTrunc(bird_npc.timer, 4)) else 0;
+        gba.display.objects[bird_hint_object] = gba.display.Object.init(.{
+            .size = .size_64x64,
+            .x = objX(bird_npc.hint_x - camera.x),
+            .y = objY(bird_npc.hint_y - hide_lift - camera.y),
+            .base_tile = bird_hint_base_tile,
+            .priority = 0,
+            .palette = bird_hint_palette_bank,
+        });
+    } else {
+        hideObject(bird_hint_object);
+    }
+}
+
+fn loadBirdFrame(frame: u16) void {
+    const safe_frame = @min(frame, bird_total_frame_count - 1);
+    const byte_offset = @as(usize, safe_frame) * bird_tiles_per_frame * 32;
+    const byte_len = bird_tiles_per_frame * 32;
+    const frame_bytes = bird_intro_tiles_data[byte_offset .. byte_offset + byte_len];
+    gba.display.memcpyObjectTiles4Bpp(bird_base_tile, @ptrCast(@alignCast(frame_bytes)));
+}
+
 fn drawForegroundStampObjects(camera: Camera) void {
     var behind_index: usize = 0;
     var occluding_index: usize = 0;
@@ -2348,6 +3053,87 @@ fn drawForegroundStampObjects(camera: Camera) void {
     }
 }
 
+fn updateFunnyCars(player: Player) void {
+    var index: usize = 0;
+    while (index < funny_car_count) : (index += 1) {
+        const car = &funny_cars[index];
+        if (!car.active or !car.pressed) continue;
+        if (!playerFeetTouchFunnyCar(player, car.*)) {
+            car.pressed = false;
+        }
+    }
+}
+
+fn playerFeetTouchFunnyCar(player: Player, car: FunnyCar) bool {
+    const player_left = fixedToPixel(player.x);
+    const player_right = player_left + player_body_width - 1;
+    const player_bottom = fixedToPixel(player.y) + player_body_height;
+    return funnyCarBottomNearBaseAt(player_left, player_bottom, car) or
+        funnyCarBottomNearBaseAt(player_right, player_bottom, car);
+}
+
+fn triggerFunnyCarBounceAtPlayer(player: Player) void {
+    var index: usize = 0;
+    while (index < funny_car_count) : (index += 1) {
+        const car = &funny_cars[index];
+        if (!car.active) continue;
+        if (playerFeetTouchFunnyCar(player, car.*)) {
+            car.pressed = true;
+        }
+    }
+}
+
+fn releaseFunnyCarAtPlayer(player: Player) void {
+    var index: usize = 0;
+    while (index < funny_car_count) : (index += 1) {
+        const car = &funny_cars[index];
+        if (!car.active) continue;
+        if (playerFeetTouchFunnyCar(player, car.*)) {
+            car.pressed = false;
+        }
+    }
+}
+
+fn drawFunnyCars(camera: Camera) void {
+    var index: usize = 0;
+    while (index < max_funny_cars) : (index += 1) {
+        if (index >= funny_car_count or !funny_cars[index].active) {
+            hideFunnyCar(index);
+            continue;
+        }
+        const car = funny_cars[index];
+        const bounce_y: i16 = if (car.pressed) 1 else 0;
+        const object_index = funny_car_first_object + index * funny_car_object_count;
+        drawFunnyCarChunk(object_index, car.x - camera.x, car.y + bounce_y - camera.y, funny_car_base_tile, .size_32x16);
+        drawFunnyCarChunk(object_index + 1, car.x + 32 - camera.x, car.y + bounce_y - camera.y, funny_car_base_tile + 8, .size_16x16);
+    }
+}
+
+fn drawFunnyCarChunk(object_index: usize, x: i16, y: i16, base_tile: u10, size: gba.display.Object.Size) void {
+    gba.display.objects[object_index] = gba.display.Object.init(.{
+        .size = size,
+        .x = objX(x),
+        .y = objY(y),
+        .base_tile = base_tile,
+        .priority = 1,
+        .palette = funny_car_palette_bank,
+    });
+}
+
+fn hideFunnyCars() void {
+    var index: usize = 0;
+    while (index < max_funny_cars) : (index += 1) {
+        hideFunnyCar(index);
+    }
+}
+
+fn hideFunnyCar(index: usize) void {
+    var part: usize = 0;
+    while (part < funny_car_object_count) : (part += 1) {
+        hideObject(funny_car_first_object + index * funny_car_object_count + part);
+    }
+}
+
 fn foregroundStampFrame() u16 {
     const forward_frames = grass1_frame_count;
     const cycle = forward_frames * 2 - 2;
@@ -2406,6 +3192,47 @@ fn hideFallingBlockObjects() void {
     var index: usize = 0;
     while (index < max_falling_blocks * falling_block_objects_per_block) : (index += 1) {
         hideObject(falling_block_first_object + index);
+    }
+}
+
+fn drawBridgeObjects(camera: Camera) void {
+    if (!bridge_active) {
+        return;
+    }
+
+    var object_offset: usize = 0;
+    var index: usize = 0;
+    while (index < bridge_chunk_count and object_offset < bridge_max_objects) : (index += 1) {
+        const chunk = bridge_chunks[index];
+        if (chunk.state == .inactive or chunk.state == .gone or chunk.variant == bridge_empty_chunk) continue;
+
+        const screen_x = chunk.x - camera.x;
+        if (screen_x < -bridge_chunk_width or screen_x >= screen_width) continue;
+
+        const shake_x: i16 = if (chunk.state == .shaking and (chunk.timer & 3) == 0) -1 else 0;
+        const shake_y: i16 = if (chunk.state == .shaking and (chunk.timer & 7) == 0) 1 else 0;
+        const screen_y = fixedToPixel(chunk.y) - camera.y;
+        const base_tile = bridge_base_tile + @as(u10, @intCast(@as(u16, chunk.variant) * bridge_tiles_per_chunk));
+        gba.display.objects[bridge_first_object + object_offset] = gba.display.Object.init(.{
+            .size = .size_8x32,
+            .x = objX(screen_x + shake_x),
+            .y = objY(screen_y + shake_y),
+            .base_tile = base_tile,
+            .priority = 0,
+            .palette = bridge_palette_bank,
+        });
+        object_offset += 1;
+    }
+
+    while (object_offset < bridge_max_objects) : (object_offset += 1) {
+        hideObject(bridge_first_object + object_offset);
+    }
+}
+
+fn hideBridgeObjects() void {
+    var index: usize = 0;
+    while (index < bridge_max_objects) : (index += 1) {
+        hideObject(bridge_first_object + index);
     }
 }
 
@@ -2596,12 +3423,30 @@ fn moveHorizontal(player: *Player, amount: i32, room_index: usize) void {
     const target_pixel = fixedToPixel(target);
     while (pixel != target_pixel) {
         const next = pixel + step;
-        if (collidesAt(next, fixedToPixel(player.y), room_index)) {
-            player.x = pixelToFixed(pixel);
-            player.vx = 0;
-            return;
+        const player_y = fixedToPixel(player.y);
+        if (collidesAt(next, player_y, room_index)) {
+            if (player.grounded) {
+                var lift: i16 = 1;
+                while (lift <= 2) : (lift += 1) {
+                    const lifted_y = player_y - lift;
+                    if (!collidesAt(next, lifted_y, room_index)) {
+                        player.y = pixelToFixed(lifted_y);
+                        pixel = next;
+                        break;
+                    }
+                } else {
+                    player.x = pixelToFixed(pixel);
+                    player.vx = 0;
+                    return;
+                }
+            } else {
+                player.x = pixelToFixed(pixel);
+                player.vx = 0;
+                return;
+            }
+        } else {
+            pixel = next;
         }
-        pixel = next;
     }
     player.x = target;
 }
@@ -2724,7 +3569,10 @@ fn oneWayPlatformTopForPlayer(player_x: i16, old_y: i16, next_y: i16, room_index
     if (oneWayPlatformTopAtBottom(player_x, old_bottom, next_bottom, room_index)) |platform_top| {
         return platform_top;
     }
-    return oneWayPlatformTopAtBottom(player_x + player_body_width - 1, old_bottom, next_bottom, room_index);
+    if (oneWayPlatformTopAtBottom(player_x + player_body_width - 1, old_bottom, next_bottom, room_index)) |platform_top| {
+        return platform_top;
+    }
+    return funnyCarTopForPlayer(player_x, old_bottom, next_bottom);
 }
 
 fn oneWayPlatformTopAtBottom(x: i16, old_bottom: i16, next_bottom: i16, room_index: usize) ?i16 {
@@ -2751,6 +3599,73 @@ fn oneWayPlatformAtBottom(x: i16, bottom_y: i16, room_index: usize) bool {
     return bottom_y >= platform_top and bottom_y < platform_top + 4;
 }
 
+fn funnyCarTopForPlayer(player_x: i16, old_bottom: i16, next_bottom: i16) ?i16 {
+    const left = funnyCarTopAtBottom(player_x, old_bottom, next_bottom);
+    const right = funnyCarTopAtBottom(player_x + player_body_width - 1, old_bottom, next_bottom);
+    if (left) |left_top| {
+        if (right) |right_top| {
+            return @min(left_top, right_top);
+        }
+        return left_top;
+    }
+    return right;
+}
+
+fn funnyCarTopAtBottom(x: i16, old_bottom: i16, next_bottom: i16) ?i16 {
+    var index: usize = 0;
+    while (index < funny_car_count) : (index += 1) {
+        const car = funny_cars[index];
+        if (!car.active) continue;
+        if (funnyCarSurfaceYAt(car, x)) |surface_y| {
+            if (old_bottom <= surface_y and next_bottom >= surface_y and next_bottom < surface_y + 4) {
+                return surface_y;
+            }
+        }
+    }
+    return null;
+}
+
+fn funnyCarFloorAt(player_x: i16, player_y: i16) bool {
+    const player_bottom = player_y + player_body_height;
+    return funnyCarBottomTouchesAt(player_x, player_bottom, null) or
+        funnyCarBottomTouchesAt(player_x + player_body_width - 1, player_bottom, null);
+}
+
+fn funnyCarBottomTouchesAt(x: i16, bottom_y: i16, maybe_car: ?FunnyCar) bool {
+    if (maybe_car) |car| {
+        if (funnyCarSurfaceYAt(car, x)) |surface_y| {
+            return bottom_y >= surface_y and bottom_y < surface_y + 4;
+        }
+        return false;
+    }
+    var index: usize = 0;
+    while (index < funny_car_count) : (index += 1) {
+        const car = funny_cars[index];
+        if (!car.active) continue;
+        if (funnyCarBottomTouchesAt(x, bottom_y, car)) return true;
+    }
+    return false;
+}
+
+fn funnyCarSurfaceYAt(car: FunnyCar, x: i16) ?i16 {
+    const surface_y = funnyCarBaseSurfaceYAt(car, x) orelse return null;
+    const pressed_offset: i16 = if (car.pressed) 1 else 0;
+    return surface_y + pressed_offset;
+}
+
+fn funnyCarBaseSurfaceYAt(car: FunnyCar, x: i16) ?i16 {
+    if (x < car.x or x >= car.x + funny_car_width) return null;
+    const local_x: usize = @intCast(x - car.x);
+    return car.y + @as(i16, funny_car_top[local_x]);
+}
+
+fn funnyCarBottomNearBaseAt(x: i16, bottom_y: i16, car: FunnyCar) bool {
+    if (funnyCarBaseSurfaceYAt(car, x)) |surface_y| {
+        return bottom_y >= surface_y - 1 and bottom_y < surface_y + 5;
+    }
+    return false;
+}
+
 fn dynamicSolidAtPixel(x: i16, y: i16) bool {
     return dynamicSolidRectAt(x, y, 1, 1);
 }
@@ -2765,6 +3680,20 @@ fn dynamicSolidRectAt(x: i16, y: i16, width: i16, height: i16) bool {
         const block_y = fixedToPixel(block.y);
         if (right > block.x and x < block.x + block.w and bottom > block_y and y < block_y + block.h) {
             return true;
+        }
+    }
+    if (bridge_active) {
+        if (bottom <= bridge_world_y or y >= bridge_world_y + bridge_visual_height) return false;
+        const start = bridgeChunkIndexAtX(x) orelse 0;
+        const end = bridgeChunkIndexAtX(right - 1) orelse if (right <= bridge_world_x) 0 else bridge_chunk_count - 1;
+        index = start;
+        while (index <= end and index < bridge_chunk_count) : (index += 1) {
+            const chunk = bridge_chunks[index];
+            if (chunk.state != .solid and chunk.state != .shaking) continue;
+            const chunk_y = fixedToPixel(chunk.y);
+            if (right > chunk.x and x < chunk.x + bridge_chunk_width and bottom > chunk_y and y < chunk_y + bridge_visual_height) {
+                return true;
+            }
         }
     }
     return false;

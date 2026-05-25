@@ -97,6 +97,8 @@ def emit_generated_zig(
             ("collision", "collision.bin"),
             ("falling_blocks", "falling_blocks.bin"),
             ("foreground_stamps", "foreground_stamps.bin"),
+            ("generic_stamps", "generic_stamps.bin"),
+            ("bird_npcs", "bird_npcs.bin"),
         ]:
             lines.append(f"const {room_name}_{suffix} align(4) = @embedFile({zig_string(rel + '/' + filename)}).*;")
         if "parallax" in room:
@@ -129,6 +131,8 @@ def emit_generated_zig(
                 f"        .spawn_bottom = root.spawnFromBytesAt(&{room_name}_spawn, 16),",
                 f"        .falling_blocks = &{room_name}_falling_blocks,",
                 f"        .foreground_stamps = &{room_name}_foreground_stamps,",
+                f"        .generic_stamps = &{room_name}_generic_stamps,",
+                f"        .bird_npcs = &{room_name}_bird_npcs,",
                 f"        .wind_snow_strength = {int(room.get('windSnowStrength', 0))},",
                 f"        .wind_snow_dir_x = {int(room.get('windSnowDirX', -1))},",
                 f"        .left = {neighbor_literal(room, 'left', indices)},",

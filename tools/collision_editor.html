@@ -18,6 +18,7 @@
                 --spawn: rgba(80, 255, 136, 0.88);
                 --falling: rgba(255, 205, 74, 0.88);
                 --stamp: rgba(180, 255, 92, 0.88);
+                --bird: rgba(255, 150, 255, 0.9);
             }
 
             * {
@@ -171,9 +172,13 @@
                     <option value="spawn">Spawn Point</option>
                     <option value="fallingBlock">Falling Block</option>
                     <option value="foregroundStamp">Foreground Stamp</option>
+                    <option value="birdNpc">Bird NPC</option>
                 </select>
 
                 <div id="stampPanel">
+                    <label for="stampFolderSelect">Stamp Folder</label>
+                    <select id="stampFolderSelect"></select>
+
                     <label>Foreground Stamps</label>
                     <div id="stampAtlas" class="stamp-atlas"></div>
                     <label>
@@ -225,7 +230,9 @@
                     <div>One-way: <span id="oneWayStats">0</span></div>
                     <div>Spawn: <span id="spawnStats">none</span></div>
                     <div>Falling Blocks: <span id="fallingBlockStats">0</span></div>
+                    <div>Bridge Poles: <span id="bridgePoleStats">0</span></div>
                     <div>Foreground Stamps: <span id="foregroundStampStats">0</span></div>
+                    <div>Bird NPC: <span id="birdStats">none</span></div>
                     <div>JSON: <span id="annotationStats">none</span></div>
                 </div>
 
@@ -234,7 +241,8 @@
                     Spawn mode: click to add respawn points. Right click or hold Option/Alt to erase one. Falling Block
                     mode: drag a rectangle around the block tiles, click a block to select it. Shift-click sets the
                     selected block's landing row. Foreground Stamp mode: choose a stamp, click to place, right click or
-                    Option-click to erase.
+                    Option-click to erase. Bridge poles are placed as foreground stamps. Bird NPC mode: click for bird
+                    origin, Shift-click for hint bubble origin, right click or Option-click to clear.
                 </div>
             </aside>
 
@@ -262,8 +270,11 @@
             const oneWayStats = document.getElementById("oneWayStats");
             const spawnStats = document.getElementById("spawnStats");
             const fallingBlockStats = document.getElementById("fallingBlockStats");
+            const bridgePoleStats = document.getElementById("bridgePoleStats");
             const foregroundStampStats = document.getElementById("foregroundStampStats");
+            const birdStats = document.getElementById("birdStats");
             const annotationStats = document.getElementById("annotationStats");
+            const stampFolderSelect = document.getElementById("stampFolderSelect");
             const stampAtlas = document.getElementById("stampAtlas");
             const stampOccludesInput = document.getElementById("stampOccludes");
             const stampFlipXInput = document.getElementById("stampFlipX");
@@ -285,8 +296,10 @@
             let oneWayTiles = new Set();
             let respawnPoints = [];
             let fallingBlocks = [];
+            let stampFolders = [];
             let foregroundStampDefs = [];
             let foregroundStamps = [];
+            let birdNpc = null;
             let selectedStampId = null;
             let selectedFallingBlock = -1;
             let isPointerDown = false;
@@ -294,6 +307,7 @@
             let lastKey = "";
             let dragStartTile = null;
             let dragExistingBlock = -1;
+            let drawingBirdPath = false;
             let hoverTile = null;
 
             function key(x, y) {
@@ -340,13 +354,30 @@
                     setStatus("No PNG backgrounds found in assets/chapters.");
                     return;
                 }
+                await loadStampFolders();
                 await loadSelectedBackground();
                 await loadForegroundStamps();
             }
 
+            async function loadStampFolders() {
+                const result = await apiJson("/api/stamp-folders");
+                stampFolders = result.folders || [];
+                stampFolderSelect.replaceChildren();
+                for (const folder of stampFolders) {
+                    const option = document.createElement("option");
+                    option.value = folder.id;
+                    option.textContent = folder.name;
+                    stampFolderSelect.append(option);
+                }
+            }
+
             async function loadForegroundStamps() {
-                const result = await apiJson("/api/foreground-stamps");
+                const folder = stampFolderSelect.value || "generated";
+                const result = await apiJson(`/api/foreground-stamps?folder=${encodeURIComponent(folder)}`);
                 foregroundStampDefs = result.stamps || [];
+                if (!foregroundStampDefs.some((stamp) => stamp.id === selectedStampId)) {
+                    selectedStampId = null;
+                }
                 if (!selectedStampId && foregroundStampDefs.length) {
                     selectedStampId = foregroundStampDefs[0].id;
                 }
@@ -409,6 +440,7 @@
                 respawnPoints = [];
                 fallingBlocks = [];
                 foregroundStamps = [];
+                birdNpc = null;
                 selectedFallingBlock = -1;
                 const result = await apiJson(`/api/annotation?image=${encodeURIComponent(imagePath)}`);
                 annotationStats.textContent = result.path;
@@ -464,11 +496,26 @@
                         id: String(stamp.id || "grass1"),
                         x: Number(stamp.x) || 0,
                         y: Number(stamp.y) || 0,
+                        w: Number(stamp.w) || 0,
+                        h: Number(stamp.h) || 0,
                         phase: Math.max(0, Number(stamp.phase) || 0),
                         flipX: Boolean(stamp.flipX),
                         flipY: Boolean(stamp.flipY),
                         occludes: Boolean(stamp.occludes),
                     });
+                }
+                if (result.data && result.data.birdNpc) {
+                    const source = result.data.birdNpc;
+                    birdNpc = {
+                        x: Number(source.x) || 0,
+                        y: Number(source.y) || 0,
+                        hintX: Number(source.hintX) || 0,
+                        hintY: Number(source.hintY) || 0,
+                        flightPath: ((source.flightPath || []).map((point) => ({
+                            x: Number(point.x) || 0,
+                            y: Number(point.y) || 0,
+                        }))),
+                    };
                 }
             }
 
@@ -535,6 +582,8 @@
                     drawForegroundStampPreview(stamp, 0.78);
                 }
 
+                drawBirdNpcPreview();
+
                 if (modeSelect.value === "foregroundStamp" && !eraseMode && hoverTile && selectedStampId) {
                     const position = foregroundStampPosition(hoverTile);
                     drawForegroundStampPreview(
@@ -571,7 +620,52 @@
                     ? respawnPoints.map((point, index) => `${index + 1}:${point.x},${point.y}`).join(" ")
                     : "none";
                 fallingBlockStats.textContent = `${fallingBlocks.length}${selectedFallingBlock >= 0 ? ` (${selectedFallingBlock + 1} selected)` : ""}`;
+                bridgePoleStats.textContent = String(foregroundStamps.filter((stamp) => stamp.id === "bridge_pole").length);
                 foregroundStampStats.textContent = String(foregroundStamps.length);
+                birdStats.textContent = birdNpc ? `${birdNpc.x},${birdNpc.y} hint ${birdNpc.hintX},${birdNpc.hintY}` : "none";
+            }
+
+            function drawBirdNpcPreview() {
+                if (!birdNpc) return;
+                overlayCtx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--bird");
+                overlayCtx.fillStyle = "rgba(255,150,255,0.18)";
+                overlayCtx.lineWidth = 2;
+                overlayCtx.fillRect(birdNpc.x, birdNpc.y, 16, 16);
+                overlayCtx.strokeRect(birdNpc.x + 0.5, birdNpc.y + 0.5, 15, 15);
+                overlayCtx.beginPath();
+                overlayCtx.moveTo(birdNpc.x - 4, birdNpc.y + 8);
+                overlayCtx.lineTo(birdNpc.x + 20, birdNpc.y + 8);
+                overlayCtx.moveTo(birdNpc.x + 8, birdNpc.y - 4);
+                overlayCtx.lineTo(birdNpc.x + 8, birdNpc.y + 20);
+                overlayCtx.stroke();
+
+                overlayCtx.fillStyle = "rgba(114,214,255,0.14)";
+                overlayCtx.strokeStyle = "rgba(114,214,255,0.88)";
+                overlayCtx.fillRect(birdNpc.hintX, birdNpc.hintY, 96, 32);
+                overlayCtx.strokeRect(birdNpc.hintX + 0.5, birdNpc.hintY + 0.5, 95, 31);
+                overlayCtx.fillStyle = "rgba(255,255,255,0.92)";
+                overlayCtx.font = "8px monospace";
+                overlayCtx.fillText("hint", birdNpc.hintX + 4, birdNpc.hintY + 10);
+
+                const path = birdNpc.flightPath || [];
+                if (path.length) {
+                    overlayCtx.strokeStyle = "rgba(255,150,255,0.9)";
+                    overlayCtx.fillStyle = "rgba(255,150,255,0.9)";
+                    overlayCtx.lineWidth = 2;
+                    overlayCtx.beginPath();
+                    overlayCtx.moveTo(birdNpc.x + 8, birdNpc.y + 8);
+                    for (const point of path) {
+                        overlayCtx.lineTo(point.x, point.y);
+                    }
+                    overlayCtx.stroke();
+                    for (let index = 0; index < path.length; index += 1) {
+                        const point = path[index];
+                        overlayCtx.beginPath();
+                        overlayCtx.arc(point.x, point.y, 3, 0, Math.PI * 2);
+                        overlayCtx.fill();
+                        overlayCtx.fillText(String(index + 1), point.x + 5, point.y - 4);
+                    }
+                }
             }
 
             function drawForegroundStampPreview(stamp, alpha) {
@@ -579,11 +673,13 @@
                 const preview = def && stampPreviewImage(def.id, stamp.flipX);
                 const x = stamp.x;
                 const y = stamp.y;
+                const width = stampWidth(stamp);
+                const height = stampHeight(stamp);
                 if (preview && preview.complete) {
                     overlayCtx.save();
                     overlayCtx.globalAlpha = alpha;
                     const usesMirrorPreview = stamp.flipX && def && def.mirrorPreview;
-                    overlayCtx.translate(x + (!usesMirrorPreview && stamp.flipX ? 16 : 0), y + (stamp.flipY ? 16 : 0));
+                    overlayCtx.translate(x + (!usesMirrorPreview && stamp.flipX ? width : 0), y + (stamp.flipY ? height : 0));
                     overlayCtx.scale(!usesMirrorPreview && stamp.flipX ? -1 : 1, stamp.flipY ? -1 : 1);
                     overlayCtx.drawImage(preview, 0, 0);
                     overlayCtx.restore();
@@ -592,10 +688,10 @@
                 overlayCtx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--stamp");
                 if (stamp.occludes) {
                     overlayCtx.fillStyle = "rgba(180,255,92,0.16)";
-                    overlayCtx.fillRect(x, y, 16, 16);
+                    overlayCtx.fillRect(x, y, width, height);
                 }
                 overlayCtx.lineWidth = 1;
-                overlayCtx.strokeRect(x + 0.5, y + 0.5, 15, 15);
+                overlayCtx.strokeRect(x + 0.5, y + 0.5, width - 1, height - 1);
             }
 
             function drawSpawnMarker(point, label, selected) {
@@ -670,6 +766,16 @@
                 };
             }
 
+            function eventToPixel(event) {
+                const rect = overlay.getBoundingClientRect();
+                const scaleX = overlay.width / rect.width;
+                const scaleY = overlay.height / rect.height;
+                return {
+                    x: Math.round((event.clientX - rect.left) * scaleX),
+                    y: Math.round((event.clientY - rect.top) * scaleY),
+                };
+            }
+
             function tileToPixelRect(a, b) {
                 const tileSize = currentTileSize();
                 const minX = Math.max(0, Math.min(a.x, b.x));
@@ -703,7 +809,9 @@
                 const y = tile.y * tileSize;
                 for (let index = foregroundStamps.length - 1; index >= 0; index -= 1) {
                     const stamp = foregroundStamps[index];
-                    if (x >= stamp.x && x < stamp.x + 16 && y >= stamp.y && y < stamp.y + 16) {
+                    const width = stampWidth(stamp);
+                    const height = stampHeight(stamp);
+                    if (x >= stamp.x && x < stamp.x + width && y >= stamp.y && y < stamp.y + height) {
                         return index;
                     }
                 }
@@ -782,6 +890,37 @@
                     redraw();
                     return;
                 }
+                if (modeSelect.value === "birdNpc") {
+                    const tileSize = currentTileSize();
+                    if (eraseMode) {
+                        birdNpc = null;
+                    } else if (event.metaKey) {
+                        const point = eventToPixel(event);
+                        appendBirdPathPoint(point);
+                    } else if (event.shiftKey) {
+                        const point = {
+                            x: Math.max(0, Math.min(image.width - 8, tile.x * tileSize)),
+                            y: Math.max(0, Math.min(image.height - 8, tile.y * tileSize)),
+                        };
+                        if (!birdNpc) {
+                            birdNpc = { x: point.x, y: point.y, hintX: point.x, hintY: point.y - 32, flightPath: [] };
+                        } else {
+                            birdNpc.hintX = point.x;
+                            birdNpc.hintY = point.y;
+                        }
+                    } else {
+                        const point = {
+                            x: Math.max(0, Math.min(image.width - 16, tile.x * tileSize)),
+                            y: Math.max(0, Math.min(image.height - 16, tile.y * tileSize)),
+                        };
+                        const hintX = birdNpc ? birdNpc.hintX : Math.max(0, point.x - 40);
+                        const hintY = birdNpc ? birdNpc.hintY : Math.max(0, point.y - 40);
+                        const flightPath = birdNpc ? birdNpc.flightPath || [] : [];
+                        birdNpc = { x: point.x, y: point.y, hintX, hintY, flightPath };
+                    }
+                    redraw();
+                    return;
+                }
                 const tileKey = key(tile.x, tile.y);
                 if (tileKey === lastKey && !event.shiftKey) return;
                 lastKey = tileKey;
@@ -792,6 +931,30 @@
                     setTile(tile.x, tile.y, eraseMode, paintKind);
                 }
                 redraw();
+            }
+
+            function appendBirdPathPoint(point) {
+                point = {
+                    x: Math.max(-64, Math.min(image.width + 64, point.x)),
+                    y: Math.max(-64, Math.min(image.height + 64, point.y)),
+                };
+                if (!birdNpc) {
+                    birdNpc = {
+                        x: point.x,
+                        y: point.y,
+                        hintX: Math.max(0, point.x - 40),
+                        hintY: Math.max(0, point.y - 40),
+                        flightPath: [],
+                    };
+                }
+                if (!birdNpc.flightPath) birdNpc.flightPath = [];
+                const previous = birdNpc.flightPath[birdNpc.flightPath.length - 1];
+                if (previous) {
+                    const dx = point.x - previous.x;
+                    const dy = point.y - previous.y;
+                    if (dx * dx + dy * dy < 36) return;
+                }
+                birdNpc.flightPath.push(point);
             }
 
             function annotationObject() {
@@ -815,11 +978,14 @@
                         id: stamp.id,
                         x: stamp.x,
                         y: stamp.y,
+                        w: stampWidth(stamp),
+                        h: stampHeight(stamp),
                         phase: stamp.phase,
                         flipX: stamp.flipX,
                         flipY: stamp.flipY,
                         occludes: stamp.occludes,
                     })),
+                    birdNpc: birdNpc,
                     tiles: [
                         ...sorted.map((tile) => ({
                             x: tile.x,
@@ -835,6 +1001,18 @@
                         })),
                     ],
                 };
+            }
+
+            function stampWidth(stamp) {
+                const def = foregroundStampDefs.find((item) => item.id === stamp.id);
+                if (def && Number(def.width)) return Number(def.width);
+                return Number(stamp.w) || 16;
+            }
+
+            function stampHeight(stamp) {
+                const def = foregroundStampDefs.find((item) => item.id === stamp.id);
+                if (def && Number(def.height)) return Number(def.height);
+                return Number(stamp.h) || 16;
             }
 
             async function save() {
@@ -854,6 +1032,11 @@
                 loadSelectedBackground().catch((error) => setStatus(`Load failed: ${error}`));
             });
 
+            stampFolderSelect.addEventListener("change", () => {
+                selectedStampId = null;
+                loadForegroundStamps().catch((error) => setStatus(`Stamp load failed: ${error}`));
+            });
+
             saveButton.addEventListener("click", () => {
                 save().catch((error) => setStatus(`Save failed: ${error}`));
             });
@@ -869,6 +1052,8 @@
                 } else if (modeSelect.value === "spawn") {
                     if (!confirm("Clear all respawn points for this background?")) return;
                     respawnPoints = [];
+                } else if (modeSelect.value === "birdNpc") {
+                    birdNpc = null;
                 } else if (modeSelect.value === "oneWay") {
                     if (!confirm("Clear all one-way platform tiles for this background?")) return;
                     oneWayTiles.clear();
@@ -911,6 +1096,7 @@
                 lastKey = "";
                 dragStartTile = null;
                 dragExistingBlock = -1;
+                drawingBirdPath = modeSelect.value === "birdNpc" && event.metaKey && !eraseMode;
                 overlay.setPointerCapture(event.pointerId);
                 if (modeSelect.value === "fallingBlock") {
                     dragStartTile = eventToTile(event);
@@ -920,7 +1106,10 @@
             });
             overlay.addEventListener("pointermove", (event) => {
                 hoverTile = eventToTile(event);
-                if (isPointerDown) {
+                if (drawingBirdPath) {
+                    appendBirdPathPoint(eventToPixel(event));
+                    redraw();
+                } else if (isPointerDown) {
                     paintEvent(event);
                 } else {
                     redraw();
@@ -938,6 +1127,7 @@
                 }
                 isPointerDown = false;
                 eraseMode = false;
+                drawingBirdPath = false;
                 lastKey = "";
                 dragStartTile = null;
                 dragExistingBlock = -1;
@@ -946,6 +1136,7 @@
             overlay.addEventListener("pointercancel", () => {
                 isPointerDown = false;
                 eraseMode = false;
+                drawingBirdPath = false;
                 lastKey = "";
                 dragStartTile = null;
                 dragExistingBlock = -1;
@@ -957,6 +1148,11 @@
             });
             window.addEventListener("keydown", (event) => {
                 if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
+                if (modeSelect.value === "birdNpc" && event.key.toLowerCase() === "p" && birdNpc) {
+                    birdNpc.flightPath = [];
+                    redraw();
+                    return;
+                }
                 if (modeSelect.value !== "foregroundStamp") return;
                 if (event.key.toLowerCase() === "x") {
                     stampFlipXInput.checked = !stampFlipXInput.checked;

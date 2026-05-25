@@ -11,6 +11,8 @@ change affects runtime data layout, also read `../docs/runtime-architecture.md`.
 - `task hair`: opens the player hair anchor editor.
 - `task grass-edit`: opens the generated grass frame editor for manual cleanup
   of generated foreground sway frames in `assets/generated/foreground/`.
+- `task scene`: opens the scene animation editor for scripted NPC placement,
+  trigger rectangles, hint placement, and flight paths.
 - `task grass-sway -- <path> [--preset auto|tiny|small|medium|large] [--no-mirror]`:
   generates sway frames for a foreground grass PNG. The generated stamp name is
   derived from the input file or directory and is written to
@@ -25,6 +27,11 @@ change affects runtime data layout, also read `../docs/runtime-architecture.md`.
   blocks, and foreground stamp placement. It auto-discovers chapter images,
   background art, and existing annotations. Saved annotations live beside the
   source image.
+
+- `scene_server.py` and `scene_editor.html`: scene/NPC animation editor. Use
+  this for bird origin placement, hint box placement, trigger rectangles, and
+  flight path segments. Saved `*_scene.json` files live beside the source room
+  image. The room builder folds bird scene data into `bird_npcs.bin`.
 
 - `hair_anchor_server.py` and `hair_anchor_editor.html`: player hair anchor
   editor. Use this for per-frame hair root placement and facing direction.
@@ -95,5 +102,6 @@ change affects runtime data layout, also read `../docs/runtime-architecture.md`.
   the runtime still needs explicit tile/palette banks for each stamp kind.
   When adding a new stamp family, update generation, packing, room bundle kind
   mapping, and runtime draw/load logic together.
-- Collision annotation is currently also where lightweight room entities are
-  authored. Keep editor UX simple: direct clicking beats hand-authored JSON.
+- Collision annotation is for physical gameplay surfaces and simple room
+  objects. Scene annotation is for scripted NPC behavior and presentation.
+  Keep editor UX simple: direct clicking beats hand-authored JSON.

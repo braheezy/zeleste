@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zeleste Scene Editor</title>
+  <style>
+    :root { color-scheme: dark; --bg:#17191c; --panel:#22262b; --text:#eef1f4; --muted:#aeb6c0; --line:#3a414a; --accent:#72d6ff; --path:#ff96ff; --trigger:#ffd166; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font:14px ui-sans-serif,system-ui,sans-serif; }
+    .app { display:grid; grid-template-columns:300px 1fr; min-height:100vh; }
+    aside { background:var(--panel); border-right:1px solid var(--line); padding:16px; }
+    main { overflow:auto; padding:16px; }
+    h1 { margin:0 0 16px; font-size:18px; }
+    label { display:block; margin:12px 0 6px; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+    input, select, button { width:100%; border:1px solid var(--line); border-radius:6px; background:#111317; color:var(--text); padding:8px 10px; font:inherit; }
+    button { cursor:pointer; background:#2b333b; margin-top:8px; }
+    button:hover { border-color:var(--accent); }
+    .row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .stage { position:relative; width:max-content; image-rendering:pixelated; user-select:none; }
+    canvas { display:block; image-rendering:pixelated; }
+    #overlay { position:absolute; left:0; top:0; cursor:crosshair; }
+    .segments { display:grid; gap:6px; margin-top:8px; }
+    .segment { display:grid; grid-template-columns:1fr auto; gap:6px; align-items:center; padding:6px; border:1px solid var(--line); border-radius:6px; background:#171b20; }
+    .segment.selected { border-color:var(--path); }
+    .hint, #status { margin-top:14px; color:var(--muted); line-height:1.4; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <h1>Zeleste Scene</h1>
+      <label for="backgroundSelect">Background</label>
+      <select id="backgroundSelect"></select>
+      <label for="editModeSelect">Edit</label>
+      <select id="editModeSelect">
+        <option value="origin">Bird Origin</option>
+        <option value="hint">Hint Box</option>
+        <option value="showTrigger">Show Hint Trigger</option>
+        <option value="clearTrigger">Clear Hint Trigger</option>
+      </select>
+      <div class="row">
+        <div><label for="zoomInput">Zoom</label><input id="zoomInput" type="number" min="1" max="8" value="3"></div>
+      </div>
+      <button id="saveButton" type="button">Save</button>
+      <button id="reloadButton" type="button">Reload</button>
+      <div id="status">Loading...</div>
+      <div class="hint">
+        Pick an edit mode, then drag on the room. Show Hint Trigger starts the bird tutorial.
+        Clear Hint Trigger hides the climb hint after Madeline reaches the top.
+      </div>
+    </aside>
+    <main>
+      <div class="stage" id="stage">
+        <canvas id="base"></canvas>
+        <canvas id="overlay"></canvas>
+      </div>
+    </main>
+  </div>
+  <script>
+    const backgroundSelect = document.getElementById('backgroundSelect');
+    const editModeSelect = document.getElementById('editModeSelect');
+    const zoomInput = document.getElementById('zoomInput');
+    const saveButton = document.getElementById('saveButton');
+    const reloadButton = document.getElementById('reloadButton');
+    const statusEl = document.getElementById('status');
+    const stage = document.getElementById('stage');
+    const base = document.getElementById('base');
+    const overlay = document.getElementById('overlay');
+    const baseCtx = base.getContext('2d', { alpha: false });
+    const overlayCtx = overlay.getContext('2d');
+
+    let backgrounds = [];
+    let animations = [];
+    let currentBackground = null;
+    let image = null;
+    let scene = null;
+    let selectedTrigger = 0;
+    let pointerMode = null;
+    let triggerDragStart = null;
+
+    const status = (message) => { statusEl.textContent = message; };
+    const zoom = () => Math.max(1, Number(zoomInput.value) || 1);
+    const entity = () => scene.entities[0];
+    const trigger = () => entity().triggers[selectedTrigger];
+
+    async function apiJson(url, options) {
+      const response = await fetch(url, options);
+      const result = await response.json();
+      if (!response.ok || result.ok === false) throw new Error(result.error || response.statusText);
+      return result;
+    }
+
+    async function loadStartup() {
+      const bg = await apiJson('/api/scene/backgrounds');
+      backgrounds = bg.backgrounds;
+      backgroundSelect.replaceChildren();
+      for (const item of backgrounds) {
+        const option = document.createElement('option');
+        option.value = item.image;
+        option.textContent = `${item.image}${item.hasScene ? '' : ' *'}`;
+        backgroundSelect.append(option);
+      }
+      await loadSelectedBackground();
+    }
+
+    async function loadSelectedBackground() {
+      currentBackground = backgrounds.find((item) => item.image === backgroundSelect.value) || backgrounds[0];
+      if (!currentBackground) return;
+      image = await loadImage(currentBackground.image);
+      const payload = await apiJson(`/api/scene?image=${encodeURIComponent(currentBackground.image)}`);
+      scene = payload.data;
+      normalizeScene();
+      selectedTrigger = triggerIndexForMode(editModeSelect.value);
+      redraw();
+      status(`Loaded ${payload.path}`);
+    }
+
+    function loadImage(path) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = `/${path}?t=${Date.now()}`;
+      });
+    }
+
+    function normalizeScene() {
+      const e = entity();
+      if (!e.segments) e.segments = [];
+      e.triggers = normalizeTutorialTriggers(e);
+      if (e.segments.length >= 3 && e.segments[0].animation === e.segments[2].animation && e.segments[1].animation === 'peck' && !(e.segments[0].points || []).length) {
+        e.segments[0].animation = 'squawk';
+      }
+      if (!e.segments.length) {
+        e.segments.push({ animation: 'squawk', frames: 16, points: [] });
+      }
+      for (const seg of e.segments) {
+        if (!seg.animation) seg.animation = 'squawk';
+        if (!seg.frames) seg.frames = 20;
+        if (!seg.points) seg.points = [];
+      }
+      for (const trig of e.triggers) {
+        if (!trig.id) trig.id = triggerIdForAction(trig.action);
+        trig.rect = normalizedRect(trig.rect);
+      }
+    }
+
+    function normalizeTutorialTriggers(e) {
+      const origin = e.origin || { x: 128, y: 96 };
+      const defaults = defaultTriggers(origin);
+      const source = e.triggers || [];
+      let show = source.find((trig) => trig.action === 'squawk_hold_hint' || trig.id === 'show_hold_hint');
+
+      if (!show && source.length) {
+        show = source
+          .filter((trig) => trig.rect)
+          .sort((a, b) => Math.abs((a.rect.y || 0) - (origin.y + 48)) - Math.abs((b.rect.y || 0) - (origin.y + 48)))[0];
+      }
+      let clear = source.find((trig) => trig !== show && (trig.action === 'peck_then_fly' || trig.id === 'peck_then_fly' || trig.id === 'clear_hint_top'));
+      if (!clear && source.length) {
+        clear = source
+          .filter((trig) => trig.rect && trig !== show)
+          .sort((a, b) => Math.abs((a.rect.y || 0) - (origin.y - 8)) - Math.abs((b.rect.y || 0) - (origin.y - 8)))[0];
+      }
+
+      return [
+        {
+          id: 'show_hold_hint',
+          action: 'squawk_hold_hint',
+          rect: normalizedRect((show && show.rect) || defaults[0].rect),
+        },
+        {
+          id: 'clear_hint_top',
+          action: 'peck_then_fly',
+          rect: normalizedRect((clear && clear.rect) || defaults[1].rect),
+        },
+      ];
+    }
+
+    function defaultTriggers(origin) {
+      return [
+        { id: 'show_hold_hint', action: 'squawk_hold_hint', rect: { x: origin.x - 72, y: origin.y + 8, w: 168, h: 48 } },
+        { id: 'clear_hint_top', action: 'peck_then_fly', rect: { x: origin.x + 80, y: origin.y - 56, w: 112, h: 96 } },
+      ];
+    }
+
+    function triggerIdForAction(action) {
+      if (action === 'peck_then_fly') return 'peck_then_fly';
+      return 'show_hold_hint';
+    }
+
+    function triggerIndexForMode(mode) {
+      if (mode === 'clearTrigger') return 1;
+      return 0;
+    }
+
+    function triggerLabel(trig) {
+      return trig.action === 'peck_then_fly' ? 'clear hint' : 'show hint';
+    }
+
+    function resize() {
+      base.width = overlay.width = image.width;
+      base.height = overlay.height = image.height;
+      stage.style.width = `${image.width * zoom()}px`;
+      stage.style.height = `${image.height * zoom()}px`;
+      base.style.width = overlay.style.width = `${image.width * zoom()}px`;
+      base.style.height = overlay.style.height = `${image.height * zoom()}px`;
+    }
+
+    function redraw() {
+      if (!image || !scene) return;
+      resize();
+      baseCtx.imageSmoothingEnabled = false;
+      overlayCtx.imageSmoothingEnabled = false;
+      baseCtx.drawImage(image, 0, 0);
+      overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+      drawEntity();
+    }
+
+    function drawEntity() {
+      const e = entity();
+      drawBox(e.origin.x, e.origin.y, 16, 16, 'rgba(255,150,255,0.9)', 'rgba(255,150,255,0.16)');
+      drawBox(e.origin.x - 5, e.origin.y - 9, 32, 32, 'rgba(255,150,255,0.45)', 'rgba(255,150,255,0.04)');
+      drawBox(e.hint.x, e.hint.y, 96, 32, 'rgba(114,214,255,0.9)', 'rgba(114,214,255,0.14)');
+      overlayCtx.font = '8px monospace';
+      overlayCtx.fillStyle = 'white';
+      overlayCtx.fillText('bird', e.origin.x + 18, e.origin.y + 10);
+      overlayCtx.fillText('hint', e.hint.x + 4, e.hint.y + 10);
+      e.triggers.forEach((trig, index) => drawTrigger(trig, index));
+    }
+
+    function drawBox(x, y, w, h, stroke, fill) {
+      overlayCtx.strokeStyle = stroke;
+      overlayCtx.fillStyle = fill;
+      overlayCtx.lineWidth = 2;
+      overlayCtx.fillRect(x, y, w, h);
+      overlayCtx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    }
+
+    function drawTrigger(trig, index) {
+      const rect = normalizedRect(trig.rect || { x: 0, y: 0, w: 1, h: 1 });
+      const selected = index === selectedTrigger;
+      drawBox(rect.x, rect.y, rect.w, rect.h, selected ? 'rgba(255,209,102,1)' : 'rgba(255,209,102,0.6)', selected ? 'rgba(255,209,102,0.18)' : 'rgba(255,209,102,0.08)');
+      overlayCtx.fillStyle = selected ? 'white' : 'rgba(255,255,255,0.75)';
+      overlayCtx.font = '8px monospace';
+      overlayCtx.fillText(triggerLabel(trig), rect.x + 3, rect.y + 10);
+    }
+
+    function normalizedRect(rect) {
+      const x0 = Math.min(rect.x, rect.x + rect.w);
+      const y0 = Math.min(rect.y, rect.y + rect.h);
+      const x1 = Math.max(rect.x, rect.x + rect.w);
+      const y1 = Math.max(rect.y, rect.y + rect.h);
+      return { x: x0, y: y0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0) };
+    }
+
+    function eventPoint(event) {
+      const rect = overlay.getBoundingClientRect();
+      return {
+        x: Math.round((event.clientX - rect.left) * overlay.width / rect.width),
+        y: Math.round((event.clientY - rect.top) * overlay.height / rect.height),
+      };
+    }
+
+    overlay.addEventListener('contextmenu', (event) => event.preventDefault());
+    overlay.addEventListener('pointerdown', (event) => {
+      overlay.setPointerCapture(event.pointerId);
+      pointerMode = event.shiftKey ? 'hint' : editModeSelect.value;
+      if (pointerMode === 'showTrigger' || pointerMode === 'clearTrigger') {
+        selectedTrigger = triggerIndexForMode(pointerMode);
+        triggerDragStart = eventPoint(event);
+      }
+      handlePointer(event);
+    });
+    overlay.addEventListener('pointermove', (event) => {
+      if (!pointerMode) return;
+      handlePointer(event);
+    });
+    overlay.addEventListener('pointerup', () => { pointerMode = null; triggerDragStart = null; redraw(); });
+    overlay.addEventListener('pointercancel', () => { pointerMode = null; triggerDragStart = null; redraw(); });
+
+    function handlePointer(event) {
+      const point = eventPoint(event);
+      if (pointerMode === 'origin') entity().origin = point;
+      if (pointerMode === 'hint') entity().hint = point;
+      if ((pointerMode === 'showTrigger' || pointerMode === 'clearTrigger') && triggerDragStart) {
+        trigger().rect = normalizedRect({
+          x: triggerDragStart.x,
+          y: triggerDragStart.y,
+          w: point.x - triggerDragStart.x,
+          h: point.y - triggerDragStart.y,
+        });
+      }
+      redraw();
+    }
+
+    editModeSelect.addEventListener('change', () => {
+      selectedTrigger = triggerIndexForMode(editModeSelect.value);
+      redraw();
+    });
+    zoomInput.addEventListener('change', redraw);
+    backgroundSelect.addEventListener('change', () => loadSelectedBackground().catch((error) => status(`Load failed: ${error}`)));
+    reloadButton.addEventListener('click', () => loadSelectedBackground().catch((error) => status(`Reload failed: ${error}`)));
+    saveButton.addEventListener('click', async () => {
+      const result = await apiJson('/api/scene/save', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ image: currentBackground.image, data: scene }),
+      });
+      status(`Saved ${result.path}`);
+    });
+    loadStartup().catch((error) => status(`Startup failed: ${error}`));
+  </script>
+</body>
+</html>

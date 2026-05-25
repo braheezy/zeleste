@@ -21,8 +21,13 @@ class AnnotationHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/backgrounds":
             self.send_json(200, {"backgrounds": self.backgrounds()})
             return
+        if parsed.path == "/api/stamp-folders":
+            self.send_json(200, {"folders": self.stamp_folders()})
+            return
         if parsed.path == "/api/foreground-stamps":
-            self.send_json(200, {"stamps": self.foreground_stamps()})
+            query = parse_qs(parsed.query)
+            folder = query.get("folder", ["generated"])[0]
+            self.send_json(200, {"stamps": self.foreground_stamps(folder)})
             return
         if parsed.path == "/api/annotation":
             query = parse_qs(parsed.query)
@@ -62,6 +67,8 @@ class AnnotationHandler(SimpleHTTPRequestHandler):
         if not root.exists():
             return backgrounds
         for path in sorted(root.rglob("*.png")):
+            if "stamps" in path.relative_to(root).parts:
+                continue
             if self.is_entity_art(path):
                 continue
             relative = path.relative_to(self.repo_root)
@@ -75,13 +82,38 @@ class AnnotationHandler(SimpleHTTPRequestHandler):
             )
         return backgrounds
 
-    def foreground_stamps(self) -> list[dict]:
+    def stamp_folders(self) -> list[dict]:
+        folders = [{"id": "generated", "name": "Generated foreground"}]
+        global_foreground = self.repo_root / "assets" / "animations" / "foreground"
+        if global_foreground.exists():
+            folders.append(
+                {
+                    "id": str(global_foreground.relative_to(self.repo_root)),
+                    "name": "Global foreground",
+                }
+            )
+        chapters_root = self.repo_root / "assets" / "chapters"
+        if chapters_root.exists():
+            for path in sorted(chapters_root.glob("*/stamps")):
+                if path.is_dir():
+                    folders.append(
+                        {
+                            "id": str(path.relative_to(self.repo_root)),
+                            "name": f"{path.parent.name}/stamps",
+                        }
+                    )
+        return folders
+
+    def foreground_stamps(self, folder: str = "generated") -> list[dict]:
+        if folder != "generated":
+            return self.file_stamps(folder)
+
         stamps = []
         root = self.repo_root / "assets" / "generated" / "foreground"
         if not root.exists():
-            return stamps
+            root = None
 
-        generated_grass = root / "grass_generated"
+        generated_grass = root / "grass_generated" if root else Path()
         if generated_grass.exists():
             frames = sorted(
                 generated_grass.glob("*.png"),
@@ -93,64 +125,151 @@ class AnnotationHandler(SimpleHTTPRequestHandler):
             )
             if frames:
                 metadata = self.stamp_metadata(generated_grass)
+                preview = self.stamp_preview_path(metadata, frames[0])
+                preview_width, preview_height = self.png_size(preview)
                 stamps.append(
                     {
                         "id": "grass1",
                         "name": "grass1",
-                        "preview": str(frames[0].relative_to(self.repo_root)),
-                        "mirrorPreview": str(
-                            mirror_frames[0].relative_to(self.repo_root)
-                        )
-                        if mirror_frames
-                        else None,
+                        "preview": str(preview.relative_to(self.repo_root)),
+                        "mirrorPreview": None,
+                        "width": preview_width,
+                        "height": preview_height,
                         "anchorX": metadata.get("anchorX", 8),
                         "anchorY": metadata.get("anchorY", 8),
                     }
                 )
 
+        if root:
+            for directory in sorted(path for path in root.iterdir() if path.is_dir()):
+                if directory.name in {"grass_generated", "grass_generated_mirror"}:
+                    continue
+                if directory.name.endswith("_mirror"):
+                    continue
+                metadata = self.stamp_metadata(directory)
+                if not metadata:
+                    continue
+                frames = sorted(
+                    directory.glob("*.png"),
+                    key=lambda path: int(path.stem) if path.stem.isdigit() else path.stem,
+                )
+                if not frames:
+                    continue
+                relative = frames[0].relative_to(self.repo_root)
+                stamp_id = directory.name.removesuffix("_generated")
+                preview = self.stamp_preview_path(metadata, frames[0])
+                preview_width, preview_height = self.png_size(preview)
+                stamps.append(
+                    {
+                        "id": stamp_id,
+                        "name": stamp_id,
+                        "preview": str(preview.relative_to(self.repo_root)),
+                        "generatedPreview": str(relative),
+                        "mirrorPreview": None,
+                        "width": preview_width,
+                        "height": preview_height,
+                        "anchorX": metadata.get("anchorX", 8),
+                        "anchorY": metadata.get("anchorY", 8),
+                    }
+                )
+
+        bridge_pole_sources = [
+            ("bridge_pole", "bridge pole", "whole-pole.png"),
+            ("broken_pole", "broken pole", "broken-pole.png"),
+        ]
+        for stamp_id, name, filename in bridge_pole_sources:
+            bridge_pole = self.repo_root / "assets" / "source" / "prologue-bridge" / filename
+            if not bridge_pole.exists():
+                continue
+            preview_width, preview_height = self.png_size(bridge_pole)
+            stamps.append(
+                {
+                    "id": stamp_id,
+                    "name": name,
+                    "preview": str(bridge_pole.relative_to(self.repo_root)),
+                    "mirrorPreview": None,
+                    "width": preview_width,
+                    "height": preview_height,
+                    "anchorX": 0,
+                    "anchorY": 0,
+                }
+            )
+        return stamps
+
+    def file_stamps(self, folder: str) -> list[dict]:
+        relative = self.safe_relative_path(folder, expected_suffix="")
+        root = self.repo_root / relative
+        if not root.exists() or not root.is_dir():
+            raise ValueError("stamp folder does not exist")
+
+        stamps = []
+        seen_ids = set()
+        for path in sorted(root.glob("*.png")):
+            width, height = self.png_size(path)
+            stamp_id = path.stem.replace("-", "_")
+            if stamp_id in seen_ids:
+                continue
+            seen_ids.add(stamp_id)
+            stamps.append(
+                {
+                    "id": stamp_id,
+                    "name": path.stem,
+                    "preview": str(path.relative_to(self.repo_root)),
+                    "source": str(path.relative_to(self.repo_root)),
+                    "mirrorPreview": None,
+                    "width": width,
+                    "height": height,
+                    "anchorX": 0,
+                    "anchorY": 0,
+                }
+            )
         for directory in sorted(path for path in root.iterdir() if path.is_dir()):
-            if directory.name in {"grass_generated", "grass_generated_mirror"}:
-                continue
-            if directory.name.endswith("_mirror"):
-                continue
-            metadata = self.stamp_metadata(directory)
-            if not metadata:
-                continue
             frames = sorted(
                 directory.glob("*.png"),
                 key=lambda path: int(path.stem) if path.stem.isdigit() else path.stem,
             )
             if not frames:
                 continue
-            relative = frames[0].relative_to(self.repo_root)
-            mirror_directory = root / f"{directory.name}_mirror"
-            mirror_frames = (
-                sorted(
-                    mirror_directory.glob("*.png"),
-                    key=lambda path: (
-                        int(path.stem) if path.stem.isdigit() else path.stem
-                    ),
-                )
-                if mirror_directory.exists()
-                else []
-            )
-            stamp_id = directory.name.removesuffix("_generated")
-            source_preview = root / f"{stamp_id}.png"
-            preview = source_preview if source_preview.exists() else frames[0]
+            metadata = self.stamp_metadata(directory)
+            preview = self.stamp_preview_path(metadata, frames[0])
+            width, height = self.png_size(preview)
+            stamp_id = directory.name.replace("-", "_")
+            if stamp_id in seen_ids:
+                continue
+            seen_ids.add(stamp_id)
             stamps.append(
                 {
                     "id": stamp_id,
-                    "name": stamp_id,
+                    "name": directory.name,
                     "preview": str(preview.relative_to(self.repo_root)),
-                    "generatedPreview": str(relative),
-                    "mirrorPreview": str(mirror_frames[0].relative_to(self.repo_root))
-                    if mirror_frames
-                    else None,
-                    "anchorX": metadata.get("anchorX", 8),
-                    "anchorY": metadata.get("anchorY", 8),
+                    "source": str(directory.relative_to(self.repo_root)),
+                    "mirrorPreview": None,
+                    "width": width,
+                    "height": height,
+                    "anchorX": metadata.get("anchorX", 0),
+                    "anchorY": metadata.get("anchorY", 0),
                 }
             )
         return stamps
+
+    def stamp_preview_path(self, metadata: dict, fallback: Path) -> Path:
+        source = metadata.get("source")
+        if isinstance(source, str):
+            source_path = self.repo_root / self.safe_relative_path(source, expected_suffix=".png")
+            if source_path.exists():
+                return source_path
+        return fallback
+
+    @staticmethod
+    def png_size(path: Path) -> tuple[int, int]:
+        with path.open("rb") as file:
+            header = file.read(24)
+        if len(header) >= 24 and header[:8] == b"\x89PNG\r\n\x1a\n":
+            return (
+                int.from_bytes(header[16:20], "big"),
+                int.from_bytes(header[20:24], "big"),
+            )
+        return (16, 16)
 
     @staticmethod
     def stamp_metadata(directory: Path) -> dict:

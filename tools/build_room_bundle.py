@@ -54,6 +54,45 @@ def foreground_stamp_metadata(stamp_id: str) -> dict:
     return {}
 
 
+def png_size(path: Path) -> tuple[int, int]:
+    header = path.read_bytes()[:24]
+    if len(header) >= 24 and header[:8] == b"\x89PNG\r\n\x1a\n":
+        return (
+            int.from_bytes(header[16:20], "big"),
+            int.from_bytes(header[20:24], "big"),
+        )
+    return (16, 16)
+
+
+def bridge_pole_size() -> tuple[int, int]:
+    repo_root = Path(__file__).resolve().parents[1]
+    path = repo_root / "assets" / "source" / "prologue-bridge" / "whole-pole.png"
+    if path.exists():
+        return png_size(path)
+    return (8, 32)
+
+
+def bridge_pole_kind(stamp_id: str) -> int | None:
+    return {
+        "bridge_pole": 0,
+        "broken_pole": 1,
+    }.get(stamp_id)
+
+
+def generic_stamp_kind(stamp_id: str) -> int | None:
+    return {
+        "funny_car": 0,
+    }.get(stamp_id)
+
+
+def bird_trigger_action_code(action: str) -> int:
+    return {
+        "squawk_hold_hint": 1,
+        "show_climb_hint": 2,
+        "peck_then_fly": 3,
+    }.get(action, 0)
+
+
 def build_collision(annotations_json: Path, output_dir: Path) -> None:
     data = json.loads(annotations_json.read_text())
     tile_size = int(data["tileSize"])
@@ -145,13 +184,19 @@ def build_collision(annotations_json: Path, output_dir: Path) -> None:
 
     stamp_kind = {f"grass{index}": index - 1 for index in range(1, 9)}
     source_stamps = data.get("foregroundStamps", [])
+    source_visual_stamps = [stamp for stamp in source_stamps if str(stamp.get("id", "grass1")) in stamp_kind]
+    source_bridge_poles = [stamp for stamp in source_stamps if bridge_pole_kind(str(stamp.get("id", ""))) is not None]
+    source_generic_stamps = [
+        stamp
+        for stamp in source_stamps
+        if str(stamp.get("id", "grass1")) not in stamp_kind and bridge_pole_kind(str(stamp.get("id", ""))) is None
+    ]
+
     foreground_stamps = []
     foreground_binary = bytearray()
-    foreground_binary.extend(len(source_stamps).to_bytes(2, "little"))
-    for stamp in source_stamps:
+    foreground_binary.extend(len(source_visual_stamps).to_bytes(2, "little"))
+    for stamp in source_visual_stamps:
         stamp_id = str(stamp.get("id", "grass1"))
-        if stamp_id not in stamp_kind:
-            raise ValueError(f"unknown foreground stamp id: {stamp_id}")
         metadata = foreground_stamp_metadata(stamp_id)
         x = int(stamp.get("x", 0)) + int(metadata.get("cropX", 0))
         y = int(stamp.get("y", 0)) + int(metadata.get("cropY", 0))
@@ -180,6 +225,114 @@ def build_collision(annotations_json: Path, output_dir: Path) -> None:
         + "\n"
     )
 
+    bridge_pole_width, bridge_pole_height = bridge_pole_size()
+    bridge_poles = []
+    bridge_poles_binary = bytearray()
+    bridge_poles_binary.extend(len(source_bridge_poles).to_bytes(2, "little"))
+    for stamp in source_bridge_poles:
+        stamp_id = str(stamp.get("id", "bridge_pole"))
+        x = int(stamp.get("x", 0))
+        y = int(stamp.get("y", 0))
+        flags = (1 if stamp.get("flipX") else 0) | (2 if stamp.get("flipY") else 0)
+        kind = bridge_pole_kind(stamp_id) or 0
+        bridge_poles.append({"id": stamp_id, "kind": kind, "x": x, "y": y, "w": bridge_pole_width, "h": bridge_pole_height, "flags": flags})
+        bridge_poles_binary.extend(x.to_bytes(2, "little", signed=True))
+        bridge_poles_binary.extend(y.to_bytes(2, "little", signed=True))
+        bridge_poles_binary.append(max(0, min(255, bridge_pole_width)))
+        bridge_poles_binary.append(max(0, min(255, bridge_pole_height)))
+        bridge_poles_binary.append(flags)
+        bridge_poles_binary.append(kind)
+    (output_dir / "bridge_poles.bin").write_bytes(bytes(bridge_poles_binary))
+    (output_dir / "bridge_poles.json").write_text(
+        json.dumps(
+            {
+                "count": len(bridge_poles),
+                "recordBytes": 8,
+                "binary": "bridge_poles.bin",
+                "poles": bridge_poles,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+
+    generic_stamps = []
+    generic_binary = bytearray()
+    generic_binary.extend((0).to_bytes(2, "little"))
+    for stamp in source_generic_stamps:
+        stamp_id = str(stamp.get("id", "stamp"))
+        x = int(stamp.get("x", 0))
+        y = int(stamp.get("y", 0))
+        w = max(1, min(255, int(stamp.get("w", 16))))
+        h = max(1, min(255, int(stamp.get("h", 16))))
+        flags = (1 if stamp.get("flipX") else 0) | (2 if stamp.get("flipY") else 0)
+        if stamp.get("occludes"):
+            flags |= 4
+        kind = generic_stamp_kind(stamp_id)
+        if kind is None:
+            continue
+        generic_stamps.append({"id": stamp_id, "kind": kind, "x": x, "y": y, "w": w, "h": h, "flags": flags})
+        generic_binary.extend(x.to_bytes(2, "little", signed=True))
+        generic_binary.extend(y.to_bytes(2, "little", signed=True))
+        generic_binary.append(w)
+        generic_binary.append(h)
+        generic_binary.append(flags)
+        generic_binary.append(kind)
+    generic_binary[0:2] = len(generic_stamps).to_bytes(2, "little")
+    (output_dir / "generic_stamps.bin").write_bytes(bytes(generic_binary))
+    (output_dir / "generic_stamps.json").write_text(
+        json.dumps(
+            {
+                "count": len(generic_stamps),
+                "recordBytes": 8,
+                "binary": "generic_stamps.bin",
+                "stamps": generic_stamps,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+
+    bird = scene_bird_for_annotations(annotations_json) or data.get("birdNpc")
+    bird_binary = bytearray()
+    if bird:
+        bird_binary.extend((1).to_bytes(2, "little"))
+        for key in ("x", "y", "hintX", "hintY"):
+            bird_binary.extend(int(bird.get(key, 0)).to_bytes(2, "little", signed=True))
+        path_points = bird.get("flightPath") or []
+        triggers = bird.get("triggers") or []
+        bird_binary.append(max(0, min(255, len(path_points))))
+        bird_binary.append(max(0, min(255, len(triggers))))
+        for point in path_points[:255]:
+            bird_binary.extend(int(point.get("x", 0)).to_bytes(2, "little", signed=True))
+            bird_binary.extend(int(point.get("y", 0)).to_bytes(2, "little", signed=True))
+        for trigger in triggers[:255]:
+            rect = trigger.get("rect") or {}
+            action_code = bird_trigger_action_code(str(trigger.get("action", "")))
+            bird_binary.append(action_code)
+            bird_binary.append(0)
+            bird_binary.extend(int(rect.get("x", 0)).to_bytes(2, "little", signed=True))
+            bird_binary.extend(int(rect.get("y", 0)).to_bytes(2, "little", signed=True))
+            bird_binary.extend(int(rect.get("w", 0)).to_bytes(2, "little", signed=True))
+            bird_binary.extend(int(rect.get("h", 0)).to_bytes(2, "little", signed=True))
+        bird_count = 1
+    else:
+        bird_binary.extend((0).to_bytes(2, "little"))
+        bird_count = 0
+    (output_dir / "bird_npcs.bin").write_bytes(bytes(bird_binary))
+    (output_dir / "bird_npcs.json").write_text(
+        json.dumps(
+            {
+                "count": bird_count,
+                "recordBytes": "12 + path_count * 4 + trigger_count * 10",
+                "binary": "bird_npcs.bin",
+                "bird": bird,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+
     metadata = {
         "tileSize": tile_size,
         "width": width,
@@ -201,8 +354,54 @@ def build_collision(annotations_json: Path, output_dir: Path) -> None:
         "fallingBlockCount": len(falling_blocks),
         "foregroundStamps": "foreground_stamps.bin",
         "foregroundStampCount": len(foreground_stamps),
+        "bridgePoles": "bridge_poles.bin",
+        "bridgePoleCount": len(bridge_poles),
+        "genericStamps": "generic_stamps.bin",
+        "genericStampCount": len(generic_stamps),
+        "birdNpcs": "bird_npcs.bin",
+        "birdNpcCount": bird_count,
     }
     (output_dir / "collision.json").write_text(json.dumps(metadata, indent=2) + "\n")
+
+
+def scene_bird_for_annotations(annotations_json: Path) -> dict | None:
+    scene_path = annotations_json.with_name(f"{annotations_json.stem.removesuffix('_annotations')}_scene.json")
+    if not scene_path.exists():
+        return None
+    scene = json.loads(scene_path.read_text())
+    for entity in scene.get("entities", []):
+        if entity.get("kind") != "bird":
+            continue
+        origin = entity.get("origin", {})
+        hint = entity.get("hint", {})
+        path_points = []
+        for segment in entity.get("segments", []):
+            path_points.extend(segment.get("points", []))
+        triggers = []
+        for trigger in entity.get("triggers", []):
+            rect = trigger.get("rect") or {}
+            triggers.append(
+                {
+                    "id": trigger.get("id"),
+                    "action": trigger.get("action"),
+                    "rect": {
+                        "x": int(rect.get("x", 0)),
+                        "y": int(rect.get("y", 0)),
+                        "w": int(rect.get("w", 0)),
+                        "h": int(rect.get("h", 0)),
+                    },
+                }
+            )
+        return {
+            "x": int(origin.get("x", 0)),
+            "y": int(origin.get("y", 0)),
+            "hintX": int(hint.get("x", 0)),
+            "hintY": int(hint.get("y", 0)),
+            "flightPath": path_points,
+            "triggers": triggers,
+            "scene": str(scene_path),
+        }
+    return None
 
 
 def main() -> int:
@@ -253,6 +452,9 @@ def main() -> int:
             "spawn": "spawn.bin" if annotations.exists() else None,
             "fallingBlocks": "falling_blocks.bin" if annotations.exists() else None,
             "foregroundStamps": "foreground_stamps.bin" if annotations.exists() else None,
+            "bridgePoles": "bridge_poles.bin" if annotations.exists() else None,
+            "genericStamps": "generic_stamps.bin" if annotations.exists() else None,
+            "birdNpcs": "bird_npcs.bin" if annotations.exists() else None,
         },
     }
     (args.output_dir / "room.json").write_text(json.dumps(room, indent=2) + "\n")
