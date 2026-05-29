@@ -15,6 +15,7 @@
                 --accent: #72d6ff;
                 --solid: rgba(255, 72, 72, 0.52);
                 --oneway: rgba(92, 188, 255, 0.64);
+                --spike: rgba(255, 72, 188, 0.68);
                 --spawn: rgba(80, 255, 136, 0.88);
                 --falling: rgba(255, 205, 74, 0.88);
                 --stamp: rgba(180, 255, 92, 0.88);
@@ -169,11 +170,22 @@
                 <select id="mode">
                     <option value="solid">Solid Collision</option>
                     <option value="oneWay">One-way Platform</option>
+                    <option value="spike">Spike</option>
                     <option value="spawn">Spawn Point</option>
                     <option value="fallingBlock">Falling Block</option>
                     <option value="foregroundStamp">Foreground Stamp</option>
                     <option value="birdNpc">Bird NPC</option>
                 </select>
+
+                <div id="spikePanel">
+                    <label for="spikeDirection">Spike Direction</label>
+                    <select id="spikeDirection">
+                        <option value="up">Floor, points up</option>
+                        <option value="down">Ceiling, points down</option>
+                        <option value="left">Right wall, points left</option>
+                        <option value="right">Left wall, points right</option>
+                    </select>
+                </div>
 
                 <div id="stampPanel">
                     <label for="stampFolderSelect">Stamp Folder</label>
@@ -228,6 +240,7 @@
                     <div>Grid: <span id="gridStats">none</span></div>
                     <div>Solid: <span id="markedStats">0</span></div>
                     <div>One-way: <span id="oneWayStats">0</span></div>
+                    <div>Spikes: <span id="spikeStats">0</span></div>
                     <div>Spawn: <span id="spawnStats">none</span></div>
                     <div>Falling Blocks: <span id="fallingBlockStats">0</span></div>
                     <div>Bridge Poles: <span id="bridgePoleStats">0</span></div>
@@ -237,9 +250,9 @@
                 </div>
 
                 <div class="hint">
-                    Solid and one-way modes: click or drag to mark collision. Right click or hold Option/Alt to erase.
-                    Spawn mode: click to add respawn points. Right click or hold Option/Alt to erase one. Falling Block
-                    mode: drag a rectangle around the block tiles, click a block to select it. Shift-click sets the
+                    Solid, one-way, and spike modes: click or drag to mark tiles. Right click or hold Option/Alt to
+                    erase. Spawn mode: click to add respawn points. Right click or hold Option/Alt to erase one. Falling
+                    Block mode: drag a rectangle around the block tiles, click a block to select it. Shift-click sets the
                     selected block's landing row. Foreground Stamp mode: choose a stamp, click to place, right click or
                     Option-click to erase. Bridge poles are placed as foreground stamps. Bird NPC mode: click for bird
                     origin, Shift-click for hint bubble origin, right click or Option-click to clear.
@@ -257,6 +270,7 @@
         <script>
             const backgroundSelect = document.getElementById("backgroundSelect");
             const modeSelect = document.getElementById("mode");
+            const spikeDirectionSelect = document.getElementById("spikeDirection");
             const tileSizeInput = document.getElementById("tileSize");
             const zoomInput = document.getElementById("zoom");
             const saveButton = document.getElementById("saveButton");
@@ -268,6 +282,7 @@
             const gridStats = document.getElementById("gridStats");
             const markedStats = document.getElementById("markedStats");
             const oneWayStats = document.getElementById("oneWayStats");
+            const spikeStats = document.getElementById("spikeStats");
             const spawnStats = document.getElementById("spawnStats");
             const fallingBlockStats = document.getElementById("fallingBlockStats");
             const bridgePoleStats = document.getElementById("bridgePoleStats");
@@ -294,6 +309,7 @@
             let gridH = 0;
             let tiles = new Set();
             let oneWayTiles = new Set();
+            let spikeTiles = new Map();
             let respawnPoints = [];
             let fallingBlocks = [];
             let stampFolders = [];
@@ -325,6 +341,17 @@
 
             function currentZoom() {
                 return Math.max(1, Number(zoomInput.value) || 1);
+            }
+
+            const validSpikeDirections = new Set(["up", "down", "left", "right"]);
+
+            function normalizeSpikeDirection(value) {
+                const direction = String(value || "up");
+                return validSpikeDirections.has(direction) ? direction : "up";
+            }
+
+            function currentSpikeDirection() {
+                return normalizeSpikeDirection(spikeDirectionSelect.value);
             }
 
             function setStatus(message) {
@@ -437,6 +464,7 @@
             async function loadAnnotation(imagePath) {
                 tiles = new Set();
                 oneWayTiles = new Set();
+                spikeTiles = new Map();
                 respawnPoints = [];
                 fallingBlocks = [];
                 foregroundStamps = [];
@@ -480,6 +508,8 @@
                         tiles.add(key(tile.x, tile.y));
                     } else if (kind === "oneWay") {
                         oneWayTiles.add(key(tile.x, tile.y));
+                    } else if (kind === "spike" || kind === "hazard") {
+                        spikeTiles.set(key(tile.x, tile.y), normalizeSpikeDirection(tile.direction || tile.orientation));
                     }
                 }
                 for (const block of (result.data && result.data.fallingBlocks) || []) {
@@ -553,6 +583,15 @@
                     overlayCtx.fillRect(tile.x * tileSize, tile.y * tileSize, tileSize, Math.max(1, tileSize / 2));
                     overlayCtx.fillRect(tile.x * tileSize, tile.y * tileSize, tileSize, 1);
                 }
+                overlayCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--spike");
+                overlayCtx.strokeStyle = "rgba(255,255,255,0.58)";
+                overlayCtx.lineWidth = 1;
+                for (const [tileKey, direction] of spikeTiles) {
+                    const tile = splitKey(tileKey);
+                    const x = tile.x * tileSize;
+                    const y = tile.y * tileSize;
+                    drawSpikeTile(x, y, tileSize, direction);
+                }
 
                 for (let index = 0; index < respawnPoints.length; index += 1) {
                     drawSpawnMarker(respawnPoints[index], String(index + 1), index === 0);
@@ -616,6 +655,7 @@
                 gridStats.textContent = `${gridW}x${gridH}`;
                 markedStats.textContent = String(tiles.size);
                 oneWayStats.textContent = String(oneWayTiles.size);
+                spikeStats.textContent = String(spikeTiles.size);
                 spawnStats.textContent = respawnPoints.length
                     ? respawnPoints.map((point, index) => `${index + 1}:${point.x},${point.y}`).join(" ")
                     : "none";
@@ -666,6 +706,39 @@
                         overlayCtx.fillText(String(index + 1), point.x + 5, point.y - 4);
                     }
                 }
+            }
+
+            function spikeHitbox(x, y, tileSize, direction) {
+                const depth = Math.min(5, tileSize);
+                if (direction === "down") return { x, y, w: tileSize, h: depth };
+                if (direction === "left") return { x: x + tileSize - depth, y, w: depth, h: tileSize };
+                if (direction === "right") return { x, y, w: depth, h: tileSize };
+                return { x, y: y + tileSize - depth, w: tileSize, h: depth };
+            }
+
+            function drawSpikeTile(x, y, tileSize, directionValue) {
+                const direction = normalizeSpikeDirection(directionValue);
+                const hitbox = spikeHitbox(x, y, tileSize, direction);
+                overlayCtx.fillRect(hitbox.x, hitbox.y, hitbox.w, hitbox.h);
+                overlayCtx.beginPath();
+                if (direction === "down") {
+                    overlayCtx.moveTo(hitbox.x + 1, hitbox.y + 1);
+                    overlayCtx.lineTo(hitbox.x + hitbox.w / 2, hitbox.y + hitbox.h - 1);
+                    overlayCtx.lineTo(hitbox.x + hitbox.w - 1, hitbox.y + 1);
+                } else if (direction === "left") {
+                    overlayCtx.moveTo(hitbox.x + hitbox.w - 1, hitbox.y + 1);
+                    overlayCtx.lineTo(hitbox.x + 1, hitbox.y + hitbox.h / 2);
+                    overlayCtx.lineTo(hitbox.x + hitbox.w - 1, hitbox.y + hitbox.h - 1);
+                } else if (direction === "right") {
+                    overlayCtx.moveTo(hitbox.x + 1, hitbox.y + 1);
+                    overlayCtx.lineTo(hitbox.x + hitbox.w - 1, hitbox.y + hitbox.h / 2);
+                    overlayCtx.lineTo(hitbox.x + 1, hitbox.y + hitbox.h - 1);
+                } else {
+                    overlayCtx.moveTo(hitbox.x + 1, hitbox.y + hitbox.h - 1);
+                    overlayCtx.lineTo(hitbox.x + hitbox.w / 2, hitbox.y + 1);
+                    overlayCtx.lineTo(hitbox.x + hitbox.w - 1, hitbox.y + hitbox.h - 1);
+                }
+                overlayCtx.stroke();
             }
 
             function drawForegroundStampPreview(stamp, alpha) {
@@ -746,11 +819,18 @@
                 if (erase) {
                     tiles.delete(tileKey);
                     oneWayTiles.delete(tileKey);
+                    spikeTiles.delete(tileKey);
                 } else if (kind === "oneWay") {
                     tiles.delete(tileKey);
+                    spikeTiles.delete(tileKey);
                     oneWayTiles.add(tileKey);
+                } else if (kind === "spike") {
+                    tiles.delete(tileKey);
+                    oneWayTiles.delete(tileKey);
+                    spikeTiles.set(tileKey, currentSpikeDirection());
                 } else {
                     oneWayTiles.delete(tileKey);
+                    spikeTiles.delete(tileKey);
                     tiles.add(tileKey);
                 }
             }
@@ -924,7 +1004,7 @@
                 const tileKey = key(tile.x, tile.y);
                 if (tileKey === lastKey && !event.shiftKey) return;
                 lastKey = tileKey;
-                const paintKind = modeSelect.value === "oneWay" ? "oneWay" : "solid";
+                const paintKind = modeSelect.value === "oneWay" ? "oneWay" : modeSelect.value === "spike" ? "spike" : "solid";
                 if (event.shiftKey && !eraseMode) {
                     for (let x = tile.x; x < gridW; x += 1) setTile(x, tile.y, false, paintKind);
                 } else {
@@ -960,6 +1040,9 @@
             function annotationObject() {
                 const sorted = [...tiles].map(splitKey).sort((a, b) => a.y - b.y || a.x - b.x);
                 const sortedOneWay = [...oneWayTiles].map(splitKey).sort((a, b) => a.y - b.y || a.x - b.x);
+                const sortedSpikes = [...spikeTiles.entries()]
+                    .map(([tileKey, direction]) => ({ ...splitKey(tileKey), direction: normalizeSpikeDirection(direction) }))
+                    .sort((a, b) => a.y - b.y || a.x - b.x);
                 return {
                     image: currentBackground.image.split("/").pop(),
                     tileSize: currentTileSize(),
@@ -998,6 +1081,13 @@
                             y: tile.y,
                             kind: "oneWay",
                             material: "wood",
+                        })),
+                        ...sortedSpikes.map((tile) => ({
+                            x: tile.x,
+                            y: tile.y,
+                            kind: "spike",
+                            material: "spike",
+                            direction: tile.direction,
                         })),
                     ],
                 };
@@ -1057,6 +1147,9 @@
                 } else if (modeSelect.value === "oneWay") {
                     if (!confirm("Clear all one-way platform tiles for this background?")) return;
                     oneWayTiles.clear();
+                } else if (modeSelect.value === "spike") {
+                    if (!confirm("Clear all spike tiles for this background?")) return;
+                    spikeTiles.clear();
                 } else {
                     if (!confirm("Clear all solid tiles for this background?")) return;
                     tiles.clear();
@@ -1082,6 +1175,7 @@
 
             tileSizeInput.addEventListener("change", resetPaintAndRedraw);
             zoomInput.addEventListener("change", resetPaintAndRedraw);
+            spikeDirectionSelect.addEventListener("change", resetPaintAndRedraw);
             stampFlipXInput.addEventListener("change", resetPaintAndRedraw);
             stampFlipYInput.addEventListener("change", resetPaintAndRedraw);
             stampOccludesInput.addEventListener("change", resetPaintAndRedraw);

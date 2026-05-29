@@ -80,6 +80,7 @@ Author these in the editor:
 
 - solid collision tiles;
 - one-way platforms;
+- spike tiles that kill the player on touch;
 - respawn points;
 - falling block rectangle and target;
 - foreground grass stamps, including flip and occlusion flags.
@@ -90,6 +91,10 @@ browser downloads.
 Current annotation model:
 
 - collision tiles are gameplay collision, not necessarily foreground art;
+- spike annotations are stored as tile kind `spike` with `direction` set to
+  `up`, `down`, `left`, or `right`. They pack into collision byte values
+  `3`-`6`; legacy `hazard` annotations are accepted by the asset builder. The
+  runtime hitbox is the 5 px edge opposite the point direction;
 - respawn points are candidates used after death;
 - transition placement is calculated from room exits and current player
   position, not from respawn points.

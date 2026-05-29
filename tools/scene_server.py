@@ -52,6 +52,8 @@ class SceneHandler(SimpleHTTPRequestHandler):
         root = self.repo_root / "assets" / "chapters"
         out = []
         for path in sorted(root.rglob("*.png")) if root.exists() else []:
+            if "stamps" in path.relative_to(root).parts:
+                continue
             if self.is_entity_art(path):
                 continue
             rel = path.relative_to(self.repo_root)
@@ -122,14 +124,11 @@ class SceneHandler(SimpleHTTPRequestHandler):
         full_annotation = self.repo_root / annotation_path
         if full_annotation.exists():
             bird = json.loads(full_annotation.read_text()).get("birdNpc")
-        if not bird:
-            bird = {"x": 128, "y": 96, "hintX": 96, "hintY": 48, "flightPath": []}
-        x = int(bird.get("x", 128))
-        y = int(bird.get("y", 96))
-        return {
-            "version": 1,
-            "image": image.name,
-            "entities": [
+        entities = []
+        if bird:
+            x = int(bird.get("x", 128))
+            y = int(bird.get("y", 96))
+            entities.append(
                 {
                     "id": "bird_intro",
                     "kind": "bird",
@@ -157,7 +156,12 @@ class SceneHandler(SimpleHTTPRequestHandler):
                         },
                     ],
                 }
-            ],
+            )
+        return {
+            "version": 1,
+            "image": image.name,
+            "wires": [],
+            "entities": entities,
         }
 
     def rebuild_room_bundle_for_image(self, image: Path) -> str | None:

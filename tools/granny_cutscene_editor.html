@@ -1,0 +1,943 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Granny Cutscene Editor</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111318;
+      --panel: #1b1f27;
+      --panel-2: #242a34;
+      --text: #e7ecf3;
+      --muted: #97a0ad;
+      --line: #3a4250;
+      --accent: #78d9ff;
+      --danger: #ff6b7a;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.35 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      height: 48px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--line);
+      background: #151922;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 650;
+    }
+
+    button, input, select, textarea {
+      color: var(--text);
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      font: inherit;
+    }
+
+    button {
+      height: 30px;
+      padding: 0 10px;
+      cursor: pointer;
+    }
+
+    button.active {
+      border-color: var(--accent);
+      background: #173443;
+    }
+
+    button.danger {
+      border-color: #6b2e3b;
+      color: #ffc5ce;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 390px;
+      height: calc(100vh - 48px);
+      min-height: 0;
+    }
+
+    #left {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      min-width: 0;
+      min-height: 0;
+    }
+
+    #toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 10px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    #scroller {
+      overflow: auto;
+      min-height: 0;
+      padding: 16px;
+      background:
+        linear-gradient(45deg, #0d1016 25%, transparent 25%),
+        linear-gradient(-45deg, #0d1016 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #0d1016 75%),
+        linear-gradient(-45deg, transparent 75%, #0d1016 75%);
+      background-color: #090b10;
+      background-size: 16px 16px;
+      background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+    }
+
+    #stage {
+      position: relative;
+      width: 0;
+      height: 0;
+      image-rendering: pixelated;
+      box-shadow: 0 0 0 1px #000, 0 12px 36px rgb(0 0 0 / 0.35);
+    }
+
+    canvas {
+      position: absolute;
+      inset: 0;
+      image-rendering: pixelated;
+    }
+
+    #overlay {
+      cursor: crosshair;
+    }
+
+    aside {
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      min-height: 0;
+      border-left: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .panel {
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .panel h2 {
+      margin: 0 0 10px;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 116px minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+      margin: 8px 0;
+    }
+
+    .row label {
+      color: var(--muted);
+    }
+
+    .row input, .row select {
+      min-width: 0;
+      height: 30px;
+      padding: 0 8px;
+    }
+
+    .inline {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    #dialoguePanel {
+      overflow: auto;
+      padding: 12px;
+    }
+
+    #assetList {
+      margin-bottom: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .asset-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .asset-item {
+      min-width: 0;
+      padding: 6px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: #11151d;
+    }
+
+    .asset-item img {
+      display: block;
+      max-width: 100%;
+      max-height: 64px;
+      object-fit: contain;
+      image-rendering: pixelated;
+      margin: 4px 0;
+      background: #05070a;
+    }
+
+    .dialogue-page {
+      margin-bottom: 12px;
+      padding: 10px;
+      background: #151922;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+
+    .dialogue-head {
+      display: grid;
+      grid-template-columns: 24px minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .dialogue-page input {
+      width: 100%;
+      height: 28px;
+      padding: 0 8px;
+    }
+
+    .dialogue-page textarea {
+      width: 100%;
+      min-height: 70px;
+      resize: vertical;
+      padding: 8px;
+    }
+
+    .note {
+      margin-top: 6px;
+      color: var(--accent);
+      font-size: 12px;
+    }
+
+    .script-preview {
+      margin-top: 10px;
+      border-top: 1px solid var(--line);
+      padding-top: 8px;
+    }
+
+    .script-preview summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    #scriptList {
+      margin: 0;
+      max-height: 130px;
+      overflow: auto;
+      padding-left: 22px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    #scriptList li {
+      padding: 3px 2px;
+      cursor: pointer;
+      border-radius: 3px;
+    }
+
+    #scriptList li.active {
+      color: var(--text);
+      background: #173443;
+    }
+
+    #status {
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Granny Cutscene Editor</h1>
+    <button id="saveBtn">Save</button>
+    <button id="reloadBtn">Reload</button>
+    <span id="status">Loading...</span>
+  </header>
+
+  <main>
+    <section id="left">
+      <div id="toolbar"></div>
+      <div id="scroller">
+        <div id="stage">
+          <canvas id="base"></canvas>
+          <canvas id="overlay"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <aside>
+      <section class="panel">
+        <h2>View</h2>
+        <div class="row">
+          <label for="zoomInput">Zoom</label>
+          <input id="zoomInput" type="number" min="1" max="12" step="1" value="3">
+        </div>
+        <div class="inline">
+          <label><input id="gridInput" type="checkbox" checked> 8px grid</label>
+          <button id="clearBtn" class="danger">Clear Selected</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Cutscene</h2>
+        <div class="row">
+          <label>Granny facing</label>
+          <select id="grannyFacingInput">
+            <option value="left">Left</option>
+            <option value="right">Right</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>Laugh text</label>
+          <input id="laughTextInput" type="text">
+        </div>
+        <div class="row">
+          <label>Laugh speed</label>
+          <input id="laughSpeedInput" type="number" min="-4" max="4" step="0.25">
+        </div>
+        <details class="script-preview">
+          <summary>Script Preview</summary>
+          <ol id="scriptList"></ol>
+        </details>
+      </section>
+
+      <section id="dialoguePanel">
+        <div class="inline" style="justify-content: space-between; margin-bottom: 10px;">
+          <h2 style="margin: 0;">Dialogue</h2>
+          <button id="addDialogueBtn">Add Page</button>
+        </div>
+        <div id="assetList"></div>
+        <div id="dialogueList"></div>
+      </section>
+    </aside>
+  </main>
+
+  <script>
+    const modeDefs = [
+      { id: "trigger", label: "Start Trigger", type: "rect", color: "#ff6474" },
+      { id: "granny", label: "Granny Anchor", type: "point", color: "#f5d36b" },
+      { id: "madeline_talk", label: "Talk Feet", type: "point", color: "#78d9ff" },
+      { id: "madeline_edge", label: "Edge Feet", type: "point", color: "#b0ff7c" },
+      { id: "dialogue_box", label: "Dialogue Box", type: "rect", color: "#ffffff" },
+      { id: "laugh_start", label: "Laugh Start", type: "point", color: "#ff9de0" },
+      { id: "laugh_end", label: "Laugh End", type: "point", color: "#ff9de0" },
+    ];
+
+    const toolbar = document.getElementById("toolbar");
+    const base = document.getElementById("base");
+    const overlay = document.getElementById("overlay");
+    const baseCtx = base.getContext("2d");
+    const overlayCtx = overlay.getContext("2d");
+    const stage = document.getElementById("stage");
+    const statusEl = document.getElementById("status");
+    const dialogueList = document.getElementById("dialogueList");
+    const assetList = document.getElementById("assetList");
+    const scriptList = document.getElementById("scriptList");
+    const zoomInput = document.getElementById("zoomInput");
+    const gridInput = document.getElementById("gridInput");
+    const grannyFacingInput = document.getElementById("grannyFacingInput");
+    const laughTextInput = document.getElementById("laughTextInput");
+    const laughSpeedInput = document.getElementById("laughSpeedInput");
+
+    let payload = null;
+    let data = null;
+    let image = null;
+    let animationAssets = [];
+    let zoom = Number(zoomInput.value);
+    let mode = "trigger";
+    let drag = null;
+    let previewStep = -1;
+
+    for (const def of modeDefs) {
+      const button = document.createElement("button");
+      button.textContent = def.label;
+      button.dataset.mode = def.id;
+      button.addEventListener("click", () => {
+        mode = def.id;
+        updateModeButtons();
+        drawOverlay();
+      });
+      toolbar.appendChild(button);
+    }
+
+    document.getElementById("saveBtn").addEventListener("click", save);
+    document.getElementById("reloadBtn").addEventListener("click", load);
+    document.getElementById("addDialogueBtn").addEventListener("click", () => {
+      data.dialogue.push({ speaker: "Madeline", text: "" });
+      rebuildScript();
+      renderDialogue();
+      renderScript();
+      setStatus("Added dialogue page");
+    });
+    document.getElementById("clearBtn").addEventListener("click", clearSelected);
+    zoomInput.addEventListener("change", () => {
+      zoom = clamp(Number(zoomInput.value) || 3, 1, 12);
+      zoomInput.value = zoom;
+      resizeCanvas();
+    });
+    gridInput.addEventListener("change", drawOverlay);
+    grannyFacingInput.addEventListener("change", () => {
+      grannyActor().facing = grannyFacingInput.value;
+      drawOverlay();
+    });
+    laughTextInput.addEventListener("input", () => {
+      data.laugh.text = laughTextInput.value;
+    });
+    laughSpeedInput.addEventListener("input", () => {
+      data.laugh.speedPxPerFrame = Number(laughSpeedInput.value) || 0;
+    });
+
+    overlay.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", () => { drag = null; });
+
+    load();
+
+    async function load() {
+      setStatus("Loading...");
+      const [cutsceneResponse, animationsResponse] = await Promise.all([
+        fetch("/api/granny-cutscene"),
+        fetch("/api/granny-cutscene/animations"),
+      ]);
+      payload = await cutsceneResponse.json();
+      if (!payload.ok) {
+        throw new Error(payload.error || "load failed");
+      }
+      const animationsPayload = await animationsResponse.json();
+      animationAssets = animationsPayload.ok ? animationsPayload.animations : [];
+      data = payload.data;
+      ensureDataShape();
+      image = new Image();
+      image.onload = () => {
+        resizeCanvas();
+        renderForm();
+        renderAnimationAssets();
+        renderDialogue();
+        renderScript();
+        updateModeButtons();
+        setStatus(`Loaded ${payload.path}`);
+      };
+      image.src = `/${payload.image}?t=${Date.now()}`;
+    }
+
+    async function save() {
+      ensureDataShape();
+      rebuildScript();
+      setStatus("Saving...");
+      const response = await fetch("/api/granny-cutscene/save", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ data }),
+      });
+      const result = await response.json();
+      if (!result.ok) {
+        setStatus(`Save failed: ${result.error}`);
+        return;
+      }
+      setStatus(`Saved ${result.path}`);
+      renderScript();
+    }
+
+    function ensureDataShape() {
+      data.trigger ||= { x: 0, y: 0, w: 32, h: 32 };
+      data.actors ||= [];
+      data.markers ||= {};
+      data.laugh ||= { text: "ha ha ha", speedPxPerFrame: 1, spawnEveryFrames: 28, persistsAcrossRoom: true };
+      if (!data.laugh.spriteSheet && animationAssets.some((asset) => asset.kind === "laugh_text")) {
+        data.laugh.spriteSheet = animationAssets.find((asset) => asset.kind === "laugh_text").id;
+      }
+      data.dialogue ||= [];
+      data.script ||= [];
+      grannyActor();
+      for (const key of ["madeline_talk", "madeline_edge", "laugh_start", "laugh_end"]) {
+        data.markers[key] ||= { x: 0, y: 0 };
+      }
+      data.markers.dialogue_box ||= { x: 8, y: 8, w: 224, h: 56 };
+    }
+
+    function renderForm() {
+      grannyFacingInput.value = grannyActor().facing || "left";
+      laughTextInput.value = data.laugh.text;
+      laughSpeedInput.value = data.laugh.speedPxPerFrame;
+    }
+
+    function renderAnimationAssets() {
+      if (animationAssets.length === 0) {
+        assetList.textContent = "No Granny animation PNGs found.";
+        return;
+      }
+      assetList.innerHTML = "";
+      const title = document.createElement("div");
+      title.textContent = "Granny animation sheets";
+      title.style.marginBottom = "6px";
+      assetList.appendChild(title);
+      const grid = document.createElement("div");
+      grid.className = "asset-grid";
+      for (const asset of animationAssets) {
+        const item = document.createElement("div");
+        item.className = "asset-item";
+        const label = document.createElement("div");
+        label.textContent = `${asset.name} ${asset.width}x${asset.height} ${asset.kind}`;
+        const img = document.createElement("img");
+        img.src = `/${asset.path}?t=${Date.now()}`;
+        img.alt = asset.name;
+        item.append(label, img);
+        grid.appendChild(item);
+      }
+      assetList.appendChild(grid);
+    }
+
+    function renderDialogue() {
+      dialogueList.innerHTML = "";
+      data.dialogue.forEach((page, index) => {
+        const div = document.createElement("div");
+        div.className = "dialogue-page";
+
+        const head = document.createElement("div");
+        head.className = "dialogue-head";
+
+        const number = document.createElement("div");
+        number.textContent = String(index + 1);
+        number.style.color = "var(--muted)";
+
+        const speaker = document.createElement("input");
+        speaker.value = page.speaker || "";
+        speaker.placeholder = "Speaker";
+        speaker.addEventListener("input", () => {
+          page.speaker = speaker.value;
+          rebuildScript();
+          renderScript();
+        });
+
+        const text = document.createElement("textarea");
+        text.value = page.text || "";
+        text.placeholder = "Dialogue text";
+        text.addEventListener("input", () => {
+          page.text = text.value;
+          rebuildScript();
+          renderScript();
+        });
+
+        const cueControls = document.createElement("div");
+        cueControls.className = "row";
+        const cueLabel = document.createElement("label");
+        cueLabel.textContent = "During page";
+        const cueSelect = cueSelectFor(page, "cue", "loop", true);
+        cueControls.append(cueLabel, cueSelect);
+
+        const afterControls = document.createElement("div");
+        afterControls.className = "row";
+        const afterLabel = document.createElement("label");
+        afterLabel.textContent = "After page";
+        const afterSelect = cueSelectFor(page, "afterCue", "once", false);
+        afterControls.append(afterLabel, afterSelect);
+
+        head.append(number, speaker);
+        div.append(head, text, cueControls, afterControls);
+
+        const note = dialogueNote(index);
+        if (note) {
+          const noteEl = document.createElement("div");
+          noteEl.className = "note";
+          noteEl.textContent = note;
+          div.append(noteEl);
+        }
+
+        dialogueList.appendChild(div);
+      });
+    }
+
+    function cueSelectFor(page, field, defaultMode, defaultIdle) {
+      const select = document.createElement("select");
+      const none = document.createElement("option");
+      none.value = "";
+      none.textContent = defaultIdle ? "Default idle" : "None";
+      select.appendChild(none);
+      for (const asset of animationAssets.filter((item) => item.kind === "actor")) {
+        const option = document.createElement("option");
+        option.value = asset.id;
+        option.textContent = `${asset.name} (${asset.width}x${asset.height})`;
+        select.appendChild(option);
+      }
+      select.value = page[field]?.animation || "";
+      select.addEventListener("change", () => {
+        if (select.value) {
+          page[field] = {
+            actor: "granny",
+            animation: select.value,
+            mode: defaultMode,
+          };
+        } else {
+          delete page[field];
+        }
+        rebuildScript();
+        renderScript();
+      });
+      return select;
+    }
+
+    function renderScript() {
+      scriptList.innerHTML = "";
+      data.script.forEach((step, index) => {
+        const li = document.createElement("li");
+        li.textContent = summarizeStep(step);
+        if (index === previewStep) {
+          li.className = "active";
+        }
+        li.addEventListener("click", () => {
+          previewStep = index;
+          renderScript();
+          drawOverlay();
+        });
+        scriptList.appendChild(li);
+      });
+    }
+
+    function dialogueNote(index) {
+      if (index === 0) return "After this page, Madeline walks to the talk target.";
+      if (index === 2) return "After this page, Madeline walks to the edge and turns back.";
+      if (index === data.dialogue.length - 1) return "After the final page, laugh text starts and control returns.";
+      return "";
+    }
+
+    function rebuildScript() {
+      const script = [{ op: "lock_player" }];
+      addSay(script, 0);
+      script.push({ op: "walk_player_to", marker: "madeline_talk" });
+      script.push({ op: "face", actor: "player", dir: "right" });
+      addSay(script, 1);
+      addSay(script, 2);
+      script.push({ op: "walk_player_to", marker: "madeline_edge" });
+      script.push({ op: "face", actor: "player", dir: "left" });
+      for (let i = 3; i < data.dialogue.length; i += 1) {
+        addSay(script, i);
+      }
+      script.push({ op: "spawn_laugh_text", spriteSheet: data.laugh.spriteSheet || null });
+      script.push({ op: "set_flag", flag: "granny_intro_done" });
+      script.push({ op: "unlock_player" });
+      data.script = script;
+    }
+
+    function addSay(script, index) {
+      const page = data.dialogue[index];
+      if (!page) return;
+      addCue(script, cueForPage(page), index, "before_say");
+      script.push({
+        op: "say",
+        dialogue: index,
+        speaker: page.speaker || "",
+        text: page.text || "",
+      });
+      addCue(script, page.afterCue, index, "after_say");
+    }
+
+    function cueForPage(page) {
+      if (page.cue?.animation) return page.cue;
+      if (!hasActorAnimation("idle")) return null;
+      return {
+        actor: "granny",
+        animation: "idle",
+        mode: "loop",
+        implicitDefault: true,
+      };
+    }
+
+    function addCue(script, cue, index, phase) {
+      if (!cue || !cue.animation) return;
+      script.push({
+        op: "play_anim",
+        actor: cue.actor || "granny",
+        animation: cue.animation,
+        mode: cue.mode || "loop",
+        dialogue: index,
+        phase,
+        implicitDefault: !!cue.implicitDefault,
+      });
+    }
+
+    function summarizeStep(step) {
+      if (step.op === "say") return `say ${step.dialogue + 1}: ${step.speaker || "?"}`;
+      if (step.op === "play_anim") {
+        const suffix = step.implicitDefault ? "default" : (step.phase || "");
+        return `play ${step.actor}:${step.animation} ${suffix}`;
+      }
+      if (step.marker) return `${step.op} ${step.marker}`;
+      if (step.flag) return `${step.op} ${step.flag}`;
+      return step.op;
+    }
+
+    function hasActorAnimation(id) {
+      return animationAssets.some((item) => item.kind === "actor" && item.id === id);
+    }
+
+    function resizeCanvas() {
+      const w = image.naturalWidth * zoom;
+      const h = image.naturalHeight * zoom;
+      stage.style.width = `${w}px`;
+      stage.style.height = `${h}px`;
+      for (const canvas of [base, overlay]) {
+        canvas.width = w;
+        canvas.height = h;
+        canvas.style.width = `${w}px`;
+        canvas.style.height = `${h}px`;
+      }
+      baseCtx.imageSmoothingEnabled = false;
+      overlayCtx.imageSmoothingEnabled = false;
+      baseCtx.clearRect(0, 0, base.width, base.height);
+      baseCtx.drawImage(image, 0, 0, w, h);
+      drawOverlay();
+    }
+
+    function drawOverlay() {
+      if (!image || !data) return;
+      overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+      if (gridInput.checked) drawGrid();
+      drawRect(data.trigger, modeColor("trigger"), "start trigger", "trigger");
+      drawActor(grannyActor(), modeColor("granny"), "granny", "granny");
+      drawPoint(data.markers.madeline_talk, modeColor("madeline_talk"), "talk", "madeline_talk");
+      drawPoint(data.markers.madeline_edge, modeColor("madeline_edge"), "edge", "madeline_edge");
+      drawRect(data.markers.dialogue_box, modeColor("dialogue_box"), "dialogue box", "dialogue_box");
+      drawLaughPath();
+      drawPreviewStep();
+    }
+
+    function drawGrid() {
+      overlayCtx.save();
+      overlayCtx.strokeStyle = "rgb(255 255 255 / 0.22)";
+      overlayCtx.lineWidth = 1;
+      for (let x = 0; x <= image.naturalWidth; x += 8) {
+        line(x, 0, x, image.naturalHeight);
+      }
+      for (let y = 0; y <= image.naturalHeight; y += 8) {
+        line(0, y, image.naturalWidth, y);
+      }
+      overlayCtx.restore();
+    }
+
+    function drawRect(rect, color, label, key) {
+      overlayCtx.save();
+      overlayCtx.fillStyle = colorWithAlpha(color, key === mode ? 0.28 : 0.13);
+      overlayCtx.strokeStyle = color;
+      overlayCtx.lineWidth = key === mode ? 3 : 2;
+      overlayCtx.fillRect(rect.x * zoom, rect.y * zoom, rect.w * zoom, rect.h * zoom);
+      overlayCtx.strokeRect(rect.x * zoom, rect.y * zoom, rect.w * zoom, rect.h * zoom);
+      labelText(label, rect.x, rect.y - 2, color);
+      overlayCtx.restore();
+    }
+
+    function drawActor(actor, color, label, key) {
+      drawPoint(actor, color, label, key);
+      const dx = actor.facing === "left" ? -12 : 12;
+      overlayCtx.save();
+      overlayCtx.strokeStyle = color;
+      overlayCtx.lineWidth = 2;
+      line(actor.x, actor.y, actor.x + dx, actor.y);
+      overlayCtx.restore();
+    }
+
+    function drawPoint(point, color, label, key) {
+      overlayCtx.save();
+      const x = point.x * zoom;
+      const y = point.y * zoom;
+      overlayCtx.strokeStyle = color;
+      overlayCtx.fillStyle = colorWithAlpha(color, key === mode ? 0.45 : 0.28);
+      overlayCtx.lineWidth = key === mode ? 3 : 2;
+      overlayCtx.beginPath();
+      overlayCtx.arc(x, y, Math.max(4, 3 * zoom), 0, Math.PI * 2);
+      overlayCtx.fill();
+      overlayCtx.stroke();
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(x - 7 * zoom, y);
+      overlayCtx.lineTo(x + 7 * zoom, y);
+      overlayCtx.moveTo(x, y - 7 * zoom);
+      overlayCtx.lineTo(x, y + 7 * zoom);
+      overlayCtx.stroke();
+      labelText(label, point.x + 3, point.y - 3, color);
+      overlayCtx.restore();
+    }
+
+    function drawLaughPath() {
+      const start = data.markers.laugh_start;
+      const end = data.markers.laugh_end;
+      overlayCtx.save();
+      overlayCtx.strokeStyle = modeColor("laugh_start");
+      overlayCtx.lineWidth = 2;
+      line(start.x, start.y, end.x, end.y);
+      overlayCtx.setLineDash([4, 4]);
+      overlayCtx.strokeStyle = "#ffffff";
+      line(start.x, start.y + 8, end.x, end.y + 8);
+      overlayCtx.restore();
+      drawPoint(start, modeColor("laugh_start"), "laugh start", "laugh_start");
+      drawPoint(end, modeColor("laugh_end"), "laugh end", "laugh_end");
+    }
+
+    function drawPreviewStep() {
+      const step = data.script[previewStep];
+      if (!step) return;
+      if (step.marker && data.markers[step.marker]) {
+        drawPoint(data.markers[step.marker], "#ffffff", `script ${previewStep + 1}`, step.marker);
+      }
+    }
+
+    function labelText(label, x, y, color) {
+      overlayCtx.save();
+      overlayCtx.font = `${Math.max(11, 4 * zoom)}px ui-sans-serif, system-ui`;
+      overlayCtx.textBaseline = "bottom";
+      overlayCtx.fillStyle = "rgb(0 0 0 / 0.72)";
+      overlayCtx.fillText(label, x * zoom + 1, y * zoom + 1);
+      overlayCtx.fillStyle = color;
+      overlayCtx.fillText(label, x * zoom, y * zoom);
+      overlayCtx.restore();
+    }
+
+    function line(x1, y1, x2, y2) {
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(Math.round(x1 * zoom) + 0.5, Math.round(y1 * zoom) + 0.5);
+      overlayCtx.lineTo(Math.round(x2 * zoom) + 0.5, Math.round(y2 * zoom) + 0.5);
+      overlayCtx.stroke();
+    }
+
+    function onPointerDown(event) {
+      if (!data) return;
+      const def = modeDefs.find((item) => item.id === mode);
+      const point = canvasPoint(event);
+      if (def.type === "rect") {
+        const rect = getRect(mode);
+        rect.x = point.x;
+        rect.y = point.y;
+        rect.w = 1;
+        rect.h = 1;
+        drag = { type: "rect", mode, start: point };
+      } else {
+        const target = getPoint(mode);
+        target.x = point.x;
+        target.y = point.y;
+        drag = { type: "point", mode };
+      }
+      drawOverlay();
+      event.preventDefault();
+    }
+
+    function onPointerMove(event) {
+      if (!drag) return;
+      const point = canvasPoint(event);
+      if (drag.type === "rect") {
+        const rect = getRect(drag.mode);
+        rect.x = Math.min(drag.start.x, point.x);
+        rect.y = Math.min(drag.start.y, point.y);
+        rect.w = Math.max(1, Math.abs(point.x - drag.start.x));
+        rect.h = Math.max(1, Math.abs(point.y - drag.start.y));
+      } else {
+        const target = getPoint(drag.mode);
+        target.x = point.x;
+        target.y = point.y;
+      }
+      drawOverlay();
+      event.preventDefault();
+    }
+
+    function canvasPoint(event) {
+      const bounds = overlay.getBoundingClientRect();
+      return {
+        x: clamp(Math.round((event.clientX - bounds.left) / zoom), 0, image.naturalWidth - 1),
+        y: clamp(Math.round((event.clientY - bounds.top) / zoom), 0, image.naturalHeight - 1),
+      };
+    }
+
+    function getRect(key) {
+      if (key === "trigger") return data.trigger;
+      if (key === "dialogue_box") return data.markers.dialogue_box;
+      throw new Error(`not a rect mode: ${key}`);
+    }
+
+    function getPoint(key) {
+      if (key === "granny") return grannyActor();
+      return data.markers[key];
+    }
+
+    function clearSelected() {
+      if (mode === "trigger" || mode === "dialogue_box") {
+        const rect = getRect(mode);
+        rect.x = 0;
+        rect.y = 0;
+        rect.w = 1;
+        rect.h = 1;
+      } else {
+        const point = getPoint(mode);
+        point.x = 0;
+        point.y = 0;
+      }
+      drawOverlay();
+      setStatus(`Cleared ${mode}`);
+    }
+
+    function grannyActor() {
+      let actor = data.actors.find((item) => item.id === "granny");
+      if (!actor) {
+        actor = { id: "granny", kind: "granny", x: 0, y: 0, facing: "left", sprite: "granny" };
+        data.actors.push(actor);
+      }
+      return actor;
+    }
+
+    function updateModeButtons() {
+      for (const button of toolbar.querySelectorAll("button")) {
+        button.classList.toggle("active", button.dataset.mode === mode);
+      }
+    }
+
+    function modeColor(id) {
+      return modeDefs.find((item) => item.id === id).color;
+    }
+
+    function colorWithAlpha(hex, alpha) {
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      return `rgb(${r} ${g} ${b} / ${alpha})`;
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+  </script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pack a transparent parallax PNG into 64x64 4bpp OBJ chunks."""
+"""Pack a transparent parallax PNG into a deduped 4bpp BG tilemap."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ from pathlib import Path
 from split_foreground_tileset import read_png_rgba
 
 
-CHUNK_SIZE = 64
 MAX_OPAQUE_COLORS = 15
+PALETTE_BANK = 15
 
 
 def rgba_to_rgb555(color: tuple[int, int, int, int]) -> int:
@@ -32,6 +32,10 @@ def write_tile_4bpp(output: bytearray, pixels: list[int]) -> None:
             output.append(left | (right << 4))
 
 
+def screen_entry(tile: int) -> int:
+    return tile | (PALETTE_BANK << 12)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=Path, required=True)
@@ -42,8 +46,6 @@ def main() -> int:
     image = read_png_rgba(args.input)
     if image.width == 0 or image.height == 0:
         raise ValueError("empty parallax image")
-    if image.height > CHUNK_SIZE:
-        raise ValueError(f"{args.input} is {image.height}px high; this packer supports one 64px OBJ row")
 
     colors: Counter[tuple[int, int, int, int]] = Counter()
     for index in range(0, len(image.pixels), 4):
@@ -52,8 +54,6 @@ def main() -> int:
             colors[color] += 1
 
     opaque = [color for color, _ in colors.most_common(MAX_OPAQUE_COLORS)]
-    if not opaque and colors:
-        raise ValueError("unexpected empty opaque palette")
     palette = [(0, 0, 0, 0)] + opaque
     palette += [(0, 0, 0, 255)] * (16 - len(palette))
     palette_index = {color: index for index, color in enumerate(palette)}
@@ -70,20 +70,35 @@ def main() -> int:
             return palette_index[closest]
         return palette_index[color]
 
-    chunk_count = (image.width + CHUNK_SIZE - 1) // CHUNK_SIZE
-    tiles = bytearray()
-    for chunk in range(chunk_count):
-        chunk_x = chunk * CHUNK_SIZE
-        for tile_y in range(CHUNK_SIZE // 8):
-            for tile_x in range(CHUNK_SIZE // 8):
-                tile_pixels = []
-                for y in range(8):
-                    for x in range(8):
-                        tile_pixels.append(pixel_index(chunk_x + tile_x * 8 + x, tile_y * 8 + y))
-                write_tile_4bpp(tiles, tile_pixels)
+    width_tiles = (image.width + 7) // 8
+    height_tiles = (image.height + 7) // 8
+    tiles: list[bytes] = [bytes([0] * 64)]
+    tile_ids = {tiles[0]: 0}
+    tilemap: list[int] = []
+
+    for tile_y in range(height_tiles):
+        for tile_x in range(width_tiles):
+            tile_pixels = []
+            for y in range(8):
+                for x in range(8):
+                    tile_pixels.append(pixel_index(tile_x * 8 + x, tile_y * 8 + y))
+            tile = bytes(tile_pixels)
+            tile_index = tile_ids.get(tile)
+            if tile_index is None:
+                tile_index = len(tiles)
+                tile_ids[tile] = tile_index
+                tiles.append(tile)
+            tilemap.append(screen_entry(tile_index))
+
+    packed_tiles = bytearray()
+    for tile in tiles:
+        write_tile_4bpp(packed_tiles, list(tile))
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    (args.output_dir / f"{args.name}_tiles.bin").write_bytes(bytes(tiles))
+    (args.output_dir / f"{args.name}_tiles.bin").write_bytes(bytes(packed_tiles))
+    (args.output_dir / f"{args.name}_map.bin").write_bytes(
+        b"".join(entry.to_bytes(2, "little") for entry in tilemap)
+    )
     (args.output_dir / f"{args.name}_palette.bin").write_bytes(
         b"".join(rgba_to_rgb555(color).to_bytes(2, "little") for color in palette)
     )
@@ -93,16 +108,17 @@ def main() -> int:
                 "source": str(args.input),
                 "width": image.width,
                 "height": image.height,
-                "chunkSize": CHUNK_SIZE,
-                "chunkCount": chunk_count,
-                "tileCount": len(tiles) // 32,
+                "widthTiles": width_tiles,
+                "heightTiles": height_tiles,
+                "tileCount": len(tiles),
+                "paletteBank": PALETTE_BANK,
                 "paletteRgba": [list(color) for color in palette],
             },
             indent=2,
         )
         + "\n"
     )
-    print(f"packed parallax {args.name}: {chunk_count} chunks, {len(tiles) // 32} tiles, {len(opaque)} opaque colors")
+    print(f"packed parallax {args.name}: {len(tiles)} deduped BG tiles, {len(opaque)} opaque colors")
     return 0
 
 

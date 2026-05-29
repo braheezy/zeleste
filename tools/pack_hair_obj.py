@@ -11,8 +11,6 @@ from split_foreground_tileset import read_png_rgba
 
 
 PARTS = [
-    ("root1", "root1.png"),
-    ("root2", "root2.png"),
     ("tail", "tail-normal.png"),
 ]
 
@@ -36,13 +34,10 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
 
-    root2_path = args.input_dir / "root2.png"
     sources = []
     colors = set()
     for name, filename in PARTS:
         path = args.input_dir / filename
-        if not path.exists() and name == "tail":
-            path = root2_path
         image = read_png_rgba(path)
         if image.width != 8 or image.height != 8:
             raise ValueError(f"{path} must be 8x8, got {image.width}x{image.height}")

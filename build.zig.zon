@@ -7,6 +7,12 @@
         .ziggba = .{
             .path = "../../gba/ziggba",
         },
+        .maxmod_zig = .{
+            .path = "../../gba/maxmod-zig",
+        },
+        .mmutil_zig = .{
+            .path = "../../gba/mmutil-zig",
+        },
     },
     .paths = .{
         "build.zig",

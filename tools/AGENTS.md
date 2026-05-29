@@ -4,6 +4,7 @@ exist, instead of running ad hoc conversions.
 
 Before changing these tools, read `../docs/asset-pipeline.md`. If the tool
 change affects runtime data layout, also read `../docs/runtime-architecture.md`.
+For bespoke cutscene authoring tools, read `../docs/cutscene-tooling.md`.
 
 ## Common Commands
 
@@ -13,6 +14,9 @@ change affects runtime data layout, also read `../docs/runtime-architecture.md`.
   of generated foreground sway frames in `assets/generated/foreground/`.
 - `task scene`: opens the scene animation editor for scripted NPC placement,
   trigger rectangles, hint placement, and flight paths.
+- `task granny-cutscene`: opens the room 2 Granny intro cutscene editor. This
+  is a bespoke editor for trigger, actor, player target, camera, dialogue box,
+  dialogue, and laugh-text source data.
 - `task grass-sway -- <path> [--preset auto|tiny|small|medium|large] [--no-mirror]`:
   generates sway frames for a foreground grass PNG. The generated stamp name is
   derived from the input file or directory and is written to
@@ -32,6 +36,20 @@ change affects runtime data layout, also read `../docs/runtime-architecture.md`.
   this for bird origin placement, hint box placement, trigger rectangles, and
   flight path segments. Saved `*_scene.json` files live beside the source room
   image. The room builder folds bird scene data into `bird_npcs.bin`.
+
+- Bespoke cutscene tools: create these only when a specific cutscene needs
+  authoring support. Follow `../docs/cutscene-tooling.md`; save source data as
+  `<room>_cutscene.json` beside the room image. Prefer a small room-specific UI
+  over expanding the generic scene editor too early.
+
+- `granny_cutscene_server.py` and `granny_cutscene_editor.html`: bespoke room 2
+  Granny intro editor. It saves
+  `assets/chapters/prologue_a/2_cutscene.json`. It discovers Granny animation
+  sheets from `assets/animations/granny/` and stores dialogue-page animation
+  cues by sheet id. Granny `idle` is an implicit default for dialogue pages
+  without an explicit cue. The second zoom beat is stored as `camera_focus_2`
+  plus `camera.secondary.afterDialogue`. It does not pack runtime assets yet;
+  wire the JSON into the ROM only after the sequence shape is stable.
 
 - `hair_anchor_server.py` and `hair_anchor_editor.html`: player hair anchor
   editor. Use this for per-frame hair root placement and facing direction.

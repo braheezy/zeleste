@@ -134,7 +134,7 @@ class HairAnchorHandler(SimpleHTTPRequestHandler):
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8788)
+    parser.add_argument("--port", type=int, default=8789)
     parser.add_argument("--no-open", action="store_true")
     args = parser.parse_args()
 

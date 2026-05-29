@@ -170,6 +170,23 @@ Suggested initial rendering path:
 - Use 8x8 hardware tiles but author gameplay around 8x8 or 16x16 metatiles.
 - Keep visual effects budgeted: dash trails, particles, and parallax should never compromise movement frame rate.
 
+### Overworld / Chapter Select
+
+Use a GBA-native mountain overworld instead of trying to reproduce the original vector/2.5D chapter select.
+
+Proposed first version:
+
+- One tall scrolling pixel-art mountain map, likely `256x512` pixels to start.
+- Treat it as one continuous tile background, about one screen wide and a little over three GBA screens tall.
+- Place chapter nodes along a winding mountain path.
+- Move a Madeline cursor/marker sprite between nodes.
+- Smoothly scroll the camera to the selected node.
+- Show a compact chapter title/status panel and a small preview image for the selected chapter.
+- Keep nodes data-driven: chapter id, map position, title text, completion state, preview asset, and target start room.
+- Initial node list: Prologue, Forsaken City, Old Site, Celestial Resort, Golden Ridge, Mirror Temple, Reflection, The Summit, Epilogue.
+
+The visual goal is a readable handheld map: tiled pixel-art mountain, small icons, simple text panels, and optional preview thumbnails. It should evoke the original mountain progress screen without depending on vector art or expensive 3D-like effects.
+
 ### Audio
 
 - Use `maxmod-zig`/`mmutil-zig` if it remains the best local path.
@@ -349,6 +366,7 @@ Those are too broad and will damage coherence.
 - Small but complete Chapter 1-inspired route.
 - Strawberries.
 - Chapter intro/end flow.
+- First pass of the mountain overworld/chapter select with nodes, camera scroll, title/status text, and preview thumbnail support.
 - Music pass.
 - Performance budget verified on emulator and, if available, hardware.
 

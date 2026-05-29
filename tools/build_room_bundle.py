@@ -9,6 +9,36 @@ import subprocess
 import sys
 from pathlib import Path
 
+WIRE_COLOR_INDEX = 6
+MAX_WIRE_CHUNKS = 48
+SPIKE_COLLISION_VALUES = {
+    "up": 3,
+    "down": 4,
+    "left": 5,
+    "right": 6,
+}
+
+
+def spike_collision_value(tile: dict) -> int:
+    direction = str(tile.get("direction") or tile.get("orientation") or "up")
+    return SPIKE_COLLISION_VALUES.get(direction, SPIKE_COLLISION_VALUES["up"])
+
+
+def collision_debug_char(value: int) -> str:
+    if value == 1:
+        return "#"
+    if value == 2:
+        return "^"
+    if value == 3:
+        return "!"
+    if value == 4:
+        return "v"
+    if value == 5:
+        return "<"
+    if value == 6:
+        return ">"
+    return "."
+
 
 def room_id_from_background(path: Path) -> str:
     return path.stem.replace("-", "_")
@@ -93,6 +123,213 @@ def bird_trigger_action_code(action: str) -> int:
     }.get(action, 0)
 
 
+def scene_path_for_background(background_png: Path) -> Path:
+    return background_png.with_name(f"{background_png.stem}_scene.json")
+
+
+def raster_line(a: dict, b: dict) -> list[tuple[int, int]]:
+    x0 = int(a.get("x", 0))
+    y0 = int(a.get("y", 0))
+    x1 = int(b.get("x", 0))
+    y1 = int(b.get("y", 0))
+    dx = abs(x1 - x0)
+    sx = 1 if x0 < x1 else -1
+    dy = -abs(y1 - y0)
+    sy = 1 if y0 < y1 else -1
+    err = dx + dy
+    points = []
+    while True:
+        points.append((x0, y0))
+        if x0 == x1 and y0 == y1:
+            break
+        e2 = 2 * err
+        if e2 >= dy:
+            err += dy
+            x0 += sx
+        if e2 <= dx:
+            err += dx
+            y0 += sy
+    return points
+
+
+def densify_wire_points(points: list[dict]) -> list[tuple[int, int]]:
+    if not points:
+        return []
+    out = []
+    seen = set()
+    for index in range(1, len(points)):
+        for point in raster_line(points[index - 1], points[index]):
+            if point not in seen:
+                seen.add(point)
+                out.append(point)
+    if not out:
+        point = (int(points[0].get("x", 0)), int(points[0].get("y", 0)))
+        out.append(point)
+    return out
+
+
+def build_scene_wires(background_png: Path, output_dir: Path) -> None:
+    scene_path = scene_path_for_background(background_png)
+    output_path = output_dir / "wires.bin"
+    tiles_output_path = output_dir / "wire_tiles.bin"
+    json_output_path = output_dir / "wires.json"
+    if not scene_path.exists():
+        output_path.write_bytes((0).to_bytes(2, "little"))
+        tiles_output_path.write_bytes(b"")
+        json_output_path.write_text(json.dumps({"count": 0, "recordBytes": 8, "binary": "wires.bin", "tiles": "wire_tiles.bin", "wires": []}, indent=2) + "\n")
+        return
+
+    scene = json.loads(scene_path.read_text())
+    wires = scene.get("wires") or []
+    if not wires:
+        output_path.write_bytes((0).to_bytes(2, "little"))
+        tiles_output_path.write_bytes(b"")
+        json_output_path.write_text(json.dumps({"count": 0, "recordBytes": 8, "binary": "wires.bin", "tiles": "wire_tiles.bin", "wires": []}, indent=2) + "\n")
+        return
+
+    metadata_path = output_dir / "bg_conversion.json"
+    if not metadata_path.exists():
+        output_path.write_bytes((0).to_bytes(2, "little"))
+        tiles_output_path.write_bytes(b"")
+        json_output_path.write_text(json.dumps({"count": 0, "recordBytes": 8, "binary": "wires.bin", "tiles": "wire_tiles.bin", "wires": []}, indent=2) + "\n")
+        return
+
+    metadata = json.loads(metadata_path.read_text())
+    width = int(metadata["sourceWidth"])
+    height = int(metadata["sourceHeight"])
+
+    chunks: dict[tuple[int, int, int], list[set[tuple[int, int]]]] = {}
+    for wire_index, wire in enumerate(wires):
+        wire_points = densify_wire_points(wire.get("points") or [])
+        if not wire_points:
+            continue
+        min_x = min(x for x, _ in wire_points)
+        max_x = max(x for x, _ in wire_points)
+        span = max(1, max_x - min_x)
+        for sag in (0, 1, 2):
+            transformed = []
+            for x, y in wire_points:
+                if x < 0 or y < 0 or x >= width or y >= height:
+                    continue
+                distance_from_start = x - min_x
+                distance_from_end = max_x - x
+                anchor_scale = max(0.0, min(1.0, min(distance_from_start, distance_from_end) / 24.0))
+                offset_y = int(round(sag * anchor_scale))
+                transformed.append({"x": x, "y": max(0, min(height - 1, y + offset_y))})
+            if len(transformed) == 1:
+                sag_points = [(transformed[0]["x"], transformed[0]["y"])]
+            else:
+                sag_points = []
+                seen = set()
+                for index in range(1, len(transformed)):
+                    for point in raster_line(transformed[index - 1], transformed[index]):
+                        if point not in seen:
+                            seen.add(point)
+                            sag_points.append(point)
+            for x, y in sag_points:
+                chunk_x = x // 32
+                chunk_y = y // 8
+                chunk = chunks.setdefault((wire_index, chunk_x, chunk_y), [set(), set(), set()])
+                chunk[sag].add((x & 31, y & 7))
+
+    records = []
+    tile_bytes = bytearray()
+    for chunk_index, ((wire_index, chunk_x, chunk_y), frames) in enumerate(sorted(chunks.items())):
+        if chunk_index >= MAX_WIRE_CHUNKS:
+            break
+        tile_frames = []
+        for points in frames:
+            chunk_tiles = [[0] * 64 for _ in range(4)]
+            for x, y in points:
+                tile_x = x // 8
+                local_x = x & 7
+                chunk_tiles[tile_x][y * 8 + local_x] = WIRE_COLOR_INDEX
+            tile_frames.extend(chunk_tiles)
+        for pixels in tile_frames:
+            for y in range(8):
+                for x_pair in range(4):
+                    left = pixels[y * 8 + x_pair * 2]
+                    right = pixels[y * 8 + x_pair * 2 + 1]
+                    tile_bytes.append(left | (right << 4))
+        phase = (wire_index * 41) & 255
+        records.append(
+            {
+                "x": chunk_x * 32,
+                "y": chunk_y * 8,
+                "tileOffset": chunk_index * 12,
+                "wire": wire_index,
+                "phase": phase,
+                "points": sum(len(points) for points in frames),
+            }
+        )
+
+    tiles_output_path.write_bytes(bytes(tile_bytes))
+    binary = bytearray()
+    binary.extend(len(records).to_bytes(2, "little"))
+    for record in records:
+        binary.extend(int(record["x"]).to_bytes(2, "little", signed=True))
+        binary.extend(int(record["y"]).to_bytes(2, "little", signed=True))
+        binary.extend(int(record["tileOffset"]).to_bytes(2, "little"))
+        binary.append(int(record["phase"]))
+        binary.append(0)
+    output_path.write_bytes(bytes(binary))
+    json_output_path.write_text(
+        json.dumps({"count": len(records), "recordBytes": 8, "binary": "wires.bin", "tiles": "wire_tiles.bin", "scene": str(scene_path), "wires": records}, indent=2) + "\n"
+    )
+
+
+def normalized_scene_rect(raw: dict | None) -> dict | None:
+    if not raw:
+        return None
+    x = int(raw.get("x", 0))
+    y = int(raw.get("y", 0))
+    w = int(raw.get("w", 0))
+    h = int(raw.get("h", 0))
+    x0 = min(x, x + w)
+    y0 = min(y, y + h)
+    x1 = max(x, x + w)
+    y1 = max(y, y + h)
+    if x1 <= x0 or y1 <= y0:
+        return None
+    return {"x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0}
+
+
+def build_scene_bridge_ending(background_png: Path, output_dir: Path) -> None:
+    scene_path = scene_path_for_background(background_png)
+    output_path = output_dir / "bridge_ending.bin"
+    json_output_path = output_dir / "bridge_ending.json"
+    bridge = None
+    if scene_path.exists():
+        scene = json.loads(scene_path.read_text())
+        source = scene.get("bridgeEnding") or {}
+        bridge = {
+            "platform": normalized_scene_rect(source.get("platform")),
+            "trigger": normalized_scene_rect(source.get("trigger")),
+            "hint": normalized_scene_rect(source.get("hint")),
+            "scene": str(scene_path),
+        }
+    enabled = bool(bridge and bridge["platform"] and bridge["trigger"])
+    binary = bytearray()
+    binary.extend((1 if enabled else 0).to_bytes(2, "little"))
+    for key in ("platform", "trigger", "hint"):
+        rect = (bridge or {}).get(key) or {"x": 0, "y": 0, "w": 0, "h": 0}
+        for field in ("x", "y", "w", "h"):
+            binary.extend(int(rect.get(field, 0)).to_bytes(2, "little", signed=True))
+    output_path.write_bytes(bytes(binary))
+    json_output_path.write_text(
+        json.dumps(
+            {
+                "count": 1 if enabled else 0,
+                "recordBytes": 24,
+                "binary": "bridge_ending.bin",
+                "bridgeEnding": bridge,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+
+
 def build_collision(annotations_json: Path, output_dir: Path) -> None:
     data = json.loads(annotations_json.read_text())
     tile_size = int(data["tileSize"])
@@ -121,6 +358,8 @@ def build_collision(annotations_json: Path, output_dir: Path) -> None:
                 collision[y * width_tiles + x] = 1
             elif kind == "oneWay":
                 collision[y * width_tiles + x] = 2
+            elif kind in ("spike", "hazard"):
+                collision[y * width_tiles + x] = spike_collision_value(tile)
 
     source_blocks = data.get("fallingBlocks", [])
     for block in source_blocks:
@@ -149,7 +388,7 @@ def build_collision(annotations_json: Path, output_dir: Path) -> None:
     rows = []
     for y in range(height_tiles):
         row = collision[y * width_tiles : (y + 1) * width_tiles]
-        rows.append("".join("#" if value == 1 else "^" if value == 2 else "." for value in row))
+        rows.append("".join(collision_debug_char(value) for value in row))
     (output_dir / "collision.txt").write_text("\n".join(rows) + "\n")
 
     falling_blocks = []
@@ -340,6 +579,7 @@ def build_collision(annotations_json: Path, output_dir: Path) -> None:
         "widthTiles": width_tiles,
         "heightTiles": height_tiles,
         "collision": "collision.bin",
+        "spikeTileCount": sum(1 for value in collision if value in SPIKE_COLLISION_VALUES.values()),
         "spawn": "spawn.bin",
         "spawnX": spawn_x,
         "spawnY": spawn_y,
@@ -435,6 +675,9 @@ def main() -> int:
             check=True,
         )
 
+    build_scene_wires(args.background_png, args.output_dir)
+    build_scene_bridge_ending(args.background_png, args.output_dir)
+
     if annotations.exists():
         build_collision(annotations, args.output_dir)
     else:
@@ -455,6 +698,9 @@ def main() -> int:
             "bridgePoles": "bridge_poles.bin" if annotations.exists() else None,
             "genericStamps": "generic_stamps.bin" if annotations.exists() else None,
             "birdNpcs": "bird_npcs.bin" if annotations.exists() else None,
+            "wires": "wires.bin",
+            "wireTiles": "wire_tiles.bin",
+            "bridgeEnding": "bridge_ending.bin",
         },
     }
     (args.output_dir / "room.json").write_text(json.dumps(room, indent=2) + "\n")

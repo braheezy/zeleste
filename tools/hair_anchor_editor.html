@@ -3,12 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Zeleste Hair Anchors</title>
+  <title>Zeleste Hair Preview</title>
   <style>
     :root {
       color-scheme: dark;
       --bg: #17191c;
       --panel: #22262b;
+      --surface: #15191f;
+      --surface-2: #101318;
       --text: #eef1f4;
       --muted: #aeb6c0;
       --line: #3a414a;
@@ -27,7 +29,7 @@
 
     .app {
       display: grid;
-      grid-template-columns: 300px 1fr;
+      grid-template-columns: 360px 1fr;
       min-height: 100vh;
     }
 
@@ -35,18 +37,27 @@
       border-right: 1px solid var(--line);
       background: var(--panel);
       padding: 16px;
+      overflow: auto;
+      max-height: 100vh;
     }
 
     main {
-      display: grid;
-      place-items: start center;
       overflow: auto;
-      padding: 16px;
+      padding: 12px;
     }
 
     h1 {
       margin: 0 0 16px;
       font-size: 18px;
+    }
+
+    h2 {
+      margin: 0 0 8px;
+      font-size: 13px;
+      font-weight: 650;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
     }
 
     label {
@@ -69,6 +80,7 @@
     }
 
     input[type="range"] { padding: 0; }
+    input[type="checkbox"] { width: auto; }
 
     button {
       cursor: pointer;
@@ -84,6 +96,39 @@
       gap: 8px;
     }
 
+    .check {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      color: var(--muted);
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: 13px;
+    }
+
+    .workbench {
+      display: grid;
+      grid-template-columns: repeat(2, max-content);
+      align-items: start;
+      gap: 12px;
+      width: max-content;
+    }
+
+    .viewport {
+      width: max-content;
+      padding: 8px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    @media (max-width: 1200px) {
+      .workbench {
+        grid-template-columns: max-content;
+      }
+    }
+
     .stage {
       position: relative;
       width: max-content;
@@ -96,7 +141,7 @@
       image-rendering: pixelated;
     }
 
-    #overlay {
+    #editorOverlay {
       position: absolute;
       left: 0;
       top: 0;
@@ -123,7 +168,12 @@
       <label for="animationSelect">Animation</label>
       <select id="animationSelect"></select>
 
-      <label for="frameSlider">Frame <span id="frameLabel">0</span></label>
+      <div class="row">
+        <button id="playButton" type="button">Pause Preview</button>
+        <button id="saveButton" type="button">Save Animation</button>
+      </div>
+
+      <label for="frameSlider">Edit Frame <span id="editFrameLabel">0</span></label>
       <input id="frameSlider" type="range" min="0" max="0" value="0">
 
       <div class="row">
@@ -144,67 +194,58 @@
 
       <button id="flipDirButton" type="button">Flip Hair Direction</button>
 
-      <label for="editModeSelect">Edit Mode</label>
-      <select id="editModeSelect">
-        <option value="anchor">Anchor</option>
-        <option value="tail">Tail Bias</option>
-      </select>
-
-      <div class="row">
-        <div>
-          <label for="tailXInput">Tail X</label>
-          <input id="tailXInput" type="number" step="1">
-        </div>
-        <div>
-          <label for="tailYInput">Tail Y</label>
-          <input id="tailYInput" type="number" step="1">
-        </div>
-      </div>
-
       <label for="zoomInput">Zoom</label>
-      <input id="zoomInput" type="number" min="4" max="16" value="15">
+      <input id="zoomInput" type="number" min="3" max="16" value="6">
 
-      <button id="resetButton" type="button">Reset Current</button>
+      <label>View</label>
+      <label class="check"><input id="gridInput" type="checkbox" checked> Pixel grid in editor</label>
+
+      <button id="resetButton" type="button">Reset Current Frame</button>
       <button id="applyFollowingButton" type="button">Apply Current To Following</button>
       <button id="applyAllButton" type="button">Apply Current To All</button>
       <button id="copyPrevButton" type="button">Copy Previous Frame</button>
-      <button id="saveButton" type="button">Save</button>
 
       <div id="status">Loading...</div>
       <div class="stats">
         <div>Frames: <span id="frameStats">0</span></div>
+        <div>Preview frame: <span id="previewFrameStats">0</span></div>
         <div>Direction: <span id="directionStats">left</span></div>
         <div>JSON: <span id="jsonStats">none</span></div>
       </div>
       <div class="hint">
-        Drag the anchor to where root1's lower forward hair pixel should attach to Madeline's head. Switch to Tail Bias to nudge the procedural tail start for head-turn frames. Arrow keys nudge the active mode. Bracket keys move frames.
-        Press X or use Flip Hair Direction to choose which way the hair trails.
-        Use apply-current controls when the same placement works across several frames.
-        Save writes <code>hair_anchors.json</code> into the selected animation folder.
+        Pick an animation, pause or resume the preview, then drag the hair in the frame editor.
       </div>
     </aside>
 
     <main>
-      <div class="stage">
-        <canvas id="base"></canvas>
-        <canvas id="overlay"></canvas>
+      <div class="workbench">
+        <section class="viewport">
+          <h2>Live Preview</h2>
+          <canvas id="previewCanvas"></canvas>
+        </section>
+        <section class="viewport">
+          <h2>Frame Editor</h2>
+          <div class="stage">
+            <canvas id="editorCanvas"></canvas>
+            <canvas id="editorOverlay"></canvas>
+          </div>
+        </section>
       </div>
     </main>
   </div>
 
   <script>
     const animationSelect = document.getElementById('animationSelect');
+    const playButton = document.getElementById('playButton');
     const frameSlider = document.getElementById('frameSlider');
-    const frameLabel = document.getElementById('frameLabel');
+    const editFrameLabel = document.getElementById('editFrameLabel');
     const prevButton = document.getElementById('prevButton');
     const nextButton = document.getElementById('nextButton');
     const xInput = document.getElementById('xInput');
     const yInput = document.getElementById('yInput');
     const flipDirButton = document.getElementById('flipDirButton');
-    const editModeSelect = document.getElementById('editModeSelect');
-    const tailXInput = document.getElementById('tailXInput');
-    const tailYInput = document.getElementById('tailYInput');
     const zoomInput = document.getElementById('zoomInput');
+    const gridInput = document.getElementById('gridInput');
     const resetButton = document.getElementById('resetButton');
     const applyFollowingButton = document.getElementById('applyFollowingButton');
     const applyAllButton = document.getElementById('applyAllButton');
@@ -212,24 +253,68 @@
     const saveButton = document.getElementById('saveButton');
     const status = document.getElementById('status');
     const frameStats = document.getElementById('frameStats');
+    const previewFrameStats = document.getElementById('previewFrameStats');
     const directionStats = document.getElementById('directionStats');
     const jsonStats = document.getElementById('jsonStats');
-    const base = document.getElementById('base');
-    const overlay = document.getElementById('overlay');
-    const baseCtx = base.getContext('2d', { alpha: false });
-    const overlayCtx = overlay.getContext('2d');
+    const previewCanvas = document.getElementById('previewCanvas');
+    const editorCanvas = document.getElementById('editorCanvas');
+    const editorOverlay = document.getElementById('editorOverlay');
+    const previewCtx = previewCanvas.getContext('2d', { alpha: false });
+    const editorCtx = editorCanvas.getContext('2d', { alpha: false });
+    const overlayCtx = editorOverlay.getContext('2d');
+
+    const HAIR_NODE_COUNT = 5;
+    const PREVIEW_FPS = 10;
+    const VIEW_WIDTH = 72;
+    const VIEW_HEIGHT = 56;
+    const PLAYER_ORIGIN = { x: 20, y: 10 };
+    const GROUND_Y = 46;
+    const COLORS = {
+      bg: '#101318',
+      panel: '#141922',
+      ground: '#2e3942',
+      groundShade: '#202830',
+      shadow: '#5a1a1a',
+      hair: '#ac3232',
+      anchor: '#72d6ff',
+      arrow: '#ffcf5a',
+      root: '#ffffff',
+    };
 
     let animations = [];
-    let currentAnimation = null;
-    let frames = [];
-    let frameImages = [];
-    let anchors = null;
-    let frameIndex = 0;
-    let draggingAnchor = false;
-    let dragOffset = { x: 0, y: 0 };
+    let animationStates = new Map();
+    let currentState = null;
+    let isPlaying = true;
+    let lastTime = 0;
+    let dragging = null;
 
     function zoom() {
-      return Number(zoomInput.value) || 10;
+      return Math.max(3, Math.min(16, Number(zoomInput.value) || 6));
+    }
+
+    function settings() {
+      return {
+        forwardCorrection: 1,
+        verticalCorrection: 2,
+        desiredDist: 2,
+        idleX: 0.5,
+        idleY: 2,
+        fallX: 1,
+        fallY: 0,
+        climbY: 1.5,
+        approach: 4,
+        rootRadius: 4,
+        midRadius: 3,
+        tailRadius: 1,
+      };
+    }
+
+    function defaultAnchor() {
+      return { x: 18, y: 19 };
+    }
+
+    function defaultTailBias() {
+      return { x: 0, y: 0 };
     }
 
     function emptyAnchorData(animation) {
@@ -246,14 +331,6 @@
       };
     }
 
-    function defaultAnchor() {
-      return { x: 18, y: 19 };
-    }
-
-    function defaultTailBias() {
-      return { x: 0, y: 0 };
-    }
-
     async function loadImage(path) {
       return new Promise((resolve, reject) => {
         const image = new Image();
@@ -268,56 +345,53 @@
       const data = await response.json();
       animations = data.animations;
       animationSelect.innerHTML = '';
+
       for (const animation of animations) {
         const option = document.createElement('option');
         option.value = animation.path;
         option.textContent = `${animation.name} (${animation.frameCount})`;
         animationSelect.appendChild(option);
       }
+
+      setStatus('Loading sprites and anchors...');
+      await Promise.all(animations.map(loadAnimationState));
       if (animations.length) {
-        await selectAnimation(animations[0].path);
+        selectAnimation(animations[0].path);
       }
+      prepareCanvases();
+      requestAnimationFrame(tick);
     }
 
-    async function selectAnimation(path) {
-      currentAnimation = animations.find((animation) => animation.path === path);
-      frames = currentAnimation.frames;
-      frameImages = await Promise.all(frames.map(loadImage));
-      frameSlider.max = String(frames.length - 1);
-      frameSlider.value = '0';
-      frameIndex = 0;
-      frameStats.textContent = String(frames.length);
-
-      const response = await fetch(`/api/hair/anchors?animation=${encodeURIComponent(currentAnimation.path)}`);
-      const payload = await response.json();
-      anchors = payload.data || emptyAnchorData(currentAnimation);
-      normalizeAnchorData();
-      jsonStats.textContent = payload.path;
-      fillMissingAnchors();
-      render();
-      setStatus(payload.data ? 'Loaded saved anchors.' : 'Loaded default hair placement.');
+    async function loadAnimationState(animation) {
+      const [images, payload] = await Promise.all([
+        Promise.all(animation.frames.map(loadImage)),
+        fetch(`/api/hair/anchors?animation=${encodeURIComponent(animation.path)}`).then((response) => response.json()),
+      ]);
+      const anchors = payload.data || emptyAnchorData(animation);
+      normalizeAnchorData(anchors);
+      fillMissingAnchors(anchors);
+      const state = {
+        meta: animation,
+        images,
+        anchors,
+        anchorPath: payload.path,
+        previewFrame: 0,
+        previewAccum: 0,
+        editFrame: 0,
+        previewSim: newSim(),
+        editSim: newSim(),
+      };
+      resetSim(state, state.previewSim, state.previewFrame);
+      settleSim(state, state.previewSim, state.previewFrame, 20);
+      resetSim(state, state.editSim, state.editFrame);
+      settleSim(state, state.editSim, state.editFrame, 20);
+      animationStates.set(animation.path, state);
     }
 
-    function currentFrame() {
-      return anchors.frames[frameIndex];
-    }
-
-    function setStatus(message) {
-      status.textContent = message;
-    }
-
-    function fillMissingAnchors() {
-      for (const frame of anchors.frames) {
-        if (!frame.anchor) frame.anchor = defaultAnchor();
-        if (!frame.tailBias) frame.tailBias = defaultTailBias();
-        if (frame.dir !== -1 && frame.dir !== 1) frame.dir = -1;
-      }
-    }
-
-    function normalizeAnchorData() {
-      anchors.version = 3;
-      delete anchors.parts;
-      for (const frame of anchors.frames) {
+    function normalizeAnchorData(anchorData) {
+      anchorData.version = 3;
+      delete anchorData.parts;
+      for (const frame of anchorData.frames) {
         if (!frame.anchor && frame.root1) {
           frame.anchor = { x: frame.root1.x, y: frame.root1.y + 7 };
         }
@@ -338,233 +412,506 @@
       }
     }
 
+    function fillMissingAnchors(anchorData) {
+      for (const frame of anchorData.frames) {
+        if (!frame.anchor) frame.anchor = defaultAnchor();
+        if (!frame.tailBias) frame.tailBias = defaultTailBias();
+        if (frame.dir !== -1 && frame.dir !== 1) frame.dir = -1;
+      }
+    }
+
+    function selectAnimation(path) {
+      currentState = animationStates.get(path);
+      if (!currentState) return;
+      currentState.previewFrame %= currentState.meta.frameCount;
+      currentState.editFrame = Math.min(currentState.editFrame, currentState.meta.frameCount - 1);
+      frameSlider.max = String(currentState.meta.frameCount - 1);
+      frameSlider.value = String(currentState.editFrame);
+      frameStats.textContent = String(currentState.meta.frameCount);
+      jsonStats.textContent = currentState.anchorPath;
+      resetSim(currentState, currentState.previewSim, currentState.previewFrame);
+      settleSim(currentState, currentState.previewSim, currentState.previewFrame, 20);
+      resetSim(currentState, currentState.editSim, currentState.editFrame);
+      settleSim(currentState, currentState.editSim, currentState.editFrame, 20);
+      updateInputs();
+      render();
+      setStatus(`Loaded ${currentState.meta.name}.`);
+    }
+
+    function currentFrame() {
+      return frameAt(currentState, currentState.editFrame);
+    }
+
+    function frameAt(state, frameIndex) {
+      return state.anchors.frames[frameIndex];
+    }
+
+    function setStatus(message) {
+      status.textContent = message;
+    }
+
+    function animationKind(state) {
+      const name = state.meta.name;
+      if (name === 'idleA' || name === 'idleB' || name === 'idleC' || name === 'idleLoop') return 'idle';
+      if (name === 'runSlow') return 'run';
+      if (name === 'jumpSlow') return 'jump';
+      if (name === 'fallSlow') return 'fall';
+      if (name === 'climbup') return 'climb';
+      if (name === 'climbPull') return 'climb_pull';
+      return name;
+    }
+
+    function isClimbKind(kind) {
+      return kind === 'climb' || kind === 'dangling' || kind === 'climb_pull' || kind === 'wallslide';
+    }
+
+    function frameRoot(state, frameIndex) {
+      const frame = frameAt(state, frameIndex);
+      return {
+        x: frame.anchor.x,
+        y: frame.anchor.y,
+        dir: frame.dir || -1,
+      };
+    }
+
+    function restStep(state, frameIndex) {
+      const kind = animationKind(state);
+      const dir = frameAt(state, frameIndex).dir || -1;
+      const s = settings();
+      if (kind === 'fall') return { x: dir * s.fallX, y: s.fallY };
+      if (kind === 'jump') return { x: dir * s.idleX, y: 1 };
+      if (isClimbKind(kind)) return { x: dir * 1, y: s.climbY };
+      if (kind === 'run') return { x: dir * 0.75, y: 2 };
+      return { x: dir * s.idleX, y: s.idleY };
+    }
+
+    function newSim() {
+      return { initialized: false, nodes: [] };
+    }
+
+    function resetSim(state, sim, frameIndex) {
+      const root = frameRoot(state, frameIndex);
+      const step = restStep(state, frameIndex);
+      sim.nodes = [];
+      for (let index = 0; index < HAIR_NODE_COUNT; index += 1) {
+        sim.nodes.push({
+          x: root.x + step.x * (index + 1),
+          y: root.y + step.y * (index + 1),
+        });
+      }
+      sim.initialized = true;
+    }
+
+    function settleSim(state, sim, frameIndex, iterations) {
+      for (let index = 0; index < iterations; index += 1) {
+        simulateHair(state, sim, frameIndex);
+      }
+    }
+
+    function simulateHair(state, sim, frameIndex) {
+      if (!sim.initialized || sim.nodes.length !== HAIR_NODE_COUNT) {
+        resetSim(state, sim, frameIndex);
+      }
+      const root = frameRoot(state, frameIndex);
+      const step = restStep(state, frameIndex);
+      const s = settings();
+      const kind = animationKind(state);
+      const endingHair = false;
+      const fallingHair = kind === 'fall' && !endingHair;
+      let prev = root;
+      for (let index = 0; index < sim.nodes.length; index += 1) {
+        const segmentLift = (fallingHair || endingHair) && index > 1 ? 0.125 : 0;
+        const node = sim.nodes[index];
+        const target = { x: prev.x + step.x, y: prev.y + step.y - segmentLift };
+        node.x += (target.x - node.x) / s.approach;
+        node.y += (target.y - node.y) / s.approach;
+        constrainNode(node, prev, s.desiredDist);
+        prev = node;
+      }
+    }
+
+    function constrainNode(node, prev, maxDist) {
+      const dx = node.x - prev.x;
+      const dy = node.y - prev.y;
+      const dist = Math.hypot(dx, dy);
+      if (!dist) {
+        node.y = prev.y + maxDist;
+        return;
+      }
+      if (dist <= maxDist) return;
+      node.x = prev.x + dx * maxDist / dist;
+      node.y = prev.y + dy * maxDist / dist;
+    }
+
+    function advancePreview(deltaMs) {
+      if (!currentState) return;
+      currentState.previewAccum += deltaMs;
+      const frameMs = 1000 / PREVIEW_FPS;
+      while (currentState.previewAccum >= frameMs) {
+        currentState.previewAccum -= frameMs;
+        currentState.previewFrame = (currentState.previewFrame + 1) % currentState.meta.frameCount;
+      }
+      simulateHair(currentState, currentState.previewSim, currentState.previewFrame);
+    }
+
+    function tick(now) {
+      const delta = Math.min(50, now - (lastTime || now));
+      lastTime = now;
+      if (isPlaying) {
+        advancePreview(delta);
+      }
+      if (dragging && dragging.simName === 'editor') {
+        simulateHair(currentState, currentState.editSim, currentState.editFrame);
+      }
+      render();
+      requestAnimationFrame(tick);
+    }
+
+    function setEditFrame(index) {
+      if (!currentState) return;
+      currentState.editFrame = Math.max(0, Math.min(currentState.meta.frameCount - 1, index));
+      frameSlider.value = String(currentState.editFrame);
+      resetSim(currentState, currentState.editSim, currentState.editFrame);
+      settleSim(currentState, currentState.editSim, currentState.editFrame, 20);
+      updateInputs();
+      render();
+    }
+
+    function prepareCanvases() {
+      const z = zoom();
+      const canvases = [previewCanvas, editorCanvas, editorOverlay];
+      for (const canvas of canvases) {
+        canvas.width = VIEW_WIDTH * z;
+        canvas.height = VIEW_HEIGHT * z;
+      }
+      previewCtx.imageSmoothingEnabled = false;
+      editorCtx.imageSmoothingEnabled = false;
+      overlayCtx.imageSmoothingEnabled = false;
+      previewCtx.setTransform(z, 0, 0, z, 0, 0);
+      editorCtx.setTransform(z, 0, 0, z, 0, 0);
+      overlayCtx.setTransform(z, 0, 0, z, 0, 0);
+    }
+
+    function render() {
+      if (!currentState) return;
+      prepareCanvases();
+      drawView(previewCtx, currentState, currentState.previewFrame, currentState.previewSim, false);
+      drawView(editorCtx, currentState, currentState.editFrame, currentState.editSim, true);
+      drawEditorOverlay();
+      updateInputs();
+      editFrameLabel.textContent = `${currentState.editFrame} / ${currentState.meta.frameCount - 1}`;
+      previewFrameStats.textContent = `${currentState.previewFrame} / ${currentState.meta.frameCount - 1}`;
+    }
+
+    function drawView(ctx, state, frameIndex, sim, editable) {
+      ctx.fillStyle = editable ? COLORS.panel : COLORS.bg;
+      ctx.fillRect(0, 0, VIEW_WIDTH, VIEW_HEIGHT);
+      drawGround(ctx, 10, GROUND_Y, VIEW_WIDTH - 20);
+      drawActor(ctx, state, frameIndex, sim, PLAYER_ORIGIN.x, PLAYER_ORIGIN.y, editable);
+    }
+
+    function drawGround(ctx, x, y, width) {
+      ctx.fillStyle = COLORS.ground;
+      ctx.fillRect(x, y, width, 2);
+      ctx.fillStyle = COLORS.groundShade;
+      ctx.fillRect(x, y + 2, width, 1);
+    }
+
+    function drawActor(ctx, state, frameIndex, sim, x, y, editable) {
+      const image = state.images[frameIndex];
+      drawHair(ctx, state, frameIndex, sim, x, y, editable);
+      ctx.drawImage(image, x, y);
+      drawBangs(ctx, state, frameIndex, x, y);
+    }
+
+    function hairPoints(state, frameIndex, sim) {
+      return [frameRoot(state, frameIndex), ...sim.nodes];
+    }
+
+    function drawHair(ctx, state, frameIndex, sim, originX, originY, editable) {
+      const points = hairPoints(state, frameIndex, sim);
+      const dir = frameAt(state, frameIndex).dir || -1;
+      const kind = animationKind(state);
+      const fallingHair = kind === 'fall';
+      const climbHair = isClimbKind(kind);
+      const endingHair = false;
+
+      for (let index = 0; index < points.length; index += 1) {
+        drawDisc(
+          ctx,
+          originX + hairDrawX(points, index, dir),
+          originY + points[index].y + 0.33,
+          hairShadowRadius(index, fallingHair, climbHair, endingHair),
+          COLORS.shadow,
+        );
+      }
+      for (let index = 0; index + 1 < points.length; index += 1) {
+        const radius = Math.min(
+          hairRadius(index, fallingHair, climbHair, endingHair),
+          hairRadius(index + 1, fallingHair, climbHair, endingHair),
+        );
+        drawDisc(
+          ctx,
+          originX + (hairDrawX(points, index, dir) + hairDrawX(points, index + 1, dir)) / 2,
+          originY + (points[index].y + points[index + 1].y) / 2,
+          radius,
+          COLORS.hair,
+        );
+      }
+      for (let index = 0; index < points.length; index += 1) {
+        drawDisc(ctx, originX + hairDrawX(points, index, dir), originY + points[index].y, hairRadius(index, fallingHair, climbHair, endingHair), COLORS.hair);
+      }
+      for (let index = 0; index < points.length; index += 1) {
+        drawHairEdgePixels(ctx, originX + hairDrawX(points, index, dir), originY + points[index].y, dir, hairRadius(index, fallingHair, climbHair, endingHair));
+      }
+    }
+
+    function hairDrawX(points, index, dir) {
+      const forward = dir > 0 ? -1 : 1;
+      return points[index].x + (index === 0 ? forward : 0);
+    }
+
+    function hairRadius(index, fallingHair, climbHair, endingHair) {
+      const s = settings();
+      if (endingHair) return index <= 2 ? s.midRadius : index <= 4 ? s.tailRadius : 0;
+      if (fallingHair) return index === 0 ? s.rootRadius : index <= 2 ? s.midRadius : index <= 4 ? 2 : s.tailRadius;
+      if (climbHair) return index === 0 ? 3 : index <= 2 ? 2 : index <= 4 ? 1 : 0;
+      if (index === 0) return s.rootRadius;
+      if (index <= 2) return s.midRadius;
+      if (index <= 4) return 2;
+      return index <= 5 ? 1 : 0;
+    }
+
+    function hairShadowRadius(index, fallingHair, climbHair, endingHair) {
+      const radius = hairRadius(index, fallingHair, climbHair, endingHair);
+      return radius > 0 ? radius - 1 : 0;
+    }
+
+    function drawHairEdgePixels(ctx, cx, cy, dir, radius) {
+      if (radius < 2) return;
+      const back = dir > 0 ? 1 : -1;
+      const r = Math.round(radius);
+      drawPixel(ctx, cx + back * r, cy, COLORS.shadow);
+      drawPixel(ctx, cx + back * (r - 1), cy + r - 1, COLORS.shadow);
+      if (radius >= 3) {
+        drawPixel(ctx, cx + back * (r - 1), cy - r + 1, COLORS.shadow);
+      }
+    }
+
+    function drawBangs(ctx, state, frameIndex, originX, originY) {
+      const root = frameRoot(state, frameIndex);
+      const dir = frameAt(state, frameIndex).dir || -1;
+      const forward = dir > 0 ? -1 : 1;
+      const x = originX + root.x;
+      const y = originY + root.y;
+      drawPixel(ctx, x + forward * 2, y - 1, COLORS.shadow);
+      drawPixel(ctx, x + forward, y, COLORS.shadow);
+      drawPixel(ctx, x + forward * 2, y, COLORS.shadow);
+    }
+
+    function drawDisc(ctx, cx, cy, radius, color) {
+      const r = Math.round(radius);
+      if (r <= 0) {
+        drawPixel(ctx, Math.round(cx), Math.round(cy), color);
+        return;
+      }
+      for (let y = -r; y <= r; y += 1) {
+        for (let x = -r; x <= r; x += 1) {
+          if (x * x + y * y <= r * r) {
+            drawPixel(ctx, Math.round(cx + x), Math.round(cy + y), color);
+          }
+        }
+      }
+    }
+
+    function drawPixel(ctx, x, y, color) {
+      ctx.fillStyle = color;
+      ctx.fillRect(Math.round(x), Math.round(y), 1, 1);
+    }
+
+    function drawEditorOverlay() {
+      overlayCtx.clearRect(0, 0, VIEW_WIDTH, VIEW_HEIGHT);
+      if (gridInput.checked) drawGrid();
+      const frame = currentFrame();
+      const anchor = frame.anchor;
+      const x = PLAYER_ORIGIN.x + anchor.x;
+      const y = PLAYER_ORIGIN.y + anchor.y;
+
+      overlayCtx.strokeStyle = COLORS.anchor;
+      overlayCtx.fillStyle = 'rgba(114, 214, 255, 0.28)';
+      overlayCtx.lineWidth = 0.25;
+      overlayCtx.beginPath();
+      overlayCtx.arc(x, y, 1.25, 0, Math.PI * 2);
+      overlayCtx.fill();
+      overlayCtx.stroke();
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(x - 2, y);
+      overlayCtx.lineTo(x + 2, y);
+      overlayCtx.moveTo(x, y - 2);
+      overlayCtx.lineTo(x, y + 2);
+      overlayCtx.stroke();
+
+      const dir = frame.dir || -1;
+      overlayCtx.strokeStyle = COLORS.arrow;
+      overlayCtx.fillStyle = COLORS.arrow;
+      overlayCtx.lineWidth = 0.5;
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(x, y);
+      overlayCtx.lineTo(x + dir * 6, y + 2);
+      overlayCtx.stroke();
+
+      const root = frameRoot(currentState, currentState.editFrame);
+      overlayCtx.strokeStyle = COLORS.root;
+      overlayCtx.lineWidth = 0.35;
+      overlayCtx.strokeRect(PLAYER_ORIGIN.x + root.x - 0.5, PLAYER_ORIGIN.y + root.y - 0.5, 1, 1);
+    }
+
+    function drawGrid() {
+      overlayCtx.strokeStyle = 'rgba(255,255,255,0.09)';
+      overlayCtx.lineWidth = 0.12;
+      for (let x = PLAYER_ORIGIN.x; x <= PLAYER_ORIGIN.x + 32; x += 1) {
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(x, PLAYER_ORIGIN.y);
+        overlayCtx.lineTo(x, PLAYER_ORIGIN.y + 32);
+        overlayCtx.stroke();
+      }
+      for (let y = PLAYER_ORIGIN.y; y <= PLAYER_ORIGIN.y + 32; y += 1) {
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(PLAYER_ORIGIN.x, y);
+        overlayCtx.lineTo(PLAYER_ORIGIN.x + 32, y);
+        overlayCtx.stroke();
+      }
+    }
+
+    function updateInputs() {
+      if (!currentState) return;
+      const frame = currentFrame();
+      xInput.value = frame.anchor.x;
+      yInput.value = frame.anchor.y;
+      directionStats.textContent = (frame.dir || -1) < 0 ? 'left' : 'right';
+    }
+
+    function setAnchorPosition(x, y) {
+      const frame = currentFrame();
+      frame.anchor = {
+        x: Math.max(-8, Math.min(32, Math.round(x))),
+        y: Math.max(-8, Math.min(32, Math.round(y))),
+      };
+      resetSim(currentState, currentState.editSim, currentState.editFrame);
+      settleSim(currentState, currentState.editSim, currentState.editFrame, 12);
+      render();
+    }
+
+    function flipDirection() {
+      const frame = currentFrame();
+      frame.dir = (frame.dir || -1) * -1;
+      resetSim(currentState, currentState.editSim, currentState.editFrame);
+      settleSim(currentState, currentState.editSim, currentState.editFrame, 12);
+      render();
+    }
+
     function clonePlacement(frame) {
       return { anchor: { ...frame.anchor }, tailBias: { ...frame.tailBias }, dir: frame.dir };
     }
 
     function applyPlacement(startIndex, endIndex, placement) {
       for (let index = startIndex; index <= endIndex; index += 1) {
-        anchors.frames[index].anchor = { ...placement.anchor };
-        anchors.frames[index].tailBias = { ...placement.tailBias };
-        anchors.frames[index].dir = placement.dir;
+        currentState.anchors.frames[index].anchor = { ...placement.anchor };
+        currentState.anchors.frames[index].tailBias = { ...placement.tailBias };
+        currentState.anchors.frames[index].dir = placement.dir;
       }
+      resetSim(currentState, currentState.editSim, currentState.editFrame);
+      settleSim(currentState, currentState.editSim, currentState.editFrame, 12);
       render();
     }
 
-    function render() {
-      if (!currentAnimation || !anchors) return;
-      const z = zoom();
-      const image = frameImages[frameIndex];
-      base.width = overlay.width = image.width * z;
-      base.height = overlay.height = image.height * z;
-      baseCtx.imageSmoothingEnabled = false;
-      overlayCtx.imageSmoothingEnabled = false;
-      baseCtx.fillStyle = '#111317';
-      baseCtx.fillRect(0, 0, base.width, base.height);
-      baseCtx.drawImage(image, 0, 0, base.width, base.height);
-
-      overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
-      overlayCtx.strokeStyle = 'rgba(255,255,255,0.18)';
-      overlayCtx.lineWidth = 1;
-      for (let x = 0; x <= image.width; x += 1) {
-        overlayCtx.beginPath();
-        overlayCtx.moveTo(x * z + 0.5, 0);
-        overlayCtx.lineTo(x * z + 0.5, overlay.height);
-        overlayCtx.stroke();
-      }
-      for (let y = 0; y <= image.height; y += 1) {
-        overlayCtx.beginPath();
-        overlayCtx.moveTo(0, y * z + 0.5);
-        overlayCtx.lineTo(overlay.width, y * z + 0.5);
-        overlayCtx.stroke();
-      }
-
-      drawAnchor(currentFrame());
-      updateInputs();
-      frameLabel.textContent = `${frameIndex} / ${frames.length - 1}`;
-    }
-
-    function drawAnchor(frame) {
-      const point = frame.anchor;
-      if (!point) return;
-      const z = zoom();
-      const x = point.x * z;
-      const y = point.y * z;
-      overlayCtx.strokeStyle = '#72d6ff';
-      overlayCtx.fillStyle = 'rgba(114, 214, 255, 0.32)';
-      overlayCtx.lineWidth = 2;
-      overlayCtx.beginPath();
-      overlayCtx.arc(x, y, Math.max(4, z * 0.35), 0, Math.PI * 2);
-      overlayCtx.fill();
-      overlayCtx.stroke();
-      overlayCtx.beginPath();
-      overlayCtx.moveTo(x - z, y);
-      overlayCtx.lineTo(x + z, y);
-      overlayCtx.moveTo(x, y - z);
-      overlayCtx.lineTo(x, y + z);
-      overlayCtx.stroke();
-
-      const dir = currentFrame().dir || -1;
-      overlayCtx.strokeStyle = '#ffcf5a';
-      overlayCtx.fillStyle = '#ffcf5a';
-      overlayCtx.lineWidth = 3;
-      const arrow_x = x + dir * z * 4;
-      overlayCtx.beginPath();
-      overlayCtx.moveTo(x, y);
-      overlayCtx.lineTo(arrow_x, y + z * 1.5);
-      overlayCtx.stroke();
-      overlayCtx.beginPath();
-      overlayCtx.moveTo(arrow_x, y + z * 1.5);
-      overlayCtx.lineTo(arrow_x - dir * z * 0.8, y + z * 0.8);
-      overlayCtx.lineTo(arrow_x - dir * z * 0.25, y + z * 2.0);
-      overlayCtx.closePath();
-      overlayCtx.fill();
-
-      const tail = tailPoint(frame);
-      overlayCtx.strokeStyle = '#ff69d2';
-      overlayCtx.fillStyle = editModeSelect.value === 'tail' ? 'rgba(255, 105, 210, 0.45)' : 'rgba(255, 105, 210, 0.22)';
-      overlayCtx.lineWidth = 2;
-      overlayCtx.beginPath();
-      overlayCtx.moveTo(x, y);
-      overlayCtx.lineTo(tail.x * z, tail.y * z);
-      overlayCtx.stroke();
-      overlayCtx.beginPath();
-      overlayCtx.arc(tail.x * z, tail.y * z, Math.max(4, z * 0.33), 0, Math.PI * 2);
-      overlayCtx.fill();
-      overlayCtx.stroke();
-    }
-
-    function updateInputs() {
-      const frame = currentFrame();
-      const point = frame.anchor;
-      xInput.value = point ? point.x : 0;
-      yInput.value = point ? point.y : 0;
-      tailXInput.value = frame.tailBias ? frame.tailBias.x : 0;
-      tailYInput.value = frame.tailBias ? frame.tailBias.y : 0;
-      directionStats.textContent = (frame.dir || -1) < 0 ? 'left' : 'right';
-    }
-
-    function tailPoint(frame) {
-      const dir = frame.dir || -1;
-      const rootOffsetX = dir > 0 ? -4 : -3;
-      const rootX = frame.anchor.x + rootOffsetX;
-      const rootY = frame.anchor.y - 7;
-      const tailOffsetX = dir > 0 ? 7 : 0;
-      const tailOffsetY = currentAnimation && currentAnimation.name === 'runSlow' ? 6 : 5;
-      const bias = frame.tailBias || defaultTailBias();
+    function pointerToCanvasLocal(event, canvas) {
+      const rect = canvas.getBoundingClientRect();
       return {
-        x: rootX + tailOffsetX + bias.x,
-        y: rootY + tailOffsetY + bias.y,
+        x: (event.clientX - rect.left) / zoom(),
+        y: (event.clientY - rect.top) / zoom(),
       };
     }
 
-    function setAnchorPosition(x, y) {
-      const image = frameImages[frameIndex];
-      currentFrame().anchor = {
-        x: Math.max(-8, Math.min(image.width, Math.round(x))),
-        y: Math.max(-8, Math.min(image.height, Math.round(y))),
-      };
-      render();
-    }
-
-    function setTailBias(x, y) {
-      currentFrame().tailBias = {
-        x: Math.max(-8, Math.min(8, Math.round(x))),
-        y: Math.max(-8, Math.min(8, Math.round(y))),
-      };
-      render();
-    }
-
-    function setTailPoint(x, y) {
-      const frame = currentFrame();
-      const savedBias = frame.tailBias || defaultTailBias();
-      frame.tailBias = { x: 0, y: 0 };
-      const base = tailPoint(frame);
-      frame.tailBias = savedBias;
-      setTailBias(x - base.x, y - base.y);
-    }
-
-    function flipDirection() {
-      const frame = currentFrame();
-      frame.dir = (frame.dir || -1) * -1;
-      render();
-    }
-
-    function pointerToPixel(event) {
-      const rect = overlay.getBoundingClientRect();
+    function pointerToPlayerLocal(event, canvas) {
+      const point = pointerToCanvasLocal(event, canvas);
       return {
-        x: Math.floor((event.clientX - rect.left) / zoom()),
-        y: Math.floor((event.clientY - rect.top) / zoom()),
+        x: point.x - PLAYER_ORIGIN.x,
+        y: point.y - PLAYER_ORIGIN.y,
       };
     }
 
-    overlay.addEventListener('pointerdown', (event) => {
-      const pixel = pointerToPixel(event);
-      draggingAnchor = true;
-      const point = editModeSelect.value === 'tail' ? tailPoint(currentFrame()) : currentFrame().anchor;
-      dragOffset = { x: pixel.x - point.x, y: pixel.y - point.y };
-      overlay.setPointerCapture(event.pointerId);
-      render();
+    editorOverlay.addEventListener('pointerdown', (event) => {
+      if (!currentState) return;
+      const local = pointerToPlayerLocal(event, editorOverlay);
+      if (local.x < -16 || local.x > 52 || local.y < -16 || local.y > 64) return;
+      const anchor = currentFrame().anchor;
+      dragging = { type: 'anchor', simName: 'editor', dx: local.x - anchor.x, dy: local.y - anchor.y };
+      setAnchorPosition(local.x - dragging.dx, local.y - dragging.dy);
+      editorOverlay.setPointerCapture(event.pointerId);
+      event.preventDefault();
     });
 
-    overlay.addEventListener('pointermove', (event) => {
-      if (!draggingAnchor) return;
-      const pixel = pointerToPixel(event);
-      if (editModeSelect.value === 'tail') {
-        setTailPoint(pixel.x - dragOffset.x, pixel.y - dragOffset.y);
-      } else {
-        setAnchorPosition(pixel.x - dragOffset.x, pixel.y - dragOffset.y);
-      }
+    editorOverlay.addEventListener('pointermove', (event) => {
+      if (!dragging || !currentState || dragging.simName !== 'editor') return;
+      const local = pointerToPlayerLocal(event, editorOverlay);
+      setAnchorPosition(local.x - dragging.dx, local.y - dragging.dy);
     });
 
-    overlay.addEventListener('pointerup', () => {
-      draggingAnchor = false;
+    editorOverlay.addEventListener('pointerup', () => {
+      if (dragging && dragging.simName === 'editor') dragging = null;
     });
 
-    function setFrame(index) {
-      frameIndex = Math.max(0, Math.min(frames.length - 1, index));
-      frameSlider.value = String(frameIndex);
-      render();
-    }
+    editorOverlay.addEventListener('pointercancel', () => {
+      if (dragging && dragging.simName === 'editor') dragging = null;
+    });
 
     animationSelect.addEventListener('change', () => selectAnimation(animationSelect.value));
-    frameSlider.addEventListener('input', () => setFrame(Number(frameSlider.value)));
-    prevButton.addEventListener('click', () => setFrame(frameIndex - 1));
-    nextButton.addEventListener('click', () => setFrame(frameIndex + 1));
-    zoomInput.addEventListener('change', render);
-    editModeSelect.addEventListener('change', render);
+    playButton.addEventListener('click', () => {
+      isPlaying = !isPlaying;
+      playButton.textContent = isPlaying ? 'Pause Preview' : 'Play Preview';
+      lastTime = 0;
+    });
+    frameSlider.addEventListener('input', () => setEditFrame(Number(frameSlider.value)));
+    prevButton.addEventListener('click', () => setEditFrame(currentState.editFrame - 1));
+    nextButton.addEventListener('click', () => setEditFrame(currentState.editFrame + 1));
+    flipDirButton.addEventListener('click', flipDirection);
     xInput.addEventListener('change', () => setAnchorPosition(Number(xInput.value), Number(yInput.value)));
     yInput.addEventListener('change', () => setAnchorPosition(Number(xInput.value), Number(yInput.value)));
-    tailXInput.addEventListener('change', () => setTailBias(Number(tailXInput.value), Number(tailYInput.value)));
-    tailYInput.addEventListener('change', () => setTailBias(Number(tailXInput.value), Number(tailYInput.value)));
-    flipDirButton.addEventListener('click', flipDirection);
+    zoomInput.addEventListener('change', render);
+    gridInput.addEventListener('change', render);
+
     resetButton.addEventListener('click', () => {
       currentFrame().anchor = defaultAnchor();
       currentFrame().tailBias = defaultTailBias();
+      resetSim(currentState, currentState.editSim, currentState.editFrame);
+      settleSim(currentState, currentState.editSim, currentState.editFrame, 12);
       render();
     });
     applyFollowingButton.addEventListener('click', () => {
-      applyPlacement(frameIndex + 1, anchors.frames.length - 1, clonePlacement(currentFrame()));
-      setStatus(`Applied frame ${frameIndex} placement to following frames.`);
+      applyPlacement(currentState.editFrame + 1, currentState.anchors.frames.length - 1, clonePlacement(currentFrame()));
+      setStatus(`Applied frame ${currentState.editFrame} placement to following frames.`);
     });
     applyAllButton.addEventListener('click', () => {
-      applyPlacement(0, anchors.frames.length - 1, clonePlacement(currentFrame()));
-      setStatus(`Applied frame ${frameIndex} placement to all frames.`);
+      applyPlacement(0, currentState.anchors.frames.length - 1, clonePlacement(currentFrame()));
+      setStatus(`Applied frame ${currentState.editFrame} placement to all frames.`);
     });
     copyPrevButton.addEventListener('click', () => {
-      if (frameIndex === 0) return;
-      const previous = anchors.frames[frameIndex - 1];
+      if (currentState.editFrame === 0) return;
+      const previous = currentState.anchors.frames[currentState.editFrame - 1];
       const frame = currentFrame();
       frame.anchor = { ...previous.anchor };
       frame.tailBias = { ...previous.tailBias };
       frame.dir = previous.dir;
+      resetSim(currentState, currentState.editSim, currentState.editFrame);
+      settleSim(currentState, currentState.editSim, currentState.editFrame, 12);
       render();
     });
     saveButton.addEventListener('click', async () => {
       const response = await fetch('/api/hair/save', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ animation: currentAnimation.path, data: anchors }),
+        body: JSON.stringify({ animation: currentState.meta.path, data: currentState.anchors }),
       });
       const payload = await response.json();
       setStatus(payload.ok ? `Saved ${payload.path}` : payload.error);
@@ -572,23 +919,19 @@
 
     window.addEventListener('keydown', (event) => {
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
-      if (event.key === '[') setFrame(frameIndex - 1);
-      if (event.key === ']') setFrame(frameIndex + 1);
-      const point = currentFrame().anchor;
-      if (!point) return;
-      if (event.key === 'x' || event.key === 'X') flipDirection();
-      const bias = currentFrame().tailBias || defaultTailBias();
-      if (editModeSelect.value === 'tail') {
-        if (event.key === 'ArrowLeft') setTailBias(bias.x - 1, bias.y);
-        if (event.key === 'ArrowRight') setTailBias(bias.x + 1, bias.y);
-        if (event.key === 'ArrowUp') setTailBias(bias.x, bias.y - 1);
-        if (event.key === 'ArrowDown') setTailBias(bias.x, bias.y + 1);
-      } else {
-        if (event.key === 'ArrowLeft') setAnchorPosition(point.x - 1, point.y);
-        if (event.key === 'ArrowRight') setAnchorPosition(point.x + 1, point.y);
-        if (event.key === 'ArrowUp') setAnchorPosition(point.x, point.y - 1);
-        if (event.key === 'ArrowDown') setAnchorPosition(point.x, point.y + 1);
+      if (!currentState) return;
+      if (event.key === ' ') {
+        playButton.click();
+        event.preventDefault();
       }
+      if (event.key === '[') setEditFrame(currentState.editFrame - 1);
+      if (event.key === ']') setEditFrame(currentState.editFrame + 1);
+      if (event.key === 'x' || event.key === 'X') flipDirection();
+      const anchor = currentFrame().anchor;
+      if (event.key === 'ArrowLeft') setAnchorPosition(anchor.x - 1, anchor.y);
+      if (event.key === 'ArrowRight') setAnchorPosition(anchor.x + 1, anchor.y);
+      if (event.key === 'ArrowUp') setAnchorPosition(anchor.x, anchor.y - 1);
+      if (event.key === 'ArrowDown') setAnchorPosition(anchor.x, anchor.y + 1);
     });
 
     loadAnimations().catch((error) => setStatus(String(error)));

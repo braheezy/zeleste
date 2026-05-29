@@ -109,9 +109,29 @@ def choose_chunks(rng: random.Random, pool: list[int], count: int) -> list[int]:
     return [rng.choice(pool) for _ in range(count)]
 
 
-def append_thick(layout: list[int], groups: list[int], thick_layout: list[int], group_id: int) -> None:
+def thick_group_pattern(rng: random.Random, chunk_count: int) -> list[int]:
+    patterns = [
+        [chunk_count],
+        [3, chunk_count - 3],
+        [4, chunk_count - 4],
+        [2, 3, chunk_count - 5],
+    ]
+    valid_patterns = [pattern for pattern in patterns if all(size > 0 for size in pattern)]
+    return rng.choice(valid_patterns)
+
+
+def append_thick(
+    layout: list[int],
+    groups: list[int],
+    thick_layout: list[int],
+    rng: random.Random,
+    next_group_id: int,
+) -> int:
     layout.extend(thick_layout)
-    groups.extend([group_id] * len(thick_layout))
+    for size in thick_group_pattern(rng, len(thick_layout)):
+        groups.extend([next_group_id] * size)
+        next_group_id += 1
+    return next_group_id
 
 
 def append_random_chunks(
@@ -154,18 +174,21 @@ def main() -> int:
     groups: list[int] = []
     next_group_id = 0
     for index in range(5):
-        append_thick(layout, groups, thick_layout, next_group_id)
-        next_group_id += 1
+        next_group_id = append_thick(layout, groups, thick_layout, rng, next_group_id)
         if index != 4:
             next_group_id = append_random_chunks(layout, groups, rng, pool, 2 if index == 0 else 6, next_group_id)
     layout.extend([EMPTY_CHUNK] * 4)
     groups.extend([NO_GROUP] * 4)
     next_group_id = append_random_chunks(layout, groups, rng, pool, 3, next_group_id)
     for index in range(4):
-        append_thick(layout, groups, thick_layout, next_group_id)
-        next_group_id += 1
+        next_group_id = append_thick(layout, groups, thick_layout, rng, next_group_id)
         if index != 3:
-            next_group_id = append_random_chunks(layout, groups, rng, pool, 6, next_group_id)
+            if index == 2:
+                next_group_id = append_random_chunks(layout, groups, rng, pool, 4, next_group_id)
+                layout.extend([EMPTY_CHUNK] * 2)
+                groups.extend([NO_GROUP] * 2)
+            else:
+                next_group_id = append_random_chunks(layout, groups, rng, pool, 6, next_group_id)
 
     colors = chunk_color_counts(variants)
     opaque = [color for color, _ in colors.most_common(15)]

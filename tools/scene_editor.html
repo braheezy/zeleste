@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Zeleste Scene Editor</title>
   <style>
-    :root { color-scheme: dark; --bg:#17191c; --panel:#22262b; --text:#eef1f4; --muted:#aeb6c0; --line:#3a414a; --accent:#72d6ff; --path:#ff96ff; --trigger:#ffd166; }
+    :root { color-scheme: dark; --bg:#17191c; --panel:#22262b; --text:#eef1f4; --muted:#aeb6c0; --line:#3a414a; --accent:#72d6ff; --path:#ff96ff; --trigger:#ffd166; --wire:#9aa0b7; --bridge:#75f078; }
     * { box-sizing: border-box; }
     body { margin:0; background:var(--bg); color:var(--text); font:14px ui-sans-serif,system-ui,sans-serif; }
     .app { display:grid; grid-template-columns:300px 1fr; min-height:100vh; }
@@ -38,7 +38,26 @@
         <option value="hint">Hint Box</option>
         <option value="showTrigger">Show Hint Trigger</option>
         <option value="clearTrigger">Clear Hint Trigger</option>
+        <option value="wire">Wire</option>
+        <option value="bridgeEnding">Bridge Ending</option>
       </select>
+      <div class="row">
+        <button id="addBirdButton" type="button">Add Bird Tutorial</button>
+        <button id="removeBirdButton" type="button">Remove Bird</button>
+      </div>
+      <div id="wirePanel">
+        <label>Wires</label>
+        <button id="deleteWireButton" type="button">Delete Wire</button>
+      </div>
+      <div id="bridgePanel">
+        <label for="bridgePartSelect">Bridge Ending</label>
+        <select id="bridgePartSelect">
+          <option value="platform">Thick Platform</option>
+          <option value="trigger">Fall Trigger</option>
+          <option value="hint">Dash Hint</option>
+        </select>
+        <button id="deleteBridgePartButton" type="button">Delete Part</button>
+      </div>
       <div class="row">
         <div><label for="zoomInput">Zoom</label><input id="zoomInput" type="number" min="1" max="8" value="3"></div>
       </div>
@@ -46,8 +65,9 @@
       <button id="reloadButton" type="button">Reload</button>
       <div id="status">Loading...</div>
       <div class="hint">
-        Pick an edit mode, then drag on the room. Show Hint Trigger starts the bird tutorial.
-        Clear Hint Trigger hides the climb hint after Madeline reaches the top.
+        Bird origin, hint, and triggers are per screen. Add a bird only on screens that need the tutorial.
+        Wire mode: drag directly over the source wire, release to save it. Right click near a wire to select/delete it.
+        Bridge mode: choose a part, drag its rectangle, save.
       </div>
     </aside>
     <main>
@@ -61,6 +81,13 @@
     const backgroundSelect = document.getElementById('backgroundSelect');
     const editModeSelect = document.getElementById('editModeSelect');
     const zoomInput = document.getElementById('zoomInput');
+    const addBirdButton = document.getElementById('addBirdButton');
+    const removeBirdButton = document.getElementById('removeBirdButton');
+    const wirePanel = document.getElementById('wirePanel');
+    const deleteWireButton = document.getElementById('deleteWireButton');
+    const bridgePanel = document.getElementById('bridgePanel');
+    const bridgePartSelect = document.getElementById('bridgePartSelect');
+    const deleteBridgePartButton = document.getElementById('deleteBridgePartButton');
     const saveButton = document.getElementById('saveButton');
     const reloadButton = document.getElementById('reloadButton');
     const statusEl = document.getElementById('status');
@@ -76,13 +103,16 @@
     let image = null;
     let scene = null;
     let selectedTrigger = 0;
+    let selectedWire = -1;
+    let draftWire = [];
     let pointerMode = null;
     let triggerDragStart = null;
+    let bridgeDragStart = null;
 
     const status = (message) => { statusEl.textContent = message; };
     const zoom = () => Math.max(1, Number(zoomInput.value) || 1);
-    const entity = () => scene.entities[0];
-    const trigger = () => entity().triggers[selectedTrigger];
+    const entity = () => (scene.entities || []).find((item) => item.kind === 'bird') || null;
+    const trigger = () => entity()?.triggers[selectedTrigger] || null;
 
     async function apiJson(url, options) {
       const response = await fetch(url, options);
@@ -112,6 +142,7 @@
       scene = payload.data;
       normalizeScene();
       selectedTrigger = triggerIndexForMode(editModeSelect.value);
+      updateBirdButtons();
       redraw();
       status(`Loaded ${payload.path}`);
     }
@@ -126,7 +157,20 @@
     }
 
     function normalizeScene() {
+      if (!scene.wires) scene.wires = [];
+      if (!scene.entities) scene.entities = [];
+      if (!scene.bridgeEnding) scene.bridgeEnding = {};
+      for (const key of ['platform', 'trigger', 'hint']) {
+        if (scene.bridgeEnding[key]) scene.bridgeEnding[key] = normalizedRect(scene.bridgeEnding[key]);
+      }
+      for (const wire of scene.wires) {
+        if (!wire.points) wire.points = [];
+        delete wire.controls;
+        wire.amplitude = clampNumber(wire.amplitude, 0, 4, 2);
+        wire.phase = clampNumber(wire.phase, 0, 255, 0);
+      }
       const e = entity();
+      if (!e) return;
       if (!e.segments) e.segments = [];
       e.triggers = normalizeTutorialTriggers(e);
       if (e.segments.length >= 3 && e.segments[0].animation === e.segments[2].animation && e.segments[1].animation === 'peck' && !(e.segments[0].points || []).length) {
@@ -144,6 +188,12 @@
         if (!trig.id) trig.id = triggerIdForAction(trig.action);
         trig.rect = normalizedRect(trig.rect);
       }
+    }
+
+    function clampNumber(value, min, max, fallback) {
+      const next = Number(value);
+      if (!Number.isFinite(next)) return fallback;
+      return Math.max(min, Math.min(max, next));
     }
 
     function normalizeTutorialTriggers(e) {
@@ -216,10 +266,15 @@
       baseCtx.drawImage(image, 0, 0);
       overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
       drawEntity();
+      drawBridgeEnding();
+      drawWires();
     }
 
     function drawEntity() {
       const e = entity();
+      if (!e) {
+        return;
+      }
       drawBox(e.origin.x, e.origin.y, 16, 16, 'rgba(255,150,255,0.9)', 'rgba(255,150,255,0.16)');
       drawBox(e.origin.x - 5, e.origin.y - 9, 32, 32, 'rgba(255,150,255,0.45)', 'rgba(255,150,255,0.04)');
       drawBox(e.hint.x, e.hint.y, 96, 32, 'rgba(114,214,255,0.9)', 'rgba(114,214,255,0.14)');
@@ -228,6 +283,44 @@
       overlayCtx.fillText('bird', e.origin.x + 18, e.origin.y + 10);
       overlayCtx.fillText('hint', e.hint.x + 4, e.hint.y + 10);
       e.triggers.forEach((trig, index) => drawTrigger(trig, index));
+    }
+
+    function defaultBirdEntity(point = null) {
+      const origin = point || { x: Math.round(image.width / 2), y: Math.round(image.height / 2) };
+      return {
+        id: 'bird_intro',
+        kind: 'bird',
+        origin,
+        hint: { x: Math.max(0, origin.x - 48), y: Math.max(0, origin.y - 64) },
+        triggers: defaultTriggers(origin),
+        segments: [
+          { animation: 'squawk', frames: 16, points: [] },
+          { animation: 'peck', frames: 12, points: [] },
+          { animation: 'liftoff', frames: 20, points: [] },
+        ],
+      };
+    }
+
+    function addBird(point = null) {
+      if (entity()) return entity();
+      const next = defaultBirdEntity(point);
+      scene.entities.push(next);
+      selectedTrigger = triggerIndexForMode(editModeSelect.value);
+      updateBirdButtons();
+      return next;
+    }
+
+    function removeBird() {
+      scene.entities = (scene.entities || []).filter((item) => item.kind !== 'bird');
+      selectedTrigger = 0;
+      updateBirdButtons();
+      redraw();
+    }
+
+    function updateBirdButtons() {
+      const hasBird = Boolean(entity());
+      addBirdButton.disabled = hasBird;
+      removeBirdButton.disabled = !hasBird;
     }
 
     function drawBox(x, y, w, h, stroke, fill) {
@@ -247,6 +340,68 @@
       overlayCtx.fillText(triggerLabel(trig), rect.x + 3, rect.y + 10);
     }
 
+    function drawWires() {
+      const wires = scene.wires || [];
+      for (let index = 0; index < wires.length; index += 1) {
+        drawWire(wires[index], index === selectedWire, String(index + 1));
+      }
+      if (draftWire.length) {
+        drawWire({ points: draftWire, amplitude: 1, phase: defaultWirePhase(scene.wires.length) }, true, 'new');
+      }
+    }
+
+    function drawBridgeEnding() {
+      const bridge = scene.bridgeEnding || {};
+      drawBridgePart('platform', bridge.platform, 'rgba(117,240,120,0.95)', 'rgba(117,240,120,0.16)');
+      drawBridgePart('trigger', bridge.trigger, 'rgba(255,209,102,0.95)', 'rgba(255,209,102,0.14)');
+      drawBridgePart('hint', bridge.hint, 'rgba(114,214,255,0.95)', 'rgba(114,214,255,0.14)');
+    }
+
+    function drawBridgePart(kind, rect, stroke, fill) {
+      if (!rect) return;
+      const selected = editModeSelect.value === 'bridgeEnding' && bridgePartSelect.value === kind;
+      const box = normalizedRect(rect);
+      drawBox(box.x, box.y, box.w, box.h, selected ? stroke : stroke.replace('0.95', '0.55'), selected ? fill : fill.replace('0.16', '0.07').replace('0.14', '0.07'));
+      overlayCtx.fillStyle = selected ? 'white' : 'rgba(255,255,255,0.75)';
+      overlayCtx.font = '8px monospace';
+      overlayCtx.fillText(kind, box.x + 3, box.y + 10);
+    }
+
+    function drawWire(wire, selected, label) {
+      const points = wire.points || [];
+      if (!points.length) return;
+      overlayCtx.fillStyle = selected ? 'rgba(255,255,255,0.95)' : 'rgba(154,160,183,0.9)';
+      for (let index = 1; index < points.length; index += 1) {
+        drawPixelLine(points[index - 1], points[index], overlayCtx.fillStyle);
+      }
+      if (selected) {
+        overlayCtx.fillStyle = 'rgba(255,255,255,0.95)';
+        overlayCtx.fillRect(points[0].x, points[0].y, 1, 1);
+        const last = points[points.length - 1];
+        overlayCtx.fillRect(last.x, last.y, 1, 1);
+      }
+    }
+
+    function drawPixelLine(a, b, color) {
+      let x0 = Math.round(a.x);
+      let y0 = Math.round(a.y);
+      const x1 = Math.round(b.x);
+      const y1 = Math.round(b.y);
+      const dx = Math.abs(x1 - x0);
+      const sx = x0 < x1 ? 1 : -1;
+      const dy = -Math.abs(y1 - y0);
+      const sy = y0 < y1 ? 1 : -1;
+      let err = dx + dy;
+      overlayCtx.fillStyle = color;
+      while (true) {
+        overlayCtx.fillRect(x0, y0, 1, 1);
+        if (x0 === x1 && y0 === y1) break;
+        const e2 = 2 * err;
+        if (e2 >= dy) { err += dy; x0 += sx; }
+        if (e2 <= dx) { err += dx; y0 += sy; }
+      }
+    }
+
     function normalizedRect(rect) {
       const x0 = Math.min(rect.x, rect.x + rect.w);
       const y0 = Math.min(rect.y, rect.y + rect.h);
@@ -263,33 +418,117 @@
       };
     }
 
+    function finishDraftWire() {
+      if (draftWire.length >= 2) {
+        scene.wires.push({
+          points: draftWire,
+          amplitude: 1,
+          phase: defaultWirePhase(scene.wires.length),
+        });
+        selectedWire = scene.wires.length - 1;
+      }
+      draftWire = [];
+      redraw();
+    }
+
+    function defaultWirePhase(index) {
+      return (index * 47) & 255;
+    }
+
+    function appendDraftWirePoint(point) {
+      const last = draftWire[draftWire.length - 1];
+      if (last && last.x === point.x && last.y === point.y) return;
+      draftWire.push(point);
+    }
+
+    function wireAt(point) {
+      const wires = scene.wires || [];
+      for (let index = wires.length - 1; index >= 0; index -= 1) {
+        const points = wires[index].points || [];
+        for (let pointIndex = 0; pointIndex < points.length; pointIndex += 1) {
+          const dx = point.x - points[pointIndex].x;
+          const dy = point.y - points[pointIndex].y;
+          if (dx * dx + dy * dy <= 36) return index;
+        }
+      }
+      return -1;
+    }
+
     overlay.addEventListener('contextmenu', (event) => event.preventDefault());
     overlay.addEventListener('pointerdown', (event) => {
       overlay.setPointerCapture(event.pointerId);
       pointerMode = event.shiftKey ? 'hint' : editModeSelect.value;
+      if (pointerMode === 'wire') {
+        const point = eventPoint(event);
+        if (event.button === 2 || event.altKey) {
+          selectedWire = wireAt(point);
+          draftWire = [];
+        } else {
+          draftWire = [];
+          appendDraftWirePoint(point);
+          selectedWire = -1;
+        }
+        redraw();
+        return;
+      }
       if (pointerMode === 'showTrigger' || pointerMode === 'clearTrigger') {
+        if (!entity()) addBird(eventPoint(event));
         selectedTrigger = triggerIndexForMode(pointerMode);
         triggerDragStart = eventPoint(event);
+      }
+      if (pointerMode === 'bridgeEnding') {
+        if (!scene.bridgeEnding) scene.bridgeEnding = {};
+        bridgeDragStart = eventPoint(event);
       }
       handlePointer(event);
     });
     overlay.addEventListener('pointermove', (event) => {
       if (!pointerMode) return;
+      if (pointerMode === 'wire') {
+        appendDraftWirePoint(eventPoint(event));
+        redraw();
+        return;
+      }
       handlePointer(event);
     });
-    overlay.addEventListener('pointerup', () => { pointerMode = null; triggerDragStart = null; redraw(); });
-    overlay.addEventListener('pointercancel', () => { pointerMode = null; triggerDragStart = null; redraw(); });
+    overlay.addEventListener('pointerup', () => {
+      if (pointerMode === 'wire') finishDraftWire();
+      pointerMode = null;
+      triggerDragStart = null;
+      bridgeDragStart = null;
+      redraw();
+    });
+    overlay.addEventListener('pointercancel', () => {
+      if (pointerMode === 'wire') {
+        draftWire = [];
+      }
+      pointerMode = null;
+      triggerDragStart = null;
+      bridgeDragStart = null;
+      redraw();
+    });
 
     function handlePointer(event) {
       const point = eventPoint(event);
-      if (pointerMode === 'origin') entity().origin = point;
-      if (pointerMode === 'hint') entity().hint = point;
+      if (pointerMode === 'origin') addBird(point).origin = point;
+      if (pointerMode === 'hint') addBird(point).hint = point;
       if ((pointerMode === 'showTrigger' || pointerMode === 'clearTrigger') && triggerDragStart) {
-        trigger().rect = normalizedRect({
+        const activeTrigger = trigger();
+        if (!activeTrigger) return;
+        activeTrigger.rect = normalizedRect({
           x: triggerDragStart.x,
           y: triggerDragStart.y,
           w: point.x - triggerDragStart.x,
           h: point.y - triggerDragStart.y,
+        });
+      }
+      if (pointerMode === 'bridgeEnding' && bridgeDragStart) {
+        if (!scene.bridgeEnding) scene.bridgeEnding = {};
+        scene.bridgeEnding[bridgePartSelect.value] = normalizedRect({
+          x: bridgeDragStart.x,
+          y: bridgeDragStart.y,
+          w: point.x - bridgeDragStart.x,
+          h: point.y - bridgeDragStart.y,
         });
       }
       redraw();
@@ -297,8 +536,41 @@
 
     editModeSelect.addEventListener('change', () => {
       selectedTrigger = triggerIndexForMode(editModeSelect.value);
+      wirePanel.style.display = editModeSelect.value === 'wire' ? 'block' : 'none';
+      bridgePanel.style.display = editModeSelect.value === 'bridgeEnding' ? 'block' : 'none';
       redraw();
     });
+    bridgePartSelect.addEventListener('change', redraw);
+    addBirdButton.addEventListener('click', () => {
+      addBird();
+      redraw();
+    });
+    removeBirdButton.addEventListener('click', removeBird);
+    deleteWireButton.addEventListener('click', () => {
+      if (selectedWire >= 0) {
+        scene.wires.splice(selectedWire, 1);
+        selectedWire = -1;
+        redraw();
+      }
+    });
+    deleteBridgePartButton.addEventListener('click', () => {
+      if (!scene.bridgeEnding) scene.bridgeEnding = {};
+      delete scene.bridgeEnding[bridgePartSelect.value];
+      redraw();
+    });
+    window.addEventListener('keydown', (event) => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
+      if (editModeSelect.value !== 'wire') return;
+      if (event.key === 'Enter') finishDraftWire();
+      if (event.key === 'Escape') { draftWire = []; redraw(); }
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selectedWire >= 0) {
+        scene.wires.splice(selectedWire, 1);
+        selectedWire = -1;
+        redraw();
+      }
+    });
+    wirePanel.style.display = editModeSelect.value === 'wire' ? 'block' : 'none';
+    bridgePanel.style.display = editModeSelect.value === 'bridgeEnding' ? 'block' : 'none';
     zoomInput.addEventListener('change', redraw);
     backgroundSelect.addEventListener('change', () => loadSelectedBackground().catch((error) => status(`Load failed: ${error}`)));
     reloadButton.addEventListener('click', () => loadSelectedBackground().catch((error) => status(`Reload failed: ${error}`)));

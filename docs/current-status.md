@@ -51,6 +51,7 @@ those room sources under `assets/chapters/prologue_a/backgrounds/`.
 - Collision:
   - 8x8 solid tiles from annotations;
   - 8x4-style one-way platform annotations, packed as one-way tile data;
+  - oriented spike tiles from annotations that kill the player on touch;
   - dynamic collision for falling blocks.
 - Room transitions:
   - left/right/up/down graph transitions;

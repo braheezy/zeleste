@@ -1,5 +1,8 @@
 const gba = @import("gba");
 const level = @import("generated_rooms.zig");
+const build_options = @import("build_options");
+const mm = @import("maxmod");
+const sound_ids = @import("generated/assets/prologue_sound_ids.zig");
 
 export var header linksection(".gbaheader") = gba.Header.init("ZELESTE", "AZLE", "00", 0);
 
@@ -8,7 +11,6 @@ const player_palette_data align(4) = @embedFile("generated/assets/player/madelin
 const player_hair_anchors_data align(4) = @embedFile("generated/assets/player/madeline_hair_anchors.bin").*;
 const player_sweat_tiles_data align(4) = @embedFile("generated/assets/player_sweat/madeline_tiles.bin").*;
 const player_sweat_palette_data align(4) = @embedFile("generated/assets/player_sweat/madeline_palette.bin").*;
-const hair_tiles_data align(4) = @embedFile("generated/assets/player/hair_tiles.bin").*;
 const hair_palette_data align(4) = @embedFile("generated/assets/player/hair_palette.bin").*;
 const falling_block_tiles_data align(4) = @embedFile("generated/assets/entities/prologue_a/falling_block_tiles.bin").*;
 const falling_block_palette_data align(4) = @embedFile("generated/assets/entities/prologue_a/falling_block_palette.bin").*;
@@ -30,13 +32,38 @@ const bird_intro_tiles_data align(4) = @embedFile("generated/assets/bird/bird_in
 const bird_palette_data align(4) = @embedFile("generated/assets/bird/bird_palette.bin").*;
 const bird_hold_hint_tiles_data align(4) = @embedFile("generated/assets/bird/hold_hint_tiles.bin").*;
 const bird_climb_hint_tiles_data align(4) = @embedFile("generated/assets/bird/climb_hint_tiles.bin").*;
+const bird_dash_hint_tiles_data align(4) = @embedFile("generated/assets/bird/dash_hint_tiles.bin").*;
 const bird_hint_palette_data align(4) = @embedFile("generated/assets/bird/hint_palette.bin").*;
+const tiny_bird_tiles_data align(4) = @embedFile("generated/assets/tiny_bird/tiny_bird_tiles.bin").*;
+const tiny_bird_palette_data align(4) = @embedFile("generated/assets/tiny_bird/tiny_bird_palette.bin").*;
+const granny_idle_tiles_data align(4) = @embedFile("generated/assets/granny/granny_idle_tiles.bin").*;
+const granny_laugh_tiles_data align(4) = @embedFile("generated/assets/granny/granny_laugh_tiles.bin").*;
+const granny_quotes_tiles_data align(4) = @embedFile("generated/assets/granny/granny_quotes_tiles.bin").*;
+const granny_haha_tiles_data align(4) = @embedFile("generated/assets/granny/granny_haha_tiles.bin").*;
+const granny_palette_data align(4) = @embedFile("generated/assets/granny/granny_palette.bin").*;
+const prologue_soundbank_data align(4) = @embedFile("generated/assets/prologue_soundbank.bin").*;
+const overworld_bg_tiles_data align(4) = @embedFile("generated/assets/overworld/bg_tiles.bin").*;
+const overworld_bg_map_data align(4) = @embedFile("generated/assets/overworld/bg_map.bin").*;
+const overworld_bg_palette_data align(4) = @embedFile("generated/assets/overworld/bg_palette.bin").*;
 
 const bg_screenblock: u5 = 29;
+const parallax_screenblock: u5 = 28;
+const parallax_charblock: u2 = 3;
 const bg_hardware_width_tiles: usize = 64;
 const bg_hardware_height_tiles: usize = 32;
+const parallax_hardware_width_tiles: usize = 32;
+const parallax_hardware_height_tiles: usize = 32;
 const screen_width = 240;
 const screen_height = 160;
+const invalid_loaded_frame: u16 = 0xffff;
+const debug_fps_enabled = build_options.dev_hud;
+const debug_fps_timer_index = 3;
+const debug_fps_ticks_per_second = 16_384;
+const debug_fps_first_object = 126;
+const debug_fps_base_tile: u10 = 1000;
+const debug_fps_palette_bank: u4 = dust_palette_bank;
+const overworld_width_tiles = 30;
+const overworld_height_tiles = 20;
 
 const fixed_shift = 8;
 const fixed_one: i32 = 1 << fixed_shift;
@@ -58,6 +85,16 @@ const player_jump_speed: i32 = -0x1B8;
 const player_wall_jump_speed: i32 = -0x1B0;
 const player_wall_jump_h_speed: i32 = 0x1F8;
 const player_wall_jump_force_frames = 10;
+const player_dash_speed: i32 = 0x400;
+const player_dash_end_speed: i32 = 0x200;
+const player_dash_frames = 10;
+const player_dash_cooldown_frames = 12;
+const player_dash_refill_cooldown_frames = 6;
+const player_dash_effect_frames = 16;
+const player_dash_trail_interval = 4;
+const dash_afterimage_life: u8 = 14;
+const player_dash_diagonal_mult: i32 = 0xB5;
+const player_dash_end_up_mult: i32 = 0xC0;
 const player_wall_slide_start_max: i32 = 0x55;
 const player_wall_slide_frames = 72;
 const player_room_transition_cooldown_frames = 18;
@@ -93,6 +130,9 @@ const player_idle_c_first_frame = 72;
 const player_idle_c_frame_count = 12;
 const player_run_first_frame = 84;
 const player_run_frame_count = 12;
+const player_footstep_min_speed: i32 = fixed_one / 2;
+const player_footstep_volume: u16 = 144;
+const player_footstep_cadence_frames: u8 = 22;
 const player_jump_first_frame = 96;
 const player_jump_frame_count = 2;
 const player_fall_first_frame = 98;
@@ -104,6 +144,15 @@ const player_dangling_first_frame = 107;
 const player_dangling_frame_count = 10;
 const player_climb_pull_first_frame = 117;
 const player_climb_pull_frame_count = 4;
+const player_deadown_first_frame: u16 = build_options.player_deadown_first_frame;
+const player_deadown_frame_count: u16 = build_options.player_deadown_frame_count;
+const player_deathside_first_frame: u16 = build_options.player_deathside_first_frame;
+const player_deathside_frame_count: u16 = build_options.player_deathside_frame_count;
+const player_deathup_first_frame: u16 = build_options.player_deathup_first_frame;
+const player_deathup_frame_count: u16 = build_options.player_deathup_frame_count;
+const player_death_intro_frame_hold: u8 = 2;
+const player_death_intro_max_frames: u8 = 28;
+const player_death_intro_travel_pixels: i16 = 26;
 const sweat_tiles_per_frame = 16;
 const sweat_still_first_frame = 0;
 const sweat_still_frame_count = 6;
@@ -117,8 +166,9 @@ const falling_block_gravity: i32 = 0x58;
 const falling_block_max_fall: i32 = 0x560;
 const falling_block_base_tile: u10 = 32;
 const falling_block_palette_bank: u4 = 1;
-const bridge_base_tile: u10 = parallax_base_tile;
-const bridge_palette_bank: u4 = parallax_palette_bank;
+const bridge_base_tile: u10 = 128;
+const bridge_palette_bank: u4 = 5;
+const bridge_falling_palette_bank: u4 = 11;
 const bridge_chunk_width = 8;
 const bridge_chunk_height = 32;
 const bridge_visual_height = 25;
@@ -127,10 +177,17 @@ const bridge_empty_chunk = 255;
 const bridge_no_group = 255;
 const bridge_world_x: i16 = 64;
 const bridge_world_y: i16 = 126;
+const bridge_ending_early_shake_frames: u8 = 12;
+const bridge_ending_gap_chunks = 3;
+const end_level_walk_frames: u8 = 28;
+const end_level_walk_speed: i32 = fixed_one;
+const end_level_camera_frames: u8 = 54;
+const end_level_camera_lift: i16 = 48;
+const end_level_black_frames: u8 = 18;
 const bridge_max_chunks = 128;
 const bridge_max_objects = 30;
 const bridge_first_object = foreground_behind_stamp_first_object;
-const bridge_shake_frames: u8 = 14;
+const bridge_shake_frames: u8 = 34;
 const bridge_fall_gravity: i32 = 0x48;
 const bridge_fall_max_speed: i32 = 0x4C0;
 const funny_car_base_tile: u10 = 560;
@@ -142,24 +199,40 @@ const funny_car_object_count = 2;
 const max_funny_cars = 2;
 const funny_car_top = [_]i8{ 7, 6, 5, 4, 3, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 3, 4, 5, 6, 0, 7, 7, 7, 7, 7, 7, 7, 7, 8 };
 const hair_base_tile: u10 = 60;
-const hair_root_base_tile: u10 = 64;
+const hair_bang_base_tile: u10 = hair_base_tile + 4;
 const hair_palette_bank: u4 = 2;
+const hair_anchor_forward_correction: i16 = 1;
+const hair_anchor_vertical_correction: i16 = 2;
 const dust_base_tile: u10 = 68;
 const dust_palette_bank: u4 = 3;
 const max_dust_particles = 8;
 const wind_snow_base_tile: u10 = dust_base_tile + max_dust_particles;
 const wind_snow_palette_bank: u4 = 3;
 const max_wind_snow_particles = 28;
+const bridge_room_wind_snow_particles = 16;
 const wind_snow_tile_count = 8;
 const sweat_base_tile: u10 = wind_snow_base_tile + wind_snow_tile_count;
 const sweat_palette_bank: u4 = 4;
 const death_burst_base_tile: u10 = sweat_base_tile + sweat_tiles_per_frame;
 const death_burst_palette_bank: u4 = 3;
+const dash_effect_base_tile: u10 = death_burst_base_tile + 6;
+const chimney_smoke_base_tile: u10 = dash_effect_base_tile + 16;
+const chimney_smoke_tiles_per_object = 4;
+const chimney_smoke_tile_count = 12;
+const chimney_smoke_palette_bank: u4 = dust_palette_bank;
+const chimney_smoke_soft_color: u4 = 9;
+const chimney_smoke_cycle_frames: u8 = 96;
+const chimney_smoke_origin_x: i16 = 194;
+const chimney_smoke_origin_y: i16 = 49;
+const dash_shadow_palette_bank: u4 = 12;
+const dash_shadow_palette_count = 3;
+const dash_effect_palette_bank: u4 = dash_shadow_palette_bank + dash_shadow_palette_count;
 const death_burst_first_object = 0;
 const death_burst_spoke_count = 8;
 const death_burst_count = death_burst_spoke_count + 1;
-const parallax_first_object = 0;
-const parallax_max_objects = 8;
+const dash_afterimage_first_object = 0;
+const dash_afterimage_count = 3;
+const dash_burst_object = dash_afterimage_first_object + dash_afterimage_count;
 const foreground_occluding_stamp_first_object = 8;
 const max_foreground_stamps = 24;
 const player_object = 32;
@@ -168,27 +241,83 @@ const hair_object = 34;
 const dust_first_object = 35;
 const wind_snow_first_object = dust_first_object + max_dust_particles;
 const sweat_object = wind_snow_first_object + max_wind_snow_particles;
-const hair_node_count = 4;
+const hair_node_count = 5;
 const hair_sprite_size = 16;
 const falling_block_first_object = sweat_object + 1;
 const falling_block_objects_per_block = 3;
 const foreground_behind_stamp_first_object = falling_block_first_object + max_falling_blocks * falling_block_objects_per_block;
-const parallax_base_tile: u10 = 128;
-const parallax_palette_bank: u4 = 5;
-const parallax_chunk_size = 64;
 const foreground_stamp_base_tile: u10 = 576;
 const foreground_stamp_mirror_base_tile: u10 = foreground_stamp_base_tile + grass1_frame_count * grass1_tiles_per_frame;
 const foreground_stamp2_base_tile: u10 = foreground_stamp_mirror_base_tile + grass1_frame_count * grass1_tiles_per_frame;
 const foreground_stamp2_mirror_base_tile: u10 = foreground_stamp2_base_tile + grass2_frame_count * grass2_tiles_per_frame;
 const foreground_stamp_palette_bank: u4 = 6;
 const foreground_stamp2_palette_bank: u4 = 7;
-const bird_base_tile: u10 = foreground_stamp_base_tile;
+// Bird frames are streamed into a high scratch range. Current bird rooms do not
+// use grass stamps, so this avoids bridge/wire tile conflicts.
+const bird_base_tile: u10 = 896;
 const bird_hint_base_tile: u10 = bird_base_tile + bird_tiles_per_frame;
 const bird_palette_bank: u4 = 8;
 const bird_hint_palette_bank: u4 = 9;
 const bird_object = foreground_behind_stamp_first_object + max_foreground_stamps;
 const bird_hint_object = bird_object + 1;
 const funny_car_first_object = bird_hint_object + 1;
+const granny_object = funny_car_first_object;
+const tiny_bird_first_object = bird_object;
+const tiny_bird_base_tile: u10 = bird_base_tile;
+const tiny_bird_palette_bank: u4 = bird_palette_bank;
+const max_tiny_birds = 5;
+const tiny_bird_frame_count: u8 = 2;
+const tiny_bird_tiles_per_variant = tiny_bird_frame_count;
+const tiny_bird_trigger_distance_x: i16 = 76;
+const tiny_bird_trigger_distance_y: i16 = 64;
+const granny_base_tile: u10 = foreground_stamp_base_tile;
+const granny_palette_bank: u4 = bird_palette_bank;
+const granny_tiles_per_frame = 16;
+const granny_idle_frame_count: u16 = @intCast(granny_idle_tiles_data.len / (granny_tiles_per_frame * 32));
+const granny_laugh_frame_count: u16 = @intCast(granny_laugh_tiles_data.len / (granny_tiles_per_frame * 32));
+const granny_quotes_frame_count: u16 = @intCast(granny_quotes_tiles_data.len / (granny_tiles_per_frame * 32));
+const granny_anim_speed = 10;
+const granny_origin_offset_x: i16 = 16;
+const granny_origin_offset_y: i16 = 32;
+const cutscene_dialogue_first_object = falling_block_first_object;
+const cutscene_dialogue_cols = 6;
+const cutscene_dialogue_rows = 3;
+const cutscene_dialogue_object_count = cutscene_dialogue_cols * cutscene_dialogue_rows;
+const chimney_smoke_first_object = cutscene_dialogue_first_object + cutscene_dialogue_object_count;
+const chimney_smoke_object_count = 3;
+const cutscene_dialogue_width = cutscene_dialogue_cols * 32;
+const cutscene_dialogue_height = cutscene_dialogue_rows * 16;
+const cutscene_dialogue_tiles_per_object = 8;
+const cutscene_dialogue_tile_count = cutscene_dialogue_object_count * cutscene_dialogue_tiles_per_object;
+const cutscene_dialogue_base_tile: u10 = 848;
+const cutscene_dialogue_palette_bank: u4 = dust_palette_bank;
+const cutscene_dialogue_madeline_name_color: u8 = 7;
+const cutscene_dialogue_granny_name_color: u8 = 8;
+const cutscene_dialogue_default_name_color: u8 = 3;
+const cutscene_dialogue_text_max_chars = 30;
+const cutscene_dialogue_text_max_lines = 3;
+const cutscene_ominous_reveal_interval_frames: u8 = 12;
+const cutscene_ominous_words_per_tick: u8 = 2;
+const cutscene_ominous_shake_frames: u8 = 14;
+const cutscene_laugh_first_object = 93;
+const cutscene_laugh_object_count = 3;
+const cutscene_laugh_base_tile: u10 = 400;
+const cutscene_laugh_haha_frame_count: u8 = 9;
+const cutscene_laugh_tiles_per_frame: u10 = 4;
+const cutscene_laugh_flash_frame_hold_frames: u8 = 8;
+const cutscene_laugh_flash_cycles: u8 = 4;
+const cutscene_laugh_tail_frame_hold_frames: u8 = 8;
+const cutscene_laugh_flash_life_frames: u8 = cutscene_laugh_flash_frame_hold_frames * cutscene_laugh_flash_cycles * 2;
+const cutscene_laugh_life_frames: u8 = cutscene_laugh_flash_life_frames + (cutscene_laugh_haha_frame_count - 2) * cutscene_laugh_tail_frame_hold_frames;
+const cutscene_laugh_emit_every_frames: u8 = 36;
+const cutscene_laugh_pause_frames: u8 = 112;
+const cutscene_laugh_vx: i32 = 0x58;
+const cutscene_laugh_vy: i32 = -0x12;
+const cutscene_laugh_ay: i32 = 0;
+const wire_base_tile: u10 = 208;
+const wire_palette_bank: u4 = 3;
+const static_wire_bg_color_index: u8 = 250;
+const static_wire_bg_max_tiles = max_wire_chunks * 4;
 const grass1_frame_count = 42;
 const grass1_tiles_per_frame = 4;
 const grass2_frame_count = 42;
@@ -219,6 +348,9 @@ const bird_origin_offset_x: i16 = 5;
 const bird_origin_offset_y: i16 = 9;
 const max_bird_path_points = 32;
 const max_bird_triggers = 8;
+const max_wire_chunks = 48;
+const audio_music_volume: u32 = 640;
+const audio_sfx_volume: u32 = 1024;
 
 pub const RoomBackground = struct {
     width_tiles: usize,
@@ -240,6 +372,10 @@ pub const RoomBackground = struct {
     foreground_stamps: []align(4) const u8,
     generic_stamps: []align(4) const u8,
     bird_npcs: []align(4) const u8,
+    wires: []align(4) const u8,
+    wire_tiles: []align(4) const u8,
+    bridge_ending: []align(4) const u8,
+    granny_cutscene: ?*const GrannyCutscene = null,
     parallax: ?ParallaxLayer = null,
     wind_snow_strength: u8 = 0,
     wind_snow_dir_x: i16 = -1,
@@ -251,9 +387,12 @@ pub const RoomBackground = struct {
 
 pub const ParallaxLayer = struct {
     tiles: []align(4) const u8,
+    map: []align(4) const u8,
     palette: []align(4) const u8,
     width: i16,
     height: i16,
+    width_tiles: usize,
+    height_tiles: usize,
     world_x: i16,
     world_y: i16,
     chunk_count: u8,
@@ -266,9 +405,46 @@ pub const Spawn = struct {
     y: i16,
 };
 
+pub const CutsceneAnimCue = struct {
+    actor: []const u8 = "",
+    animation: []const u8 = "",
+    mode: []const u8 = "",
+};
+
+pub const CutsceneDialoguePage = struct {
+    speaker: []const u8,
+    text: []const u8,
+    cue: CutsceneAnimCue = .{},
+    after_cue: CutsceneAnimCue = .{},
+};
+
+pub const GrannyCutscene = struct {
+    trigger: SceneRect,
+    granny: Spawn,
+    granny_facing_left: bool,
+    madeline_talk: Spawn,
+    madeline_edge: Spawn,
+    dialogue_box: SceneRect,
+    laugh_start: Spawn,
+    laugh_end: Spawn,
+    laugh_text: []const u8,
+    laugh_speed_px: i16,
+    laugh_spawn_every_frames: u8,
+    dialogue: []const CutsceneDialoguePage,
+};
+
 const Camera = struct {
     x: i16,
     y: i16,
+};
+
+const WireChunk = struct {
+    active: bool = false,
+    x: i16 = 0,
+    y: i16 = 0,
+    tile_offset: u16 = 0,
+    phase: u8 = 0,
+    sag: u8 = 0,
 };
 
 const FallingBlockState = enum(u8) {
@@ -288,6 +464,8 @@ const BirdState = enum(u8) {
     liftoff,
     peck,
     fly,
+    ending_fly_in,
+    ending_idle,
     done,
     gone,
 };
@@ -301,6 +479,75 @@ const PlayerAnimation = enum(u8) {
     climb,
     dangling,
     climb_pull,
+};
+
+const PlayerDeathIntro = struct {
+    first_frame: u16,
+    frame_count: u16,
+};
+
+const PlayerDeathCause = enum(u8) {
+    normal,
+    fall_down,
+};
+
+const FootstepSurface = enum(u8) {
+    snow,
+    dirt,
+    wood,
+    car,
+    asphalt,
+};
+
+const FootstepColor = struct {
+    r: u5,
+    g: u5,
+    b: u5,
+};
+
+const footstep_asphalt_sfx = [_]u16{
+    sound_ids.sfx_foot_00_asphalt_01,
+    sound_ids.sfx_foot_00_asphalt_02,
+    sound_ids.sfx_foot_00_asphalt_03,
+    sound_ids.sfx_foot_00_asphalt_04,
+    sound_ids.sfx_foot_00_asphalt_05,
+    sound_ids.sfx_foot_00_asphalt_06,
+    sound_ids.sfx_foot_00_asphalt_07,
+};
+const footstep_car_sfx = [_]u16{
+    sound_ids.sfx_foot_00_car_01,
+    sound_ids.sfx_foot_00_car_02,
+    sound_ids.sfx_foot_00_car_03,
+    sound_ids.sfx_foot_00_car_04,
+    sound_ids.sfx_foot_00_car_05,
+    sound_ids.sfx_foot_00_car_06,
+};
+const footstep_dirt_sfx = [_]u16{
+    sound_ids.sfx_foot_00_dirt_01,
+    sound_ids.sfx_foot_00_dirt_02,
+    sound_ids.sfx_foot_00_dirt_03,
+    sound_ids.sfx_foot_00_dirt_04,
+    sound_ids.sfx_foot_00_dirt_05,
+    sound_ids.sfx_foot_00_dirt_06,
+    sound_ids.sfx_foot_00_dirt_07,
+};
+const footstep_snow_sfx = [_]u16{
+    sound_ids.sfx_foot_00_snowsoft_01,
+    sound_ids.sfx_foot_00_snowsoft_02,
+    sound_ids.sfx_foot_00_snowsoft_03,
+    sound_ids.sfx_foot_00_snowsoft_04,
+    sound_ids.sfx_foot_00_snowsoft_05,
+    sound_ids.sfx_foot_00_snowsoft_06,
+    sound_ids.sfx_foot_00_snowsoft_07,
+};
+const footstep_wood_sfx = [_]u16{
+    sound_ids.sfx_foot_00_woodwalkway_01,
+    sound_ids.sfx_foot_00_woodwalkway_02,
+    sound_ids.sfx_foot_00_woodwalkway_03,
+    sound_ids.sfx_foot_00_woodwalkway_04,
+    sound_ids.sfx_foot_00_woodwalkway_05,
+    sound_ids.sfx_foot_00_woodwalkway_06,
+    sound_ids.sfx_foot_00_woodwalkway_07,
 };
 
 const FallingBlock = struct {
@@ -331,6 +578,45 @@ const BridgeChunk = struct {
     y: i32 = 0,
     timer: u8 = 0,
     vy: i32 = 0,
+};
+
+pub const SceneRect = struct {
+    x: i16 = 0,
+    y: i16 = 0,
+    w: i16 = 0,
+    h: i16 = 0,
+
+    fn right(self: SceneRect) i16 {
+        return self.x + self.w;
+    }
+
+    fn bottom(self: SceneRect) i16 {
+        return self.y + self.h;
+    }
+};
+
+const BridgeEnding = struct {
+    active: bool = false,
+    final_triggered: bool = false,
+    platform: SceneRect = .{},
+    trigger: SceneRect = .{},
+    hint: SceneRect = .{},
+    start_index: usize = bridge_max_chunks,
+    end_index: usize = bridge_max_chunks,
+};
+
+const EndLevelTransitionPhase = enum(u8) {
+    inactive,
+    walk,
+    camera_up,
+    black,
+    overworld,
+};
+
+const EndLevelTransition = struct {
+    phase: EndLevelTransitionPhase = .inactive,
+    timer: u8 = 0,
+    start_camera: Camera = .{ .x = 0, .y = 0 },
 };
 
 const BirdPathPoint = struct {
@@ -372,8 +658,80 @@ const BirdNpc = struct {
     facing_left: bool = false,
 };
 
+const TinyBird = struct {
+    active: bool = false,
+    flying: bool = false,
+    x: i32 = 0,
+    y: i32 = 0,
+    vx: i32 = 0,
+    vy: i32 = 0,
+    variant: u8 = 0,
+    phase: u8 = 0,
+};
+
+const GrannyCutscenePhase = enum(u8) {
+    inactive,
+    dialogue,
+    walk_talk,
+    walk_edge,
+    laugh_pause,
+};
+
+const GrannyAnimation = enum(u8) {
+    none,
+    idle,
+    laugh,
+    quotes,
+};
+
+const GrannyCutsceneRuntime = struct {
+    active: bool = false,
+    room_index: usize = 0,
+    phase: GrannyCutscenePhase = .inactive,
+    dialogue_index: u8 = 0,
+    dialogue_offset: usize = 0,
+    dialogue_next_offset: usize = 0,
+    dialogue_reveal_offset: usize = 0,
+    dialogue_reveal_timer: u8 = 0,
+    rendered_dialogue_index: u8 = 255,
+    rendered_dialogue_offset: usize = 0xffff,
+    rendered_dialogue_reveal_offset: usize = 0xffff,
+    see_shake_started: bool = false,
+    shake_timer: u8 = 0,
+    laugh_pause_timer: u8 = 0,
+    madeline_speaker_x: i16 = 0,
+    madeline_speaker_y: i16 = 0,
+};
+
+const LaughHaParticle = struct {
+    active: bool = false,
+    x: i32 = 0,
+    y: i32 = 0,
+    vx: i32 = 0,
+    vy: i32 = 0,
+    ay: i32 = 0,
+    age: u8 = 0,
+    seed: u8 = 0,
+};
+
+const LaughTextRuntime = struct {
+    active: bool = false,
+    room_index: usize = 0,
+    start_x: i16 = 0,
+    start_y: i16 = 0,
+    end_x: i16 = 0,
+    end_y: i16 = 0,
+    timer: u16 = 0,
+    emitted: u8 = 0,
+    emit_total: u8 = 0,
+    follow_camera: bool = false,
+    continuous: bool = false,
+    particles: [cutscene_laugh_object_count]LaughHaParticle = [_]LaughHaParticle{.{}} ** cutscene_laugh_object_count,
+};
+
 const RoomState = struct {
     falling_blocks_landed: u8 = 0,
+    tiny_birds_flown: bool = false,
 };
 
 const ForegroundStamp = struct {
@@ -416,6 +774,32 @@ const WindSnowParticle = struct {
     life: u8 = 0,
 };
 
+const DashAfterimage = struct {
+    active: bool = false,
+    x: i32 = 0,
+    y: i32 = 0,
+    life: u8 = 0,
+    facing_left: bool = false,
+    dir_x: i16 = 0,
+    dir_y: i16 = 0,
+};
+
+const DashBurst = struct {
+    active: bool = false,
+    x: i16 = 0,
+    y: i16 = 0,
+    life: u8 = 0,
+    flip_x: bool = false,
+    flip_y: bool = false,
+};
+
+const BirdHintKind = enum(u8) {
+    none,
+    hold,
+    climb,
+    dash,
+};
+
 const HairNode = struct {
     x: i32 = 0,
     y: i32 = 0,
@@ -425,36 +809,64 @@ const HairAnchor = struct {
     x: i32,
     y: i32,
     dir: i16,
-    tail_bias_x: i16,
-    tail_bias_y: i16,
-};
-
-const HairRootRect = struct {
-    x: i16,
-    y: i16,
-    flip_x: bool,
 };
 
 const rooms = level.rooms;
+const chimney_smoke_room_index = level.roomIndexFor(level.chapter_index, "2") orelse rooms.len;
+const granny_scene_room_index = level.roomIndexFor(level.chapter_index, "2") orelse rooms.len;
+const granny_laugh_carry_room_index = level.roomIndexFor(level.chapter_index, "3") orelse rooms.len;
+const prologue_end_room_index = level.roomIndexFor(level.chapter_index, "3") orelse rooms.len;
+const level_one_room_index = level.roomIndexFor(level.chapter_index, "city_1") orelse rooms.len;
+const tiny_bird_room_index = level.roomIndexFor(level.chapter_index, "0b") orelse rooms.len;
+
+fn isPrologueEndRoom(room_index: usize) bool {
+    return room_index == prologue_end_room_index;
+}
 
 var room_states: [rooms.len]RoomState = [_]RoomState{.{}} ** rooms.len;
 var falling_blocks: [max_falling_blocks]FallingBlock = [_]FallingBlock{.{}} ** max_falling_blocks;
 var falling_block_count: usize = 0;
 var bridge_chunks: [bridge_max_chunks]BridgeChunk = [_]BridgeChunk{.{}} ** bridge_max_chunks;
 var bridge_chunk_count: usize = 0;
+var bridge_drawn_object_count: usize = 0;
 var bridge_active: bool = false;
+var bridge_sequence_started: bool = false;
+var bridge_ending_hold: bool = false;
+var bridge_ending_dash_started: bool = false;
+var dash_unlocked: bool = false;
+var bridge_collapse_shake_tick: u8 = 0;
+var bridge_ending_start_index: usize = bridge_max_chunks;
+var bridge_ending: BridgeEnding = .{};
+var end_level_transition: EndLevelTransition = .{};
 var foreground_stamps: [max_foreground_stamps]ForegroundStamp = [_]ForegroundStamp{.{}} ** max_foreground_stamps;
 var foreground_stamp_count: usize = 0;
 var funny_cars: [max_funny_cars]FunnyCar = [_]FunnyCar{.{}} ** max_funny_cars;
 var funny_car_count: usize = 0;
 var foreground_anim_counter: u16 = 0;
 var bird_npc: BirdNpc = .{};
+var tiny_birds: [max_tiny_birds]TinyBird = [_]TinyBird{.{}} ** max_tiny_birds;
+var tiny_bird_count: usize = 0;
+var tiny_bird_flock_triggered: bool = false;
+var granny_intro_done: bool = false;
+var granny_cutscene: GrannyCutsceneRuntime = .{};
+var laugh_text: LaughTextRuntime = .{};
+var cutscene_dialogue_visible: bool = false;
+var cutscene_laugh_visible: bool = false;
+var cutscene_bg_darkened: bool = false;
+var cutscene_laugh_tiles_loaded: bool = false;
 var current_room_index: usize = 0;
 var bg_stream_room_index: usize = rooms.len;
 var bg_stream_tile_x: i16 = -32768;
 var bg_stream_tile_y: i16 = -32768;
+var parallax_stream_room_index: usize = rooms.len;
+var parallax_stream_tile_x: i16 = -32768;
+var parallax_stream_tile_y: i16 = -32768;
+var parallax_tile_offset: u16 = 0;
 var rng_state: u16 = 0xACE1;
 var dust_particles: [max_dust_particles]DustParticle = [_]DustParticle{.{}} ** max_dust_particles;
+var wind_snow_visible: bool = false;
+var wind_snow_particle_count: usize = 0;
+var chimney_smoke_counter: u8 = 0;
 
 const Player = struct {
     x: i32,
@@ -469,7 +881,15 @@ const Player = struct {
     force_move_x_timer: u8 = 0,
     dust_suppress_timer: u8 = 0,
     wall_dust_timer: u8 = 0,
+    dash_timer: u8 = 0,
+    dash_cooldown_timer: u8 = 0,
+    dash_refill_cooldown_timer: u8 = 0,
+    dash_effect_timer: u8 = 0,
+    dash_trail_timer: u8 = 0,
     force_move_x: i16 = 0,
+    dashes: u8 = 1,
+    dash_dir_x: i16 = 0,
+    dash_dir_y: i16 = 0,
     wall_slide_timer: u8 = player_wall_slide_frames,
     var_jump_speed: i32 = 0,
     stamina: i16 = player_climb_max_stamina,
@@ -493,21 +913,57 @@ const Player = struct {
     climb_ledge_target_y: i32 = 0,
     climb_grab_lockout_timer: u8 = 0,
     hair_initialized: bool = false,
+    footstep_cooldown: u8 = 0,
+    footstep_variant: u8 = 0,
+    footstep_handle: mm.Sfxhand = 0,
     hair_nodes: [hair_node_count]HairNode = [_]HairNode{.{}} ** hair_node_count,
 };
 
 var hair_pixels: [hair_sprite_size * hair_sprite_size]u8 = [_]u8{0} ** (hair_sprite_size * hair_sprite_size);
-var hair_mask: [hair_sprite_size * hair_sprite_size]u8 = [_]u8{0} ** (hair_sprite_size * hair_sprite_size);
 var hair_tiles: [4]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** 4;
+var hair_bang_pixels: [64]u8 = [_]u8{0} ** 64;
+var hair_bang_tiles: [1]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** 1;
 var dust_tiles: [max_dust_particles]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** max_dust_particles;
 var wind_snow_particles: [max_wind_snow_particles]WindSnowParticle = [_]WindSnowParticle{.{}} ** max_wind_snow_particles;
 var wind_snow_tiles: [wind_snow_tile_count]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** wind_snow_tile_count;
+var chimney_smoke_tiles: [chimney_smoke_tile_count]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** chimney_smoke_tile_count;
 var death_burst_tiles: [6]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** 6;
+var dash_effect_tiles: [16]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** 16;
+var cutscene_dialogue_tiles: [cutscene_dialogue_tile_count]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** cutscene_dialogue_tile_count;
+var dash_afterimages: [dash_afterimage_count]DashAfterimage = [_]DashAfterimage{.{}} ** dash_afterimage_count;
+var dash_burst: DashBurst = .{};
+var loaded_player_frame: u16 = invalid_loaded_frame;
+var loaded_sweat_frame: u16 = invalid_loaded_frame;
+var loaded_bird_frame: u16 = invalid_loaded_frame;
+var loaded_granny_frame: u16 = invalid_loaded_frame;
+var loaded_granny_animation: GrannyAnimation = .none;
+var loaded_bird_hint_kind: BirdHintKind = .none;
+var granny_visible: bool = false;
+var debug_fps_digit_tiles: [10]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** 10;
+var debug_fps_last_timer: u16 = 0;
+var debug_fps_tick_accum: u32 = 0;
+var debug_fps_frame_count: u16 = 0;
+var debug_fps_value: u8 = 0;
+var wire_chunks: [max_wire_chunks]WireChunk = [_]WireChunk{.{}} ** max_wire_chunks;
+var wire_chunk_count: usize = 0;
+var disable_wire_drawing_for_perf_test: bool = false;
+var static_wire_bg_tiles: [static_wire_bg_max_tiles]gba.display.Tile8Bpp align(4) = [_]gba.display.Tile8Bpp{gba.display.Tile8Bpp.init([_]u8{0} ** 64)} ** static_wire_bg_max_tiles;
 var death_origin_x: i32 = 0;
 var death_origin_y: i32 = 0;
+var death_player_x: i32 = 0;
+var death_player_y: i32 = 0;
+var death_player_facing_left: bool = false;
+var death_intro_offset_x: i32 = 0;
+var death_intro_offset_y: i32 = 0;
+var death_intro_first_frame: u16 = 0;
+var death_intro_frame_count: u16 = 0;
+var death_intro_total_frames: u8 = 0;
 
 pub export fn main() void {
-    var room_index: usize = level.start_room_index;
+    gba.mem.wait_ctrl.* = .default;
+    initAudio();
+
+    var room_index: usize = startRoomIndex();
     loadRoomBackground(room_index);
     loadFallingBlocks(room_index);
     loadForegroundStamps(room_index);
@@ -515,21 +971,33 @@ pub export fn main() void {
     loadObjectSprites();
     loadBridge(room_index);
     loadBirdNpc(room_index);
+    loadTinyBirds(room_index);
+    loadRoomWires(room_index);
     loadWindSnowTiles();
     loadRoomParallax(room_index);
+    initDebugFpsOverlay();
     gba.display.hideAllObjects();
 
     _ = gba.display.BackgroundMap.setup(0, .{
-        .priority = 1,
+        .priority = 2,
         .base_screenblock = bg_screenblock,
         .size = .size_64x32,
         .bpp = .bpp_8,
+        .scroll = .init(0, 0),
+    });
+    _ = gba.display.BackgroundMap.setup(1, .{
+        .priority = 0,
+        .base_charblock = parallax_charblock,
+        .base_screenblock = parallax_screenblock,
+        .size = .size_32x32,
+        .bpp = .bpp_4,
         .scroll = .init(0, 0),
     });
 
     gba.display.ctrl.* = .initMode0(.{
         .obj_mapping = .map_1d,
         .bg0 = true,
+        .bg1 = rooms[room_index].parallax != null,
         .obj = true,
     });
 
@@ -540,28 +1008,44 @@ pub export fn main() void {
     var death_timer: u8 = 0;
     var respawn_burst_timer: u8 = 0;
     resetWindSnow(room_index, camera);
+    resetChimneySmoke(room_index);
     applyCamera(camera);
-    drawParallaxObjects(camera, room_index);
+    updateParallaxBackground(camera, room_index);
     drawForegroundStampObjects(camera);
     drawFunnyCars(camera);
     drawBridgeObjects(camera);
+    drawDashEffects(camera);
     drawPlayer(player, camera);
     drawFallingBlockObjects(camera);
+    drawChimneySmoke(camera, room_index);
+    drawRoomWires(camera);
     drawBirdNpc(camera);
+    drawGrannyNpc(camera, room_index);
+    drawTinyBirds(camera);
+    drawCutsceneOverlay(camera, room_index);
 
     while (true) {
         input.poll();
+        if (end_level_transition.phase != .inactive) {
+            updateEndLevelTransition(&player, &camera, &room_index, &respawn, input);
+            continue;
+        }
         if (respawn_burst_timer > 0) {
             respawn_burst_timer -= 1;
-            gba.display.naiveVSync();
+            frameSync();
             if (respawn_burst_timer == 0) {
                 hideDeathBurstObjects();
-                drawParallaxObjects(camera, room_index);
+                updateParallaxBackground(camera, room_index);
                 drawForegroundStampObjects(camera);
                 drawFunnyCars(camera);
                 drawFallingBlockObjects(camera);
+                drawChimneySmoke(camera, room_index);
+                drawRoomWires(camera);
                 drawBridgeObjects(camera);
+                drawGrannyNpc(camera, room_index);
                 drawBirdNpc(camera);
+                drawTinyBirds(camera);
+                drawDashEffects(camera);
                 drawHair(player, camera);
                 drawPlayer(player, camera);
             } else {
@@ -575,7 +1059,7 @@ pub export fn main() void {
             if (death_timer != 0) {
                 updateFallingBlocksDuringDeath();
             }
-            gba.display.naiveVSync();
+            frameSync();
             if (death_timer == 0) {
                 hideDeathBurstObjects();
                 loadRoomBackground(room_index);
@@ -585,19 +1069,27 @@ pub export fn main() void {
                 loadObjectSprites();
                 loadBridge(room_index);
                 loadBirdNpc(room_index);
+                loadTinyBirds(room_index);
+                loadRoomWires(room_index);
                 loadRoomParallax(room_index);
                 clearDustParticles();
+                clearDashEffects();
                 player = spawnPlayerAt(respawn);
                 updateHair(&player);
                 camera = updateCamera(player, room_index);
                 resetWindSnow(room_index, camera);
+                resetChimneySmoke(room_index);
                 applyCamera(camera);
-                drawParallaxObjects(camera, room_index);
+                updateParallaxBackground(camera, room_index);
                 drawForegroundStampObjects(camera);
                 drawFunnyCars(camera);
                 drawFallingBlockObjects(camera);
+                drawChimneySmoke(camera, room_index);
+                drawRoomWires(camera);
                 drawBridgeObjects(camera);
+                drawGrannyNpc(camera, room_index);
                 drawBirdNpc(camera);
+                drawTinyBirds(camera);
                 death_origin_x = player.x + (player_body_width / 2) * fixed_one;
                 death_origin_y = player.y + (player_body_height / 2) * fixed_one;
                 hideObject(player_object);
@@ -605,40 +1097,86 @@ pub export fn main() void {
                 hideObject(hair_object);
                 hideObject(sweat_object);
                 respawn_burst_timer = player_respawn_burst_frames;
-                gba.display.naiveVSync();
+                frameSync();
                 gba.display.ctrl.bg0 = true;
+                gba.display.ctrl.bg1 = rooms[room_index].parallax != null;
                 gba.display.ctrl.obj = true;
             } else {
                 drawFallingBlockObjects(camera);
+                drawChimneySmoke(camera, room_index);
+                drawRoomWires(camera);
                 drawBridgeObjects(camera);
-                drawDeathBurst(camera, death_timer);
+                drawDashEffects(camera);
+                drawPlayerDeathEffect(camera, death_timer);
             }
             continue;
         }
 
-        updatePlayer(&player, input, room_index);
-        if (updateFallingBlocks(&player)) {
-            beginPlayerDeath(&death_timer, player);
-            continue;
+        const cutscene_locked = updateGrannyCutscene(&player, input, room_index);
+        updateLaughText(room_index, camera);
+
+        if (cutscene_locked) {
+            player.vx = 0;
+            player.vy = 0;
+            updatePlayerAnimation(&player);
+        } else if (bridge_ending_hold) {
+            const horizontal: i16 = @intCast(input.getAxisHorizontal());
+            const vertical: i16 = @intCast(input.getAxisVertical());
+            if (input.isJustPressed(.B) and tryStartDash(&player, horizontal, vertical, true)) {
+                bridge_ending_hold = false;
+                bridge_ending_dash_started = true;
+                dash_unlocked = true;
+                bird_npc.state = .gone;
+                hideObject(bird_object);
+                hideObject(bird_hint_object);
+                updateDashMovement(&player, room_index);
+            } else {
+                holdPlayerForBridgeEnding(&player);
+            }
+        } else {
+            updatePlayer(&player, input, room_index);
+            if (updateFallingBlocks(&player)) {
+                beginPlayerDeath(&death_timer, player, room_index, camera, .normal);
+                continue;
+            }
         }
         updateBridge(&player, room_index);
+        updateBridgeCollapseShake(room_index, player.grounded);
         updateFunnyCars(player);
         updateBirdNpc(player, camera);
+        updateTinyBirds(player, room_index);
         updateHair(&player);
         updateDustParticles();
+        updateDashEffects();
         const next_camera = updateCamera(player, room_index);
         updateWindSnow(room_index, next_camera);
+        updateChimneySmoke(room_index);
         foreground_anim_counter +%= 1;
-        if (playerInDeathPit(player, room_index)) {
-            beginPlayerDeath(&death_timer, player);
+        if (!cutscene_locked and !bridge_ending_hold and shouldStartEndLevelTransition(player, room_index)) {
+            camera = next_camera;
+            startEndLevelTransition(&player, camera);
             continue;
         }
-        if (trySwitchRoom(&player, input, &room_index, &respawn)) {
+        if (!cutscene_locked and !bridge_ending_hold and shouldStartBridgeEndingHold(player, room_index)) {
+            startBridgeEndingHold(&player);
+        }
+        if (!cutscene_locked and !bridge_ending_hold and playerTouchingSpike(player, room_index)) {
+            beginPlayerDeath(&death_timer, player, room_index, next_camera, .normal);
+            continue;
+        }
+        if (!cutscene_locked and !bridge_ending_hold and playerInDeathPit(player, room_index)) {
+            beginPlayerDeath(&death_timer, player, room_index, next_camera, .fall_down);
+            continue;
+        }
+        const previous_room_index = room_index;
+        if (!cutscene_locked and !bridge_ending_hold and trySwitchRoom(&player, input, &room_index, &respawn)) {
+            handleLaughTextRoomTransition(previous_room_index, room_index);
             gba.display.bg_palette.colors[0] = .black;
             gba.display.ctrl.bg0 = false;
+            gba.display.ctrl.bg1 = false;
             gba.display.ctrl.obj = false;
             gba.display.hideAllObjects();
-            gba.display.naiveVSync();
+            frameSync();
             loadRoomBackground(room_index);
             loadFallingBlocks(room_index);
             loadForegroundStamps(room_index);
@@ -646,43 +1184,164 @@ pub export fn main() void {
             loadObjectSprites();
             loadBridge(room_index);
             loadBirdNpc(room_index);
+            loadTinyBirds(room_index);
+            loadRoomWires(room_index);
             loadRoomParallax(room_index);
+            resetGrannyCutsceneOnRoomLoad();
             clearDustParticles();
+            clearDashEffects();
             player.hair_initialized = false;
             updateHair(&player);
             camera = updateCamera(player, room_index);
             resetWindSnow(room_index, camera);
+            resetChimneySmoke(room_index);
             applyCamera(camera);
-            drawParallaxObjects(camera, room_index);
+            updateParallaxBackground(camera, room_index);
             drawForegroundStampObjects(camera);
             drawFunnyCars(camera);
             drawBridgeObjects(camera);
+            drawDashEffects(camera);
             drawHair(player, camera);
             drawDust(camera);
             drawWindSnow(camera);
             drawPlayer(player, camera);
             drawSweat(&player, camera);
             drawFallingBlockObjects(camera);
+            drawChimneySmoke(camera, room_index);
+            drawRoomWires(camera);
             drawBirdNpc(camera);
-            gba.display.naiveVSync();
+            drawGrannyNpc(camera, room_index);
+            drawTinyBirds(camera);
+            drawCutsceneOverlay(camera, room_index);
+            frameSync();
             gba.display.ctrl.bg0 = true;
+            gba.display.ctrl.bg1 = rooms[room_index].parallax != null;
             gba.display.ctrl.obj = true;
             continue;
         }
         camera = next_camera;
-        gba.display.naiveVSync();
-        applyCamera(camera);
-        drawParallaxObjects(camera, room_index);
-        drawForegroundStampObjects(camera);
-        drawFunnyCars(camera);
-        drawFallingBlockObjects(camera);
-        drawBridgeObjects(camera);
-        drawBirdNpc(camera);
-        drawHair(player, camera);
-        drawDust(camera);
-        drawWindSnow(camera);
-        drawPlayer(player, camera);
-        drawSweat(&player, camera);
+        const render_camera = renderCameraWithCutsceneShake(camera, room_index);
+        frameSync();
+        applyCamera(render_camera);
+        updateParallaxBackground(render_camera, room_index);
+        drawForegroundStampObjects(render_camera);
+        drawFunnyCars(render_camera);
+        drawFallingBlockObjects(render_camera);
+        drawChimneySmoke(render_camera, room_index);
+        drawRoomWires(render_camera);
+        drawBridgeObjects(render_camera);
+        drawBirdNpc(render_camera);
+        drawGrannyNpc(render_camera, room_index);
+        drawTinyBirds(render_camera);
+        drawDashEffects(render_camera);
+        drawHair(player, render_camera);
+        drawDust(render_camera);
+        drawWindSnow(render_camera);
+        drawPlayer(player, render_camera);
+        drawSweat(&player, render_camera);
+        drawCutsceneOverlay(render_camera, room_index);
+    }
+}
+
+fn startRoomIndex() usize {
+    return comptime blk: {
+        if (build_options.start_room.len == 0) break :blk level.start_room_index;
+        if (build_options.start_chapter == 1 and textEquals(build_options.start_room, "1")) {
+            break :blk level.roomIndexFor(level.chapter_index, "city_1") orelse
+                @compileError("invalid development start override; level 1 room 1 is not generated");
+        }
+        break :blk level.roomIndexFor(build_options.start_chapter, build_options.start_room) orelse
+            @compileError("invalid development start override; expected: <chapter> <room>, for example: 0 -1 or 1 1");
+    };
+}
+
+fn frameSync() void {
+    mm.gba.frame();
+    gba.bios.vblankIntrWait();
+    updateDebugFpsOverlay();
+}
+
+fn initAudio() void {
+    gba.interrupt.init();
+    gba.interrupt.isr_default_redirect = audioVBlankHandler;
+    mm.gba.initDefault(@ptrCast(@constCast(&prologue_soundbank_data[0])), 32) catch unreachable;
+    mm.sfx.setEffectsVolume(audio_sfx_volume);
+}
+
+fn audioVBlankHandler(_: gba.interrupt.InterruptFlags) callconv(.c) void {
+    mm.mixer.vBlank();
+}
+
+fn initDebugFpsOverlay() void {
+    if (!debug_fps_enabled) return;
+
+    debug_fps_digit_tiles = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** 10;
+    const rows = [_][7]u8{
+        .{ 0b11111, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b11111 },
+        .{ 0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110 },
+        .{ 0b11110, 0b00001, 0b00001, 0b11110, 0b10000, 0b10000, 0b11111 },
+        .{ 0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110 },
+        .{ 0b10010, 0b10010, 0b10010, 0b11111, 0b00010, 0b00010, 0b00010 },
+        .{ 0b11111, 0b10000, 0b10000, 0b11110, 0b00001, 0b00001, 0b11110 },
+        .{ 0b01111, 0b10000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110 },
+        .{ 0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000 },
+        .{ 0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110 },
+        .{ 0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00001, 0b11110 },
+    };
+    for (rows, 0..) |digit_rows, digit| {
+        for (digit_rows, 0..) |row, y| {
+            var x: usize = 0;
+            while (x < 5) : (x += 1) {
+                if ((row & (@as(u8, 1) << @intCast(4 - x))) != 0) {
+                    setDebugFpsDigitPixel(digit, @intCast(x + 1), @intCast(y), 1);
+                }
+            }
+        }
+    }
+    gba.display.memcpyObjectTiles4Bpp(debug_fps_base_tile, &debug_fps_digit_tiles);
+    gba.timers[debug_fps_timer_index] = gba.Timer.init(0, .{});
+    gba.timers[debug_fps_timer_index] = gba.Timer.init(0, .{
+        .freq = .cycles_1024,
+        .enable = true,
+    });
+    debug_fps_last_timer = gba.timers[debug_fps_timer_index].counter;
+}
+
+fn updateDebugFpsOverlay() void {
+    if (!debug_fps_enabled) return;
+
+    const current = gba.timers[debug_fps_timer_index].counter;
+    const delta = current -% debug_fps_last_timer;
+    debug_fps_last_timer = current;
+    debug_fps_tick_accum += delta;
+    debug_fps_frame_count += 1;
+    while (debug_fps_tick_accum >= debug_fps_ticks_per_second) {
+        debug_fps_tick_accum -= debug_fps_ticks_per_second;
+        debug_fps_value = @intCast(@min(debug_fps_frame_count, 99));
+        debug_fps_frame_count = 0;
+    }
+
+    drawDebugFpsDigit(0, debug_fps_value / 10);
+    drawDebugFpsDigit(1, debug_fps_value % 10);
+}
+
+fn drawDebugFpsDigit(slot: usize, digit: u8) void {
+    gba.display.objects[debug_fps_first_object + slot] = gba.display.Object.init(.{
+        .size = .size_8x8,
+        .x = objX(screen_width - 16 + @as(i16, @intCast(slot * 8))),
+        .y = objY(0),
+        .base_tile = debug_fps_base_tile + @as(u10, digit),
+        .priority = 0,
+        .palette = debug_fps_palette_bank,
+    });
+}
+
+fn setDebugFpsDigitPixel(digit: usize, x: u8, y: u8, color: u8) void {
+    const byte_index = @as(usize, y) * 4 + @as(usize, x) / 2;
+    if ((x & 1) == 0) {
+        debug_fps_digit_tiles[digit].data_8[byte_index] = (debug_fps_digit_tiles[digit].data_8[byte_index] & 0xf0) | color;
+    } else {
+        debug_fps_digit_tiles[digit].data_8[byte_index] = (debug_fps_digit_tiles[digit].data_8[byte_index] & 0x0f) | (@as(u8, color) << 4);
     }
 }
 
@@ -691,7 +1350,40 @@ fn loadRoomBackground(room_index: usize) void {
     bg_stream_room_index = rooms.len;
     const room = rooms[room_index];
     gba.mem.memcpy(gba.display.bg_palette, room.palette.ptr, room.palette.len);
+    gba.display.bg_palette.colors[static_wire_bg_color_index] = gba.ColorRgb555.rgb(13, 14, 18);
     gba.display.memcpyBackgroundTiles8Bpp(0, @ptrCast(room.tiles));
+    cutscene_bg_darkened = false;
+}
+
+fn setGrannyCutsceneDarkened(room_index: usize, enabled: bool) void {
+    if (cutscene_bg_darkened == enabled) return;
+    cutscene_bg_darkened = enabled;
+    applyRoomPaletteWithCutsceneMood(room_index, enabled);
+}
+
+fn applyRoomPaletteWithCutsceneMood(room_index: usize, dark: bool) void {
+    const room = rooms[room_index];
+    const color_count = @min(room.palette.len / 2, @as(usize, 256));
+    var index: usize = 0;
+    while (index < color_count) : (index += 1) {
+        const color: gba.ColorRgb555 = @bitCast(readU16Le(room.palette, index * 2));
+        gba.display.bg_palette.colors[index] = if (dark) darkenCutsceneColor(color) else color;
+    }
+    gba.display.bg_palette.colors[static_wire_bg_color_index] = if (dark)
+        darkenCutsceneColor(gba.ColorRgb555.rgb(13, 14, 18))
+    else
+        gba.ColorRgb555.rgb(13, 14, 18);
+}
+
+fn darkenCutsceneColor(color: gba.ColorRgb555) gba.ColorRgb555 {
+    const r: u8 = @intCast(color.r);
+    const g: u8 = @intCast(color.g);
+    const b: u8 = @intCast(color.b);
+    return gba.ColorRgb555.rgb(
+        @intCast(@divTrunc(r * 2, 3)),
+        @intCast(@divTrunc(g * 2, 3)),
+        @intCast(@divTrunc(b * 2, 3)),
+    );
 }
 
 fn loadFallingBlocks(room_index: usize) void {
@@ -739,11 +1431,20 @@ fn loadFallingBlocks(room_index: usize) void {
 fn loadBridge(room_index: usize) void {
     bridge_chunks = [_]BridgeChunk{.{}} ** bridge_max_chunks;
     bridge_chunk_count = 0;
-    bridge_active = room_index + 1 == rooms.len;
+    bridge_drawn_object_count = 0;
+    bridge_active = isPrologueEndRoom(room_index);
+    bridge_sequence_started = false;
+    bridge_ending_hold = false;
+    bridge_ending_dash_started = false;
+    bridge_collapse_shake_tick = 0;
+    bridge_ending_start_index = bridge_max_chunks;
+    bridge_ending = .{};
+    end_level_transition = .{};
     hideBridgeObjects();
     if (!bridge_active) return;
 
     gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, bridge_palette_bank) * 16], @ptrCast(&bridge_palette_data), 16);
+    loadDarkBridgePalette();
     gba.display.memcpyObjectTiles4Bpp(bridge_base_tile, @ptrCast(&bridge_tiles_data));
 
     if (bridge_layout_data.len < 2) return;
@@ -766,6 +1467,95 @@ fn loadBridge(room_index: usize) void {
         }
     }
     bridge_chunk_count = count;
+    bridge_ending_start_index = finalBridgePlatformStart();
+    loadBridgeEnding(room_index);
+}
+
+fn loadBridgeEnding(room_index: usize) void {
+    const data = rooms[room_index].bridge_ending;
+    if (data.len < 26 or readU16Le(data, 0) == 0) return;
+
+    const platform = readSceneRect(data, 2);
+    const trigger = readSceneRect(data, 10);
+    const hint = readSceneRect(data, 18);
+    if (platform.w <= 0 or platform.h <= 0 or trigger.w <= 0 or trigger.h <= 0) return;
+
+    const start = bridge_ending_start_index;
+    if (start >= bridge_chunk_count) return;
+    const platform_chunks: usize = @intCast(@max(1, @divTrunc(platform.w + bridge_chunk_width - 1, bridge_chunk_width)));
+    const end = @min(bridge_chunk_count - 1, start + platform_chunks - 1);
+    const actual_chunks = end - start + 1;
+    const platform_width: i16 = @intCast(actual_chunks * bridge_chunk_width);
+    const platform_x = platform.right() - platform_width;
+    const gap_left = platform_x - bridge_ending_gap_chunks * bridge_chunk_width;
+    const platform_right = platform_x + platform_width;
+
+    var index = start;
+    while (index <= end) : (index += 1) {
+        bridge_chunks[index].x = platform_x + @as(i16, @intCast((index - start) * bridge_chunk_width));
+        bridge_chunks[index].y = pixelToFixed(platform.y);
+    }
+
+    index = 0;
+    while (index < bridge_chunk_count) : (index += 1) {
+        if (index >= start and index <= end) continue;
+        const chunk_right = bridge_chunks[index].x + bridge_chunk_width;
+        if (chunk_right > gap_left and bridge_chunks[index].x < platform_right) {
+            bridge_chunks[index].state = .inactive;
+            bridge_chunks[index].variant = bridge_empty_chunk;
+            bridge_chunks[index].group = bridge_no_group;
+        }
+    }
+
+    bridge_ending = .{
+        .active = true,
+        .platform = .{ .x = platform_x, .y = platform.y, .w = platform_width, .h = platform.h },
+        .trigger = trigger,
+        .hint = hint,
+        .start_index = start,
+        .end_index = end,
+    };
+}
+
+fn readSceneRect(data: []align(4) const u8, offset: usize) SceneRect {
+    return .{
+        .x = readI16Le(data, offset),
+        .y = readI16Le(data, offset + 2),
+        .w = readI16Le(data, offset + 4),
+        .h = readI16Le(data, offset + 6),
+    };
+}
+
+fn finalBridgePlatformStart() usize {
+    var index = bridge_chunk_count;
+    while (index > 0) {
+        index -= 1;
+        const chunk = bridge_chunks[index];
+        if (chunk.state == .inactive or chunk.variant == bridge_empty_chunk) continue;
+        break;
+    }
+    while (index > 0) {
+        index -= 1;
+        const chunk = bridge_chunks[index];
+        if (chunk.state == .inactive or chunk.variant == bridge_empty_chunk) return index + 1;
+    }
+    return 0;
+}
+
+fn loadDarkBridgePalette() void {
+    const source: [*]align(2) const gba.ColorRgb555 = @ptrCast(&bridge_palette_data);
+    var index: usize = 0;
+    while (index < 16) : (index += 1) {
+        gba.display.obj_palette.colors[@as(usize, bridge_falling_palette_bank) * 16 + index] = darkenBridgeColor(source[index]);
+    }
+}
+
+fn darkenBridgeColor(color: gba.ColorRgb555) gba.ColorRgb555 {
+    return gba.ColorRgb555.rgb(
+        @intCast(@as(u8, color.r) / 2),
+        @intCast(@as(u8, color.g) / 2),
+        @intCast(@as(u8, color.b) / 2),
+    );
 }
 
 fn loadForegroundStamps(room_index: usize) void {
@@ -877,6 +1667,83 @@ fn loadBirdNpc(room_index: usize) void {
 
     gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, bird_palette_bank) * 16], @ptrCast(&bird_palette_data), 16);
     gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, bird_hint_palette_bank) * 16], @ptrCast(&bird_hint_palette_data), 16);
+    loaded_bird_frame = invalid_loaded_frame;
+    loaded_bird_hint_kind = .none;
+}
+
+fn loadTinyBirds(room_index: usize) void {
+    tiny_birds = [_]TinyBird{.{}} ** max_tiny_birds;
+    tiny_bird_count = 0;
+    tiny_bird_flock_triggered = false;
+    hideTinyBirds();
+
+    if (room_index != tiny_bird_room_index or room_states[room_index].tiny_birds_flown) return;
+
+    const starts = [_]struct {
+        x: i16,
+        y: i16,
+        variant: u8,
+        vx: i32,
+        vy: i32,
+    }{
+        .{ .x = 267, .y = 112, .variant = 0, .vx = -0x34, .vy = -0x128 },
+        .{ .x = 275, .y = 112, .variant = 2, .vx = 0x20, .vy = -0x154 },
+        .{ .x = 252, .y = 120, .variant = 1, .vx = -0x58, .vy = -0x118 },
+        .{ .x = 307, .y = 144, .variant = 3, .vx = 0x64, .vy = -0x13C },
+        .{ .x = 235, .y = 152, .variant = 4, .vx = -0x74, .vy = -0x108 },
+    };
+
+    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, tiny_bird_palette_bank) * 16], @ptrCast(&tiny_bird_palette_data), 16);
+    gba.display.memcpyObjectTiles4Bpp(tiny_bird_base_tile, @ptrCast(&tiny_bird_tiles_data));
+    loaded_bird_frame = invalid_loaded_frame;
+
+    var index: usize = 0;
+    while (index < starts.len and index < max_tiny_birds) : (index += 1) {
+        tiny_birds[index] = .{
+            .active = true,
+            .x = pixelToFixed(starts[index].x),
+            .y = pixelToFixed(starts[index].y),
+            .vx = starts[index].vx,
+            .vy = starts[index].vy,
+            .variant = starts[index].variant,
+            .phase = @intCast(index * 5),
+        };
+        tiny_bird_count += 1;
+    }
+}
+
+fn loadRoomWires(room_index: usize) void {
+    wire_chunks = [_]WireChunk{.{}} ** max_wire_chunks;
+    wire_chunk_count = 0;
+    hideRoomWires();
+
+    const room = rooms[room_index];
+    const data = room.wires;
+    if (data.len < 2) return;
+    if (roomFitsHardwareBackground(room) and canStampStaticRoomWires(room_index)) return;
+
+    if (room.wire_tiles.len != 0) {
+        const tile_count = room.wire_tiles.len / 32;
+        const tiles: [*]align(2) const gba.display.Tile4Bpp = @ptrCast(room.wire_tiles.ptr);
+        gba.display.memcpyObjectTiles4Bpp(wire_base_tile, tiles[0..tile_count]);
+    }
+
+    const count = @min(readU16Le(data, 0), max_wire_chunks);
+    var offset: usize = 2;
+    var index: usize = 0;
+    while (index < count and offset + 8 <= data.len) : ({
+        index += 1;
+        offset += 8;
+    }) {
+        wire_chunks[wire_chunk_count] = .{
+            .active = true,
+            .x = readI16Le(data, offset),
+            .y = readI16Le(data, offset + 2),
+            .tile_offset = readU16Le(data, offset + 4),
+            .phase = data[offset + 6],
+        };
+        wire_chunk_count += 1;
+    }
 }
 
 fn birdTriggerActionFromByte(value: u8) BirdTriggerAction {
@@ -889,38 +1756,90 @@ fn birdTriggerActionFromByte(value: u8) BirdTriggerAction {
 }
 
 fn loadRoomParallax(room_index: usize) void {
-    hideParallaxObjects();
+    clearParallaxMap();
+    parallax_stream_room_index = rooms.len;
+    gba.display.ctrl.bg1 = false;
     if (rooms[room_index].parallax) |parallax| {
-        gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, parallax_palette_bank) * 16], @ptrCast(parallax.palette.ptr), 16);
+        gba.mem.memcpy16(&gba.display.bg_palette.colors[@as(usize, 15) * 16], @ptrCast(parallax.palette.ptr), 16);
         const tile_count = parallax.tiles.len / 32;
         const tiles: [*]align(2) const gba.display.Tile4Bpp = @ptrCast(parallax.tiles.ptr);
-        gba.display.memcpyObjectTiles4Bpp(parallax_base_tile, tiles[0..tile_count]);
+        const charblock3_start_bytes: usize = 3 * 16 * 1024;
+        const used_bg_bytes = rooms[room_index].tiles.len;
+        const tile_offset_bytes = if (used_bg_bytes > charblock3_start_bytes) used_bg_bytes - charblock3_start_bytes else 0;
+        parallax_tile_offset = @intCast((tile_offset_bytes + 31) / 32);
+        gba.display.memcpyTiles4Bpp(parallax_charblock, parallax_tile_offset, tiles[0..tile_count]);
+        gba.display.ctrl.bg1 = true;
     }
 }
 
 fn loadObjectSprites() void {
+    invalidateObjectTileCaches();
+    granny_visible = false;
+    cutscene_laugh_tiles_loaded = false;
     gba.mem.memcpy(gba.display.obj_palette, &player_palette_data, player_palette_data.len);
     gba.mem.memcpy16(&gba.display.obj_palette.colors[16], @ptrCast(&falling_block_palette_data), 16);
     gba.mem.memcpy16(&gba.display.obj_palette.colors[32], @ptrCast(&hair_palette_data), 16);
+    loadDashPalettes();
     gba.display.obj_palette.colors[48] = .black;
     gba.display.obj_palette.colors[49] = .white;
     gba.display.obj_palette.colors[50] = gba.ColorRgb555.rgb(17, 27, 31);
     gba.display.obj_palette.colors[51] = gba.ColorRgb555.rgb(29, 4, 4);
     gba.display.obj_palette.colors[52] = gba.ColorRgb555.rgb(17, 2, 3);
     gba.display.obj_palette.colors[53] = .black;
+    gba.display.obj_palette.colors[54] = gba.ColorRgb555.rgb(6, 7, 10);
+    gba.display.obj_palette.colors[55] = gba.ColorRgb555.rgb(15, 21, 31);
+    gba.display.obj_palette.colors[56] = gba.ColorRgb555.rgb(31, 24, 9);
+    gba.display.obj_palette.colors[@as(usize, dust_palette_bank) * 16 + @as(usize, chimney_smoke_soft_color)] = gba.ColorRgb555.rgb(25, 28, 29);
     gba.mem.memcpy16(&gba.display.obj_palette.colors[64], @ptrCast(&player_sweat_palette_data), 16);
     gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, foreground_stamp_palette_bank) * 16], @ptrCast(&grass1_palette_data), 16);
     gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, foreground_stamp2_palette_bank) * 16], @ptrCast(&grass2_palette_data), 16);
     gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, funny_car_palette_bank) * 16], @ptrCast(&funny_car_palette_data), 16);
+    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, granny_palette_bank) * 16], @ptrCast(&granny_palette_data), 16);
     gba.display.memcpyObjectTiles4Bpp(falling_block_base_tile, @ptrCast(&falling_block_tiles_data));
     gba.display.memcpyObjectTiles4Bpp(funny_car_base_tile, @ptrCast(&funny_car_tiles_data));
-    gba.display.memcpyObjectTiles4Bpp(hair_root_base_tile, @ptrCast(&hair_tiles_data));
     gba.display.memcpyObjectTiles4Bpp(foreground_stamp_base_tile, @ptrCast(&grass1_tiles_data));
     gba.display.memcpyObjectTiles4Bpp(foreground_stamp_mirror_base_tile, @ptrCast(&grass1_mirror_tiles_data));
     gba.display.memcpyObjectTiles4Bpp(foreground_stamp2_base_tile, @ptrCast(&grass2_tiles_data));
     gba.display.memcpyObjectTiles4Bpp(foreground_stamp2_mirror_base_tile, @ptrCast(&grass2_mirror_tiles_data));
     loadDeathBurstTile();
+    loadDashEffectTile();
     loadPlayerFrame(0);
+}
+
+fn invalidateObjectTileCaches() void {
+    loaded_player_frame = invalid_loaded_frame;
+    loaded_sweat_frame = invalid_loaded_frame;
+    loaded_bird_frame = invalid_loaded_frame;
+    loaded_granny_frame = invalid_loaded_frame;
+    loaded_granny_animation = .none;
+    loaded_bird_hint_kind = .none;
+}
+
+fn loadDashPalettes() void {
+    fillDashShadowPalette(dash_shadow_palette_bank, gba.ColorRgb555.rgb(2, 8, 15), gba.ColorRgb555.rgb(5, 17, 25), gba.ColorRgb555.rgb(8, 22, 31));
+    fillDashShadowPalette(dash_shadow_palette_bank + 1, gba.ColorRgb555.rgb(3, 11, 19), gba.ColorRgb555.rgb(6, 20, 29), gba.ColorRgb555.rgb(10, 25, 31));
+    fillDashShadowPalette(dash_shadow_palette_bank + 2, gba.ColorRgb555.rgb(5, 15, 24), gba.ColorRgb555.rgb(9, 24, 31), gba.ColorRgb555.rgb(14, 28, 31));
+
+    const effect_base = @as(usize, dash_effect_palette_bank) * 16;
+    gba.display.obj_palette.colors[effect_base] = .black;
+    gba.display.obj_palette.colors[effect_base + 1] = gba.ColorRgb555.rgb(2, 10, 18);
+    gba.display.obj_palette.colors[effect_base + 2] = gba.ColorRgb555.rgb(5, 20, 30);
+    gba.display.obj_palette.colors[effect_base + 3] = .white;
+    gba.display.obj_palette.colors[effect_base + 4] = gba.ColorRgb555.rgb(11, 27, 31);
+}
+
+fn fillDashShadowPalette(bank: u4, dark: gba.ColorRgb555, mid: gba.ColorRgb555, light: gba.ColorRgb555) void {
+    const shadow_base = @as(usize, bank) * 16;
+    gba.display.obj_palette.colors[shadow_base] = .black;
+    var index: usize = 0;
+    while (index < 16) : (index += 1) {
+        gba.display.obj_palette.colors[shadow_base + index] = if (index == 1)
+            dark
+        else if (index < 5)
+            mid
+        else
+            light;
+    }
 }
 
 fn loadDeathBurstTile() void {
@@ -956,6 +1875,103 @@ fn loadDeathBurstTile() void {
     gba.display.memcpyObjectTiles4Bpp(death_burst_base_tile, &death_burst_tiles);
 }
 
+fn loadDashEffectTile() void {
+    writeDashEffectTile(0, 0);
+}
+
+fn writeDashEffectTile(dir_x: i16, dir_y: i16) void {
+    dash_effect_tiles = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** 16;
+
+    const sx: i16 = if (dir_x == 0 and dir_y == 0) 1 else dir_x;
+    const sy: i16 = dir_y;
+    const back_x = -sx;
+    const back_y = -sy;
+    const perp_x = -sy;
+    const perp_y = sx;
+    const center_x: i16 = 16;
+    const center_y: i16 = 18;
+
+    drawDashEffectDisc(center_x + back_x * 4, center_y + back_y * 4, 5, 1);
+    drawDashEffectDisc(center_x + back_x * 4, center_y + back_y * 4, 4, 2);
+    drawDashEffectDisc(center_x + back_x * 8 + perp_x * 2, center_y + back_y * 6 + perp_y * 2, 3, 2);
+    drawDashEffectDisc(center_x + back_x + perp_x * 3, center_y + back_y + perp_y * 2, 2, 4);
+    drawDashEffectDisc(center_x + back_x * 11 - perp_x * 2, center_y + back_y * 8 - perp_y, 2, 4);
+    setDashEffectPixel(center_x + back_x * 13 + perp_x * 4, center_y + back_y * 9 + perp_y * 3, 4);
+    setDashEffectPixel(center_x + back_x * 10 - perp_x * 4, center_y + back_y * 7 - perp_y * 3, 2);
+
+    if (dir_x != 0 or dir_y != 0) {
+        drawDashEffectStreak(dir_x, dir_y);
+    }
+    gba.display.memcpyObjectTiles4Bpp(dash_effect_base_tile, &dash_effect_tiles);
+}
+
+fn drawDashEffectStreak(dir_x: i16, dir_y: i16) void {
+    const center_x: i16 = 16;
+    const center_y: i16 = 18;
+    const tail: i16 = 18;
+    const tip: i16 = 5;
+    const perp_x: i16 = -dir_y;
+    const perp_y: i16 = dir_x;
+    const start_x = center_x - dir_x * tail;
+    const start_y = center_y - dir_y * tail;
+    const end_x = center_x + dir_x * tip;
+    const end_y = center_y + dir_y * tip;
+    drawDashEffectLine(start_x, start_y, end_x, end_y, 3);
+    drawDashEffectLine(start_x + perp_x, start_y + perp_y, end_x + perp_x, end_y + perp_y, 3);
+    setDashEffectPixel(start_x + perp_x * 4, start_y + perp_y * 4, 3);
+}
+
+fn drawDashEffectDisc(center_x: i16, center_y: i16, radius: i16, color: u8) void {
+    var y: i16 = -radius;
+    while (y <= radius) : (y += 1) {
+        var x: i16 = -radius;
+        while (x <= radius) : (x += 1) {
+            if (x * x + y * y <= radius * radius) {
+                setDashEffectPixel(center_x + x, center_y + y, color);
+            }
+        }
+    }
+}
+
+fn drawDashEffectLine(x0_input: i16, y0_input: i16, x1: i16, y1: i16, color: u8) void {
+    var x0 = x0_input;
+    var y0 = y0_input;
+    const dx = absI16(x1 - x0);
+    const sx: i16 = if (x0 < x1) 1 else -1;
+    const dy = -absI16(y1 - y0);
+    const sy: i16 = if (y0 < y1) 1 else -1;
+    var err = dx + dy;
+    while (true) {
+        setDashEffectPixel(x0, y0, color);
+        setDashEffectPixel(x0 + 1, y0, color);
+        if (x0 == x1 and y0 == y1) break;
+        const e2 = 2 * err;
+        if (e2 >= dy) {
+            err += dy;
+            x0 += sx;
+        }
+        if (e2 <= dx) {
+            err += dx;
+            y0 += sy;
+        }
+    }
+}
+
+fn setDashEffectPixel(x: i16, y: i16, color: u8) void {
+    if (x < 0 or x >= 32 or y < 0 or y >= 32) return;
+    const tile_x: usize = @intCast(@divTrunc(x, 8));
+    const tile_y: usize = @intCast(@divTrunc(y, 8));
+    const tile_index = tile_y * 4 + tile_x;
+    const local_x: usize = @intCast(x & 7);
+    const local_y: usize = @intCast(y & 7);
+    const byte_index = local_y * 4 + local_x / 2;
+    if ((local_x & 1) == 0) {
+        dash_effect_tiles[tile_index].data_8[byte_index] = (dash_effect_tiles[tile_index].data_8[byte_index] & 0xF0) | color;
+    } else {
+        dash_effect_tiles[tile_index].data_8[byte_index] = (dash_effect_tiles[tile_index].data_8[byte_index] & 0x0F) | (color << 4);
+    }
+}
+
 fn loadWindSnowTiles() void {
     wind_snow_tiles = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** wind_snow_tile_count;
     setWindSnowPixel(0, 3, 3, 1);
@@ -983,17 +1999,21 @@ fn loadWindSnowTiles() void {
 }
 
 fn loadPlayerFrame(frame: u16) void {
+    if (loaded_player_frame == frame) return;
     const byte_offset = @as(usize, frame) * player_tiles_per_frame * 32;
     const byte_len = player_tiles_per_frame * 32;
     const frame_bytes = player_tiles_data[byte_offset .. byte_offset + byte_len];
     gba.display.memcpyObjectTiles4Bpp(0, @ptrCast(@alignCast(frame_bytes)));
+    loaded_player_frame = frame;
 }
 
 fn loadSweatFrame(frame: u16) void {
+    if (loaded_sweat_frame == frame) return;
     const byte_offset = @as(usize, frame) * sweat_tiles_per_frame * 32;
     const byte_len = sweat_tiles_per_frame * 32;
     const frame_bytes = player_sweat_tiles_data[byte_offset .. byte_offset + byte_len];
     gba.display.memcpyObjectTiles4Bpp(sweat_base_tile, @ptrCast(@alignCast(frame_bytes)));
+    loaded_sweat_frame = frame;
 }
 
 fn updatePlayer(player: *Player, input: gba.input.BufferedKeysState, room_index: usize) void {
@@ -1001,8 +2021,21 @@ fn updatePlayer(player: *Player, input: gba.input.BufferedKeysState, room_index:
     const horizontal: i16 = @intCast(input.getAxisHorizontal());
     const vertical: i16 = @intCast(input.getAxisVertical());
     const grab_held = input.isPressed(.L) or input.isPressed(.R);
+    const dash_pressed = input.isJustPressed(.B);
     if (player.room_transition_cooldown > 0) {
         player.room_transition_cooldown -= 1;
+    }
+    if (player.dash_cooldown_timer > 0) {
+        player.dash_cooldown_timer -= 1;
+    }
+    if (player.dash_refill_cooldown_timer > 0) {
+        player.dash_refill_cooldown_timer -= 1;
+    }
+    if (player.dash_effect_timer > 0) {
+        player.dash_effect_timer -= 1;
+    }
+    if (player.dash_trail_timer > 0) {
+        player.dash_trail_timer -= 1;
     }
     if (player.climb_grab_lockout_timer > 0) {
         player.climb_grab_lockout_timer -= 1;
@@ -1020,9 +2053,23 @@ fn updatePlayer(player: *Player, input: gba.input.BufferedKeysState, room_index:
         player.dust_suppress_timer -= 1;
     }
 
+    if (player.grounded and player.dash_timer == 0 and player.dash_refill_cooldown_timer == 0) {
+        refillPlayerDash(player);
+    }
+
     if (player.climb_ledge_timer > 0) {
         updateClimbLedgeMotion(player, room_index);
         updatePlayerAnimation(player);
+        return;
+    }
+
+    if (player.dash_timer > 0) {
+        updateDashMovement(player, room_index);
+        return;
+    }
+
+    if (dash_pressed and tryStartDash(player, horizontal, vertical, dash_unlocked)) {
+        updateDashMovement(player, room_index);
         return;
     }
 
@@ -1031,8 +2078,8 @@ fn updatePlayer(player: *Player, input: gba.input.BufferedKeysState, room_index:
         player.facing_left = horizontal < 0;
     }
 
-    const jump_pressed = input.isJustPressed(.A) or input.isJustPressed(.B);
-    const jump_held = input.isPressed(.A) or input.isPressed(.B);
+    const jump_pressed = input.isJustPressed(.A);
+    const jump_held = input.isPressed(.A);
 
     if (jump_pressed) {
         player.jump_buffer_timer = player_jump_buffer_frames;
@@ -1124,6 +2171,9 @@ fn updatePlayer(player: *Player, input: gba.input.BufferedKeysState, room_index:
     }
 
     if (player.grounded) {
+        if (player.dash_timer == 0 and player.dash_refill_cooldown_timer == 0) {
+            refillPlayerDash(player);
+        }
         if (!was_grounded and player.dust_suppress_timer == 0) {
             spawnLandingDustAtFeet(player.*);
         }
@@ -1140,6 +2190,91 @@ fn updatePlayer(player: *Player, input: gba.input.BufferedKeysState, room_index:
     }
 
     updatePlayerAnimation(player);
+    updateFootstepSfx(player, room_index);
+}
+
+fn refillPlayerDash(player: *Player) void {
+    player.dashes = 1;
+}
+
+fn tryStartDash(player: *Player, horizontal: i16, vertical: i16, allow_dash: bool) bool {
+    if (!allow_dash or player.dashes == 0 or player.dash_cooldown_timer > 0) return false;
+
+    var dash_x = horizontal;
+    const dash_y = vertical;
+    if (dash_x == 0 and dash_y == 0) {
+        dash_x = if (player.facing_left) -1 else 1;
+    }
+
+    player.dashes -= 1;
+    player.dash_timer = player_dash_frames;
+    player.dash_cooldown_timer = player_dash_cooldown_frames;
+    player.dash_refill_cooldown_timer = player_dash_refill_cooldown_frames;
+    player.dash_effect_timer = player_dash_effect_frames;
+    player.dash_trail_timer = player_dash_trail_interval;
+    player.dash_dir_x = dash_x;
+    player.dash_dir_y = dash_y;
+    player.jump_buffer_timer = 0;
+    player.coyote_timer = 0;
+    player.var_jump_timer = 0;
+    player.force_move_x_timer = 0;
+    player.climb_grab_lockout_timer = 0;
+    player.climbing = false;
+    player.climb_dangling = false;
+    player.wall_sliding = false;
+    player.grounded = false;
+    if (dash_x != 0) {
+        player.facing_left = dash_x < 0;
+    }
+
+    var speed = player_dash_speed;
+    if (dash_x != 0 and dash_y != 0) {
+        speed = fixedMul(speed, player_dash_diagonal_mult);
+    }
+    player.vx = @as(i32, dash_x) * speed;
+    player.vy = @as(i32, dash_y) * speed;
+    spawnDashAfterimage(player.*);
+    spawnDashBurst(player.*);
+    return true;
+}
+
+fn updateDashMovement(player: *Player, room_index: usize) void {
+    if (player.dash_trail_timer == 0) {
+        spawnDashAfterimage(player.*);
+        player.dash_trail_timer = player_dash_trail_interval;
+    }
+
+    moveHorizontal(player, player.vx, room_index);
+    player.grounded = false;
+    moveVertical(player, player.vy, room_index);
+    resolvePlayerEmbedding(player, room_index);
+    if (!player.grounded and player.vy >= 0 and floorContact(player.*, room_index)) {
+        player.grounded = true;
+    }
+
+    if (player.dash_timer > 0) {
+        player.dash_timer -= 1;
+    }
+    if (player.dash_timer == 0) {
+        endDash(player);
+    }
+    updatePlayerAnimation(player);
+}
+
+fn endDash(player: *Player) void {
+    var next_vx: i32 = if (player.dash_dir_x == 0) 0 else @as(i32, player.dash_dir_x) * player_dash_end_speed;
+    var next_vy: i32 = if (player.dash_dir_y == 0) 0 else @as(i32, player.dash_dir_y) * player_dash_end_speed;
+    if (player.dash_dir_x != 0 and player.dash_dir_y != 0) {
+        next_vx = fixedMul(next_vx, player_dash_diagonal_mult);
+        next_vy = fixedMul(next_vy, player_dash_diagonal_mult);
+    }
+    if (next_vy < 0) {
+        next_vy = fixedMul(next_vy, player_dash_end_up_mult);
+    }
+    player.vx = next_vx;
+    player.vy = next_vy;
+    player.dash_dir_x = 0;
+    player.dash_dir_y = 0;
 }
 
 fn updateHorizontalSpeed(player: *Player, horizontal: i16) void {
@@ -1343,7 +2478,13 @@ fn updateClimbLedgeMotion(player: *Player, room_index: usize) void {
 }
 
 fn updatePlayerAnimation(player: *Player) void {
-    const next_animation: PlayerAnimation = if (player.wall_sliding)
+    const next_animation: PlayerAnimation = if (player.dash_timer > 0 and player.dash_dir_y < 0)
+        .jump
+    else if (player.dash_timer > 0 and player.dash_dir_y > 0)
+        .fall
+    else if (player.dash_timer > 0 and player.dash_dir_x != 0)
+        .run
+    else if (player.wall_sliding)
         .wallslide
     else if (player.climb_ledge_timer > 0)
         .climb_pull
@@ -1394,6 +2535,182 @@ fn updatePlayerAnimation(player: *Player) void {
     }
     const frame_offset = (player.animation_timer / player_animation_speed) % frame_count;
     player.frame = first_frame + frame_offset;
+}
+
+fn updateFootstepSfx(player: *Player, room_index: usize) void {
+    if (!player.grounded or player.animation != .run or absI32(player.vx) < player_footstep_min_speed) {
+        player.footstep_cooldown = 0;
+        return;
+    }
+
+    if (player.footstep_cooldown != 0) {
+        player.footstep_cooldown -= 1;
+        return;
+    }
+
+    playFootstepSfx(footstepSurfaceAtPlayerFeet(player.*, room_index), player);
+    player.footstep_cooldown = player_footstep_cadence_frames;
+}
+
+fn playFootstepSfx(surface: FootstepSurface, player: *Player) void {
+    const samples = footstepSamplesFor(surface);
+    const index: usize = @intCast(player.footstep_variant % @as(u8, @intCast(samples.len)));
+    player.footstep_variant +%= 1;
+    if (player.footstep_handle != 0) {
+        _ = mm.sfx.effectCancel(player.footstep_handle);
+    }
+    player.footstep_handle = mm.sfx.effect(samples[index]);
+    if (player.footstep_handle != 0) {
+        mm.sfx.effectVolume(player.footstep_handle, player_footstep_volume);
+    }
+}
+
+fn footstepSamplesFor(surface: FootstepSurface) []const u16 {
+    return switch (surface) {
+        .snow => &footstep_snow_sfx,
+        .dirt => &footstep_dirt_sfx,
+        .wood => &footstep_wood_sfx,
+        .car => &footstep_car_sfx,
+        .asphalt => &footstep_asphalt_sfx,
+    };
+}
+
+fn footstepSurfaceAtPlayerFeet(player: Player, room_index: usize) FootstepSurface {
+    const player_x = fixedToPixel(player.x);
+    const player_y = fixedToPixel(player.y);
+    const bottom = player_y + player_body_height;
+
+    if (funnyCarFloorAt(player_x, player_y)) return .car;
+    if (bridgeFloorAtPlayer(player)) return .asphalt;
+    if (fallingBlockFloorAtPlayer(player)) return .snow;
+    if (oneWayFloorAt(player_x, player_y, room_index)) return .wood;
+
+    return backgroundFootstepSurfaceAt(room_index, player_x, bottom);
+}
+
+fn backgroundFootstepSurfaceAt(room_index: usize, player_x: i16, bottom: i16) FootstepSurface {
+    var snow_score: u8 = 0;
+    var dirt_score: u8 = 0;
+    var asphalt_score: u8 = 0;
+    const foot_x = [_]i16{ 1, player_body_width / 2, player_body_width - 2 };
+    var xi: usize = 0;
+    while (xi < foot_x.len) : (xi += 1) {
+        var dy: i16 = 0;
+        while (dy < 4) : (dy += 1) {
+            if (backgroundFootstepPixelSurface(room_index, player_x + foot_x[xi], bottom + dy)) |surface| {
+                switch (surface) {
+                    .snow => snow_score += 1,
+                    .dirt => dirt_score += 1,
+                    .asphalt => asphalt_score += 1,
+                    else => {},
+                }
+            }
+        }
+    }
+
+    if (snow_score != 0) return .snow;
+    if (asphalt_score > dirt_score) return .asphalt;
+    return .dirt;
+}
+
+fn backgroundFootstepPixelSurface(room_index: usize, x: i16, y: i16) ?FootstepSurface {
+    const color = backgroundPixelColorAt(rooms[room_index], x, y) orelse return null;
+    return classifyFootstepColor(color);
+}
+
+fn backgroundPixelColorAt(room: RoomBackground, x: i16, y: i16) ?FootstepColor {
+    if (x < 0 or y < 0 or x >= room.width_pixels or y >= room.height_pixels) return null;
+
+    const tile_x = @divTrunc(x, 8);
+    const tile_y = @divTrunc(y, 8);
+    const entry = logicalRoomMapEntry(room, tile_x, tile_y);
+    const tile_id = entry & 0x03ff;
+    const hflip = (entry & 0x0400) != 0;
+    const vflip = (entry & 0x0800) != 0;
+
+    var source_x: usize = @intCast(x - tile_x * 8);
+    var source_y: usize = @intCast(y - tile_y * 8);
+    if (hflip) source_x = 7 - source_x;
+    if (vflip) source_y = 7 - source_y;
+
+    const tile_offset = @as(usize, tile_id) * 64 + source_y * 8 + source_x;
+    if (tile_offset >= room.tiles.len) return null;
+
+    const color_index = room.tiles[tile_offset];
+    if (color_index == 0) return null;
+    const palette_offset = @as(usize, color_index) * 2;
+    if (palette_offset + 1 >= room.palette.len) return null;
+
+    const color = readU16Le(room.palette, palette_offset);
+    return .{
+        .r = @intCast(color & 0x1f),
+        .g = @intCast((color >> 5) & 0x1f),
+        .b = @intCast((color >> 10) & 0x1f),
+    };
+}
+
+fn classifyFootstepColor(color: FootstepColor) ?FootstepSurface {
+    if ((color.r >= 24 and color.g >= 24 and color.b >= 24) or
+        (color.b >= 22 and color.g >= 18 and color.r >= 14))
+    {
+        return .snow;
+    }
+
+    const rg_delta = absI16(@as(i16, color.r) - @as(i16, color.g));
+    const gb_delta = absI16(@as(i16, color.g) - @as(i16, color.b));
+    if (rg_delta <= 3 and gb_delta <= 3 and color.r >= 7 and color.r <= 24) {
+        return .asphalt;
+    }
+
+    if (color.r >= 10 and color.g >= 5 and @as(u8, color.r) > @as(u8, color.b) + 4 and color.g >= color.b) {
+        return .dirt;
+    }
+
+    return null;
+}
+
+fn fallingBlockFloorAtPlayer(player: Player) bool {
+    const player_x = fixedToPixel(player.x);
+    const bottom = fixedToPixel(player.y) + player_body_height;
+    return fallingBlockFloorAt(player_x + 1, bottom) or
+        fallingBlockFloorAt(player_x + player_body_width / 2, bottom) or
+        fallingBlockFloorAt(player_x + player_body_width - 2, bottom);
+}
+
+fn fallingBlockFloorAt(x: i16, bottom_y: i16) bool {
+    var index: usize = 0;
+    while (index < falling_block_count) : (index += 1) {
+        const block = falling_blocks[index];
+        if (!block.active) continue;
+        const block_y = fixedToPixel(block.y);
+        if (x >= block.x and x < block.x + block.w and bottom_y >= block_y and bottom_y < block_y + 4) {
+            return true;
+        }
+    }
+    return false;
+}
+
+fn bridgeFloorAtPlayer(player: Player) bool {
+    if (!bridge_active) return false;
+    const player_x = fixedToPixel(player.x);
+    const bottom = fixedToPixel(player.y) + player_body_height;
+    return bridgeFloorAt(player_x + 1, bottom) or
+        bridgeFloorAt(player_x + player_body_width / 2, bottom) or
+        bridgeFloorAt(player_x + player_body_width - 2, bottom);
+}
+
+fn bridgeFloorAt(x: i16, bottom_y: i16) bool {
+    if (!bridge_active) return false;
+    if (bridge_ending.active and bottom_y >= bridge_ending.platform.y and bottom_y < bridge_ending.platform.y + 4 and x >= bridge_ending.platform.x and x < bridge_ending.platform.right()) {
+        return true;
+    }
+
+    const chunk_index = bridgeChunkIndexAtX(x) orelse return false;
+    if (chunk_index >= bridge_chunk_count) return false;
+    const chunk = bridge_chunks[chunk_index];
+    if (chunk.state != .solid and chunk.state != .shaking) return false;
+    const chunk_y = fixedToPixel(chunk.y);
+    return bottom_y >= chunk_y and bottom_y < chunk_y + 4;
 }
 
 fn chooseNextIdle(player: *Player) void {
@@ -1472,6 +2789,75 @@ fn spawnWallSlideDust(player: Player, wall_dir: i16) void {
     };
 }
 
+fn spawnDashAfterimage(player: Player) void {
+    var slot: usize = 0;
+    var index: usize = 0;
+    while (index < dash_afterimage_count) : (index += 1) {
+        if (!dash_afterimages[index].active) {
+            slot = index;
+            break;
+        }
+        if (dash_afterimages[index].life < dash_afterimages[slot].life) {
+            slot = index;
+        }
+    }
+
+    dash_afterimages[slot] = .{
+        .active = true,
+        .x = player.x,
+        .y = player.y,
+        .life = dash_afterimage_life,
+        .facing_left = player.facing_left,
+        .dir_x = player.dash_dir_x,
+        .dir_y = player.dash_dir_y,
+    };
+}
+
+fn spawnDashBurst(player: Player) void {
+    const dir_x: i16 = player.dash_dir_x;
+    const dir_y: i16 = player.dash_dir_y;
+    const draw_x = fixedToPixel(player.x) + player_draw_offset_x;
+    const draw_y = fixedToPixel(player.y) + player_draw_offset_y;
+    writeDashEffectTile(dir_x, dir_y);
+    dash_burst = .{
+        .active = true,
+        .x = draw_x,
+        .y = draw_y,
+        .life = 10,
+    };
+}
+
+fn updateDashEffects() void {
+    var index: usize = 0;
+    while (index < dash_afterimage_count) : (index += 1) {
+        if (!dash_afterimages[index].active) continue;
+        if (dash_afterimages[index].life > 0) {
+            dash_afterimages[index].life -= 1;
+        }
+        if (dash_afterimages[index].life == 0) {
+            dash_afterimages[index].active = false;
+        }
+    }
+    if (dash_burst.active) {
+        if (dash_burst.life > 0) {
+            dash_burst.life -= 1;
+        }
+        if (dash_burst.life == 0) {
+            dash_burst.active = false;
+        }
+    }
+}
+
+fn clearDashEffects() void {
+    dash_afterimages = [_]DashAfterimage{.{}} ** dash_afterimage_count;
+    dash_burst = .{};
+    var index: usize = 0;
+    while (index < dash_afterimage_count) : (index += 1) {
+        hideObject(dash_afterimage_first_object + index);
+    }
+    hideObject(dash_burst_object);
+}
+
 fn spawnFallingBlockSnow(block: FallingBlock) void {
     const base_y = fixedToPixel(block.y) + 2;
     const count: u8 = 7;
@@ -1504,7 +2890,7 @@ fn nextDustParticleIndex() usize {
     }
 
     var weakest: usize = 0;
-    index = 1;
+    index = 0;
     while (index < max_dust_particles) : (index += 1) {
         if (dust_particles[index].life < dust_particles[weakest].life) weakest = index;
     }
@@ -1618,10 +3004,14 @@ fn updateFallingBlocksDuringDeath() void {
 }
 
 fn updateBridge(player: *Player, room_index: usize) void {
-    if (!bridge_active or room_index + 1 != rooms.len) return;
+    if (!bridge_active or !isPrologueEndRoom(room_index)) return;
 
+    var live_chunks: usize = 0;
     const player_center_x = fixedToPixel(player.x) + player_body_width / 2;
     const player_bottom = fixedToPixel(player.y) + player_body_height;
+    if (bridgeEndingTriggerActive(player.*)) {
+        triggerBridgeEndingPlatformEarly();
+    }
     const trigger_y_min = bridge_world_y - 4;
     const trigger_y_max = bridge_world_y + 12;
     if (player_bottom >= trigger_y_min and player_bottom <= trigger_y_max) {
@@ -1637,8 +3027,16 @@ fn updateBridge(player: *Player, room_index: usize) void {
     while (index < bridge_chunk_count) : (index += 1) {
         const chunk = &bridge_chunks[index];
         switch (chunk.state) {
-            .inactive, .solid, .gone => {},
+            .inactive, .gone => {},
+            .solid => {
+                if (bridge_sequence_started and chunk.x + bridge_chunk_width < player_center_x - 56) {
+                    chunk.state = .gone;
+                } else {
+                    live_chunks += 1;
+                }
+            },
             .shaking => {
+                live_chunks += 1;
                 if (chunk.timer > 0) {
                     chunk.timer -= 1;
                 } else {
@@ -1648,12 +3046,337 @@ fn updateBridge(player: *Player, room_index: usize) void {
                 }
             },
             .falling => {
+                live_chunks += 1;
                 chunk.vy = approach(chunk.vy, bridge_fall_max_speed, bridge_fall_gravity);
                 chunk.y += chunk.vy;
-                if (fixedToPixel(chunk.y) > rooms[room_index].height_pixels + 40) {
+                if (fixedToPixel(chunk.y) > bridge_world_y + screen_height + bridge_chunk_height) {
                     chunk.state = .gone;
                 }
             },
+        }
+    }
+
+    if (bridge_sequence_started and live_chunks == 0) {
+        bridge_active = false;
+        hideBridgeObjects();
+    }
+}
+
+fn shouldStartBridgeEndingHold(player: Player, room_index: usize) bool {
+    if (!bridge_active or !isPrologueEndRoom(room_index) or !bridge_ending.active or !bridge_ending.final_triggered) return false;
+    const player_center_x = fixedToPixel(player.x) + player_body_width / 2;
+    const player_bottom = fixedToPixel(player.y) + player_body_height;
+    return player_center_x >= bridge_ending.platform.x - 16 and
+        player_center_x <= bridge_ending.platform.right() + 56 and
+        player_bottom > bridge_ending.platform.y + 10 and
+        player.vy > 0;
+}
+
+fn startBridgeEndingHold(player: *Player) void {
+    bridge_ending_hold = true;
+    holdPlayerForBridgeEnding(player);
+    clearDustParticles();
+
+    const player_x = fixedToPixel(player.x);
+    const player_y = fixedToPixel(player.y);
+    const hint_x = if (bridge_ending.hint.w > 0) bridge_ending.hint.x else player_x - 32;
+    const hint_y = if (bridge_ending.hint.h > 0) bridge_ending.hint.y else player_y - 72;
+    bird_npc = .{
+        .active = true,
+        .state = .ending_fly_in,
+        .x = pixelToFixed(player_x + 140),
+        .y = pixelToFixed(player_y - 42),
+        .home_x = player_x + 34,
+        .home_y = player_y - 18,
+        .hint_x = hint_x,
+        .hint_y = hint_y,
+        .frame = bird_fly_first_frame,
+        .facing_left = true,
+    };
+    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, bird_palette_bank) * 16], @ptrCast(&bird_palette_data), 16);
+    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, bird_hint_palette_bank) * 16], @ptrCast(&bird_hint_palette_data), 16);
+}
+
+fn holdPlayerForBridgeEnding(player: *Player) void {
+    player.vx = 0;
+    player.vy = 0;
+    player.dashes = 1;
+    player.dash_timer = 0;
+    player.dash_refill_cooldown_timer = 0;
+    player.grounded = false;
+    player.moving = false;
+    player.climbing = false;
+    player.wall_sliding = false;
+    player.climb_dangling = false;
+    if (player.animation != .fall) {
+        player.animation = .fall;
+        player.animation_timer = 0;
+    }
+}
+
+fn shouldStartEndLevelTransition(player: Player, room_index: usize) bool {
+    if (end_level_transition.phase != .inactive) return false;
+    if (!isPrologueEndRoom(room_index) or !bridge_ending.active or !bridge_ending.final_triggered) return false;
+    if (!bridge_ending_dash_started) return false;
+
+    return playerReachedBridgeEndingExitZone(player);
+}
+
+fn playerReachedBridgeEndingExitZone(player: Player) bool {
+    const player_left = fixedToPixel(player.x);
+    const player_top = fixedToPixel(player.y);
+    const player_bottom = player_top + player_body_height;
+    const player_center_x = fixedToPixel(player.x) + player_body_width / 2;
+    const platform = bridge_ending.platform;
+    const platform_bottom = platform.y + bridge_visual_height;
+    const dash_finished = player.dash_timer == 0;
+    const crosses_end_zone = player_center_x >= platform.x - 8 and
+        player_left <= platform.right() + 24;
+    const near_end_height = player_bottom >= platform.y - 64 and
+        player_top <= platform_bottom + 56;
+    return dash_finished and player.grounded and crosses_end_zone and near_end_height;
+}
+
+fn startEndLevelTransition(player: *Player, camera: Camera) void {
+    player.vx = 0;
+    player.vy = 0;
+    player.dashes = 1;
+    player.dash_timer = 0;
+    player.dash_cooldown_timer = 0;
+    player.dash_refill_cooldown_timer = 0;
+    player.moving = false;
+    player.climbing = false;
+    player.wall_sliding = false;
+    player.climb_dangling = false;
+    player.facing_left = false;
+    player.animation = .run;
+    player.animation_timer = 0;
+    clearDustParticles();
+    clearDashEffects();
+    bridge_collapse_shake_tick = 0;
+    hideObject(bird_object);
+    hideObject(bird_hint_object);
+    end_level_transition = .{
+        .phase = .walk,
+        .timer = 0,
+        .start_camera = camera,
+    };
+}
+
+fn updateEndLevelTransition(player: *Player, camera: *Camera, room_index: *usize, respawn: *Spawn, input: gba.input.BufferedKeysState) void {
+    const active_room_index = room_index.*;
+    switch (end_level_transition.phase) {
+        .inactive => {},
+        .walk => {
+            player.vx = end_level_walk_speed;
+            player.vy = 0;
+            player.moving = true;
+            player.facing_left = false;
+            player.grounded = true;
+            moveHorizontal(player, player.vx, active_room_index);
+            updatePlayerAnimation(player);
+            updateHair(player);
+            updateDashEffects();
+            updateWindSnow(active_room_index, camera.*);
+            foreground_anim_counter +%= 1;
+
+            const render_camera = updateCamera(player.*, active_room_index);
+            camera.* = render_camera;
+            frameSync();
+            drawEndLevelTransitionScene(player, render_camera, active_room_index);
+
+            if (end_level_transition.timer >= end_level_walk_frames) {
+                player.vx = 0;
+                player.moving = false;
+                end_level_transition.phase = .camera_up;
+                end_level_transition.timer = 0;
+                end_level_transition.start_camera = render_camera;
+            } else {
+                end_level_transition.timer += 1;
+            }
+        },
+        .camera_up => {
+            player.vx = 0;
+            player.vy = 0;
+            player.moving = false;
+            player.grounded = true;
+            updatePlayerAnimation(player);
+            updateHair(player);
+            updateDashEffects();
+            updateWindSnow(active_room_index, camera.*);
+            foreground_anim_counter +%= 1;
+
+            const room = rooms[active_room_index];
+            const progress = @min(end_level_transition.timer, end_level_camera_frames);
+            const lift: i16 = @intCast(@divTrunc(@as(u16, progress) * @as(u16, @intCast(end_level_camera_lift)), end_level_camera_frames));
+            const min_y = -end_level_camera_lift;
+            const max_y = room.height_pixels - screen_height;
+            const render_camera = Camera{
+                .x = end_level_transition.start_camera.x,
+                .y = clampI16(end_level_transition.start_camera.y - lift, min_y, max_y),
+            };
+            camera.* = render_camera;
+            frameSync();
+            drawEndLevelTransitionScene(player, render_camera, active_room_index);
+
+            if (end_level_transition.timer >= end_level_camera_frames) {
+                end_level_transition.phase = .black;
+                end_level_transition.timer = 0;
+                cutToBlackForOverworldTransition();
+            } else {
+                end_level_transition.timer += 1;
+            }
+        },
+        .black => {
+            frameSync();
+            if (end_level_transition.timer >= end_level_black_frames) {
+                loadOverworldScreen();
+                end_level_transition.phase = .overworld;
+                end_level_transition.timer = 0;
+            } else {
+                end_level_transition.timer += 1;
+            }
+        },
+        .overworld => {
+            if (input.isJustPressed(.A)) {
+                startLevelOneFromOverworld(player, camera, room_index, respawn);
+                return;
+            }
+            frameSync();
+        },
+    }
+}
+
+fn drawEndLevelTransitionScene(player: *Player, camera: Camera, room_index: usize) void {
+    applyCamera(camera);
+    updateParallaxBackground(camera, room_index);
+    drawForegroundStampObjects(camera);
+    drawFunnyCars(camera);
+    drawFallingBlockObjects(camera);
+    drawRoomWires(camera);
+    drawBridgeObjects(camera);
+    drawBirdNpc(camera);
+    drawGrannyNpc(camera, room_index);
+    drawTinyBirds(camera);
+    drawDashEffects(camera);
+    drawHair(player.*, camera);
+    drawDust(camera);
+    drawWindSnow(camera);
+    drawPlayer(player.*, camera);
+    drawSweat(player, camera);
+    drawCutsceneOverlay(camera, room_index);
+}
+
+fn cutToBlackForOverworldTransition() void {
+    gba.display.ctrl.bg0 = false;
+    gba.display.ctrl.bg1 = false;
+    gba.display.ctrl.obj = false;
+    gba.display.hideAllObjects();
+    gba.display.bg_palette.colors[0] = .black;
+}
+
+fn loadOverworldScreen() void {
+    bridge_active = false;
+    bridge_ending_hold = false;
+    bridge_ending_dash_started = false;
+    bridge_ending = .{};
+    clearDustParticles();
+    clearDashEffects();
+    hideWindSnowObjects();
+    hideChimneySmokeObjects();
+    hideBridgeObjects();
+    hideForegroundStampObjects();
+    hideRoomWires();
+    gba.display.hideAllObjects();
+    gba.display.ctrl.bg0 = false;
+    gba.display.ctrl.bg1 = false;
+    gba.display.ctrl.obj = false;
+    clearParallaxMap();
+    bg_stream_room_index = rooms.len;
+    parallax_stream_room_index = rooms.len;
+
+    gba.mem.memcpy(gba.display.bg_palette, @ptrCast(&overworld_bg_palette_data), overworld_bg_palette_data.len);
+    gba.display.memcpyBackgroundTiles8Bpp(0, @ptrCast(&overworld_bg_tiles_data));
+    drawOverworldMap();
+    gba.display.bg_scroll[0] = .init(0, 0);
+    gba.display.bg_scroll[1] = .init(0, 0);
+    gba.display.ctrl.bg0 = true;
+    gba.display.ctrl.bg1 = false;
+    gba.display.ctrl.obj = false;
+}
+
+fn startLevelOneFromOverworld(player: *Player, camera: *Camera, room_index: *usize, respawn: *Spawn) void {
+    if (level_one_room_index >= rooms.len) return;
+
+    gba.display.bg_palette.colors[0] = .black;
+    gba.display.ctrl.bg0 = false;
+    gba.display.ctrl.bg1 = false;
+    gba.display.ctrl.obj = false;
+    gba.display.hideAllObjects();
+    frameSync();
+
+    const target_room = level_one_room_index;
+    room_index.* = target_room;
+    respawn.* = rooms[target_room].spawn;
+    loadRoomBackground(target_room);
+    loadFallingBlocks(target_room);
+    loadForegroundStamps(target_room);
+    loadFunnyCars(target_room);
+    loadObjectSprites();
+    loadBridge(target_room);
+    loadBirdNpc(target_room);
+    loadTinyBirds(target_room);
+    loadRoomWires(target_room);
+    loadRoomParallax(target_room);
+    resetGrannyCutsceneOnRoomLoad();
+    clearDustParticles();
+    clearDashEffects();
+    player.* = spawnPlayer(target_room);
+    player.hair_initialized = false;
+    updateHair(player);
+    camera.* = updateCamera(player.*, target_room);
+    resetWindSnow(target_room, camera.*);
+    resetChimneySmoke(target_room);
+    applyCamera(camera.*);
+    updateParallaxBackground(camera.*, target_room);
+    drawForegroundStampObjects(camera.*);
+    drawFunnyCars(camera.*);
+    drawBridgeObjects(camera.*);
+    drawDashEffects(camera.*);
+    drawHair(player.*, camera.*);
+    drawDust(camera.*);
+    drawWindSnow(camera.*);
+    drawPlayer(player.*, camera.*);
+    drawSweat(player, camera.*);
+    drawFallingBlockObjects(camera.*);
+    drawChimneySmoke(camera.*, target_room);
+    drawRoomWires(camera.*);
+    drawBirdNpc(camera.*);
+    drawGrannyNpc(camera.*, target_room);
+    drawTinyBirds(camera.*);
+    drawCutsceneOverlay(camera.*, target_room);
+    end_level_transition = .{};
+    frameSync();
+    gba.display.ctrl.bg0 = true;
+    gba.display.ctrl.bg1 = rooms[target_room].parallax != null;
+    gba.display.ctrl.obj = true;
+}
+
+fn drawOverworldMap() void {
+    const entries: [*]volatile gba.display.Screenblock.Entry = @ptrCast(&gba.display.screenblocks[bg_screenblock].entries);
+    var index: usize = 0;
+    while (index < bg_hardware_width_tiles * bg_hardware_height_tiles) : (index += 1) {
+        entries[index] = @bitCast(@as(u16, 0));
+    }
+
+    var y: usize = 0;
+    while (y < overworld_height_tiles) : (y += 1) {
+        var x: usize = 0;
+        while (x < overworld_width_tiles) : (x += 1) {
+            const source_offset = (y * overworld_width_tiles + x) * 2;
+            const raw_entry = @as(u16, overworld_bg_map_data[source_offset]) |
+                (@as(u16, overworld_bg_map_data[source_offset + 1]) << 8);
+            entries[normalBgMapIndex(x, y, bg_hardware_width_tiles)] = @bitCast(raw_entry);
         }
     }
 }
@@ -1675,8 +3398,57 @@ fn triggerBridgeChunkRun(start_index: usize) void {
 fn triggerBridgeChunk(index: usize, delay: u8) void {
     const chunk = &bridge_chunks[index];
     if (chunk.state != .solid) return;
+    beginBridgeSequence();
     chunk.state = .shaking;
     chunk.timer = bridge_shake_frames + delay;
+}
+
+fn beginBridgeSequence() void {
+    if (bridge_sequence_started) return;
+    bridge_sequence_started = true;
+}
+
+fn updateBridgeCollapseShake(room_index: usize, player_grounded: bool) void {
+    if (player_grounded and bridgeCollapseShakeActive(room_index)) {
+        bridge_collapse_shake_tick +%= 1;
+    } else {
+        bridge_collapse_shake_tick = 0;
+    }
+}
+
+fn bridgeCollapseShakeActive(room_index: usize) bool {
+    if (!bridge_active or !isPrologueEndRoom(room_index) or !bridge_sequence_started) return false;
+    if (bridge_ending.final_triggered or bridge_ending_hold or bridge_ending_dash_started) return false;
+
+    var index: usize = 0;
+    while (index < bridge_chunk_count) : (index += 1) {
+        const state = bridge_chunks[index].state;
+        if (state == .shaking or state == .falling) return true;
+    }
+    return false;
+}
+
+fn triggerBridgeEndingPlatformEarly() void {
+    if (!bridge_ending.active or bridge_ending.final_triggered) return;
+    if (bridge_ending.start_index >= bridge_chunk_count or bridge_ending.end_index >= bridge_chunk_count) return;
+    bridge_ending.final_triggered = true;
+    var index: usize = bridge_ending.start_index;
+    while (index <= bridge_ending.end_index) : (index += 1) {
+        const chunk = &bridge_chunks[index];
+        if (chunk.state != .solid) continue;
+        chunk.state = .shaking;
+        chunk.timer = bridge_ending_early_shake_frames;
+    }
+}
+
+fn bridgeEndingTriggerActive(player: Player) bool {
+    if (!bridge_ending.active or bridge_ending.final_triggered) return false;
+    const player_left = fixedToPixel(player.x);
+    const player_top = fixedToPixel(player.y);
+    const player_right = player_left + player_body_width;
+    const player_bottom = player_top + player_body_height;
+    const trigger = bridge_ending.trigger;
+    return rectsOverlap(player_left, player_top, player_right, player_bottom, trigger.x, trigger.y, trigger.right(), trigger.bottom());
 }
 
 fn bridgeChunkIndexAtX(x: i16) ?usize {
@@ -1762,6 +3534,372 @@ fn movingBlockCrushesPlayer(player: Player, old_x: i16, old_y: i16, new_x: i16, 
 
 fn rectsOverlap(a_left: i16, a_top: i16, a_right: i16, a_bottom: i16, b_left: i16, b_top: i16, b_right: i16, b_bottom: i16) bool {
     return a_left < b_right and a_right > b_left and a_top < b_bottom and a_bottom > b_top;
+}
+
+fn updateGrannyCutscene(player: *Player, input: gba.input.BufferedKeysState, room_index: usize) bool {
+    const maybe_cutscene = rooms[room_index].granny_cutscene;
+    if (!granny_cutscene.active) {
+        if (maybe_cutscene) |cutscene| {
+            if (!granny_intro_done and playerOverlapsSceneRect(player.*, cutscene.trigger)) {
+                startGrannyCutscene(player, room_index);
+            }
+        }
+    }
+
+    if (!granny_cutscene.active) return false;
+    const cutscene = rooms[granny_cutscene.room_index].granny_cutscene orelse return false;
+    player.vx = 0;
+    player.vy = 0;
+    player.moving = false;
+    player.grounded = true;
+    player.climbing = false;
+    player.wall_sliding = false;
+    player.climb_dangling = false;
+    player.dash_timer = 0;
+    player.dash_cooldown_timer = 0;
+    granny_cutscene.madeline_speaker_x = fixedToPixel(player.x) + player_body_width / 2;
+    granny_cutscene.madeline_speaker_y = fixedToPixel(player.y) + player_body_height / 2;
+
+    switch (granny_cutscene.phase) {
+        .inactive => {},
+        .dialogue => {
+            updateGrannyDialogueReveal(cutscene);
+            updateGrannyCutsceneDialogue(input, cutscene);
+        },
+        .walk_talk => {
+            player.facing_left = false;
+            if (movePlayerTowardCutscenePoint(player, cutscene.madeline_talk, 1)) {
+                startGrannyDialogue(1);
+            }
+        },
+        .walk_edge => {
+            player.facing_left = false;
+            if (movePlayerTowardCutscenePoint(player, cutscene.madeline_edge, 1)) {
+                player.facing_left = true;
+                startGrannyDialogue(3);
+            }
+        },
+        .laugh_pause => {
+            player.facing_left = true;
+            if (granny_cutscene.laugh_pause_timer > 0) {
+                granny_cutscene.laugh_pause_timer -= 1;
+            } else {
+                startGrannyDialogue(4);
+            }
+        },
+    }
+
+    if (granny_cutscene.active) {
+        setGrannyCutsceneDarkened(granny_cutscene.room_index, grannyCutsceneOminousPage(cutscene));
+        if (granny_cutscene.shake_timer > 0) {
+            granny_cutscene.shake_timer -= 1;
+        }
+    }
+    return granny_cutscene.active;
+}
+
+fn startGrannyCutscene(player: *Player, room_index: usize) void {
+    _ = player;
+    granny_cutscene = .{
+        .active = true,
+        .room_index = room_index,
+    };
+    startGrannyDialogue(0);
+    clearDustParticles();
+    clearDashEffects();
+    hideCutsceneDialogueObjects();
+}
+
+fn resetGrannyCutsceneOnRoomLoad() void {
+    if (!granny_cutscene.active) return;
+    granny_cutscene = .{};
+    cutscene_bg_darkened = false;
+    hideCutsceneDialogueObjects();
+}
+
+fn updateGrannyCutsceneDialogue(input: gba.input.BufferedKeysState, cutscene: *const GrannyCutscene) void {
+    if (granny_cutscene.dialogue_index >= cutscene.dialogue.len) {
+        finishGrannyCutscene(cutscene);
+        return;
+    }
+    if (!(input.isJustPressed(.A) or input.isJustPressed(.B))) return;
+
+    const page = cutscene.dialogue[granny_cutscene.dialogue_index];
+    const page_end = wrappedTextNextOffset(page.text, granny_cutscene.dialogue_offset, cutscene_dialogue_text_max_chars, cutscene_dialogue_text_max_lines);
+    if (grannyDialogueUsesTypewriter(page.text) and granny_cutscene.dialogue_reveal_offset < page_end) {
+        revealGrannyDialogueTo(page.text, page_end);
+        return;
+    }
+
+    if (page_end < page.text.len) {
+        granny_cutscene.dialogue_offset = page_end;
+        granny_cutscene.rendered_dialogue_index = 255;
+        resetGrannyDialogueReveal(cutscene);
+        return;
+    }
+
+    const completed_page = granny_cutscene.dialogue_index;
+    if (completed_page == 0) {
+        granny_cutscene.phase = .walk_talk;
+        hideCutsceneDialogueObjects();
+        return;
+    }
+    if (completed_page == 2) {
+        granny_cutscene.phase = .walk_edge;
+        hideCutsceneDialogueObjects();
+        return;
+    }
+    if (completed_page == 3) {
+        granny_cutscene.phase = .laugh_pause;
+        granny_cutscene.laugh_pause_timer = cutscene_laugh_pause_frames;
+        hideCutsceneDialogueObjects();
+        startLaughTextBurst(cutscene, granny_cutscene.room_index, 3, false, false);
+        return;
+    }
+    const next_page = completed_page + 1;
+    if (next_page >= cutscene.dialogue.len) {
+        finishGrannyCutscene(cutscene);
+    } else {
+        startGrannyDialogue(next_page);
+    }
+}
+
+fn startGrannyDialogue(index: u8) void {
+    granny_cutscene.phase = .dialogue;
+    granny_cutscene.dialogue_index = index;
+    granny_cutscene.dialogue_offset = 0;
+    granny_cutscene.dialogue_next_offset = 0;
+    granny_cutscene.rendered_dialogue_index = 255;
+    granny_cutscene.rendered_dialogue_reveal_offset = 0xffff;
+    if (rooms[granny_cutscene.room_index].granny_cutscene) |cutscene| {
+        resetGrannyDialogueReveal(cutscene);
+    }
+}
+
+fn finishGrannyCutscene(cutscene: *const GrannyCutscene) void {
+    const room_index = granny_cutscene.room_index;
+    granny_intro_done = true;
+    setGrannyCutsceneDarkened(room_index, false);
+    granny_cutscene = .{};
+    hideCutsceneDialogueObjects();
+    startLaughTextBurst(cutscene, room_index, 0, true, true);
+}
+
+fn resetGrannyDialogueReveal(cutscene: *const GrannyCutscene) void {
+    if (granny_cutscene.dialogue_index >= cutscene.dialogue.len) return;
+    const page = cutscene.dialogue[granny_cutscene.dialogue_index];
+    const start = skipTextSpaces(page.text, granny_cutscene.dialogue_offset);
+    granny_cutscene.dialogue_reveal_offset = if (grannyDialogueUsesTypewriter(page.text)) start else page.text.len;
+    granny_cutscene.dialogue_reveal_timer = 0;
+    granny_cutscene.rendered_dialogue_index = 255;
+    granny_cutscene.rendered_dialogue_reveal_offset = 0xffff;
+    granny_cutscene.see_shake_started = false;
+}
+
+fn updateGrannyDialogueReveal(cutscene: *const GrannyCutscene) void {
+    if (granny_cutscene.dialogue_index >= cutscene.dialogue.len) return;
+    const page = cutscene.dialogue[granny_cutscene.dialogue_index];
+    if (!grannyDialogueUsesTypewriter(page.text)) {
+        granny_cutscene.dialogue_reveal_offset = page.text.len;
+        return;
+    }
+
+    const target = wrappedTextNextOffset(page.text, granny_cutscene.dialogue_offset, cutscene_dialogue_text_max_chars, cutscene_dialogue_text_max_lines);
+    if (granny_cutscene.dialogue_reveal_offset < granny_cutscene.dialogue_offset) {
+        granny_cutscene.dialogue_reveal_offset = skipTextSpaces(page.text, granny_cutscene.dialogue_offset);
+    }
+    if (granny_cutscene.dialogue_reveal_offset >= target) return;
+
+    granny_cutscene.dialogue_reveal_timer +%= 1;
+    if (granny_cutscene.dialogue_reveal_timer < cutscene_ominous_reveal_interval_frames) return;
+    granny_cutscene.dialogue_reveal_timer = 0;
+
+    const old_offset = granny_cutscene.dialogue_reveal_offset;
+    const new_offset = advanceTextRevealByWords(page.text, old_offset, target, cutscene_ominous_words_per_tick);
+    revealGrannyDialogueTo(page.text, new_offset);
+}
+
+fn revealGrannyDialogueTo(text: []const u8, offset: usize) void {
+    const old_offset = granny_cutscene.dialogue_reveal_offset;
+    granny_cutscene.dialogue_reveal_offset = offset;
+    maybeTriggerSeeShake(text, old_offset, offset);
+    granny_cutscene.rendered_dialogue_index = 255;
+}
+
+fn maybeTriggerSeeShake(text: []const u8, old_offset: usize, new_offset: usize) void {
+    if (granny_cutscene.see_shake_started) return;
+    const phrase_start = findSubstring(text, "see things") orelse return;
+    const see_end = phrase_start + 3;
+    if (old_offset < see_end and new_offset >= see_end) {
+        granny_cutscene.shake_timer = cutscene_ominous_shake_frames;
+        granny_cutscene.see_shake_started = true;
+    }
+}
+
+fn grannyCutsceneOminousPage(cutscene: *const GrannyCutscene) bool {
+    if (granny_cutscene.phase == .laugh_pause) return true;
+    if (granny_cutscene.phase != .dialogue or granny_cutscene.dialogue_index >= cutscene.dialogue.len) return false;
+    return granny_cutscene.dialogue_index >= 3 or grannyDialogueUsesTypewriter(cutscene.dialogue[granny_cutscene.dialogue_index].text);
+}
+
+fn grannyDialogueUsesTypewriter(text: []const u8) bool {
+    return textContains(text, "strange place") or
+        textContains(text, "see things") or
+        textContains(text, "ready to see");
+}
+
+fn playerOverlapsSceneRect(player: Player, rect: SceneRect) bool {
+    const left = fixedToPixel(player.x);
+    const top = fixedToPixel(player.y);
+    return rectsOverlap(left, top, left + player_body_width, top + player_body_height, rect.x, rect.y, rect.right(), rect.bottom());
+}
+
+fn movePlayerTowardCutscenePoint(player: *Player, point: Spawn, speed: i16) bool {
+    const target = cutscenePlayerTarget(point);
+    const x = fixedToPixel(player.x);
+    const y = fixedToPixel(player.y);
+    const dx = target.x - x;
+    const dy = target.y - y;
+    if (absI16(dx) <= speed and absI16(dy) <= speed) {
+        player.x = pixelToFixed(target.x);
+        player.y = pixelToFixed(target.y);
+        player.moving = false;
+        return true;
+    }
+    player.x = pixelToFixed(x + signI16(dx) * @min(absI16(dx), speed));
+    player.y = pixelToFixed(y + signI16(dy) * @min(absI16(dy), speed));
+    player.moving = dx != 0;
+    return false;
+}
+
+fn cutscenePlayerTarget(point: Spawn) Spawn {
+    return .{
+        .x = point.x - player_body_width / 2,
+        .y = point.y - player_body_height,
+    };
+}
+
+fn startLaughTextBurst(cutscene: *const GrannyCutscene, source_room_index: usize, emit_total: u8, follow_camera: bool, continuous: bool) void {
+    const room = rooms[source_room_index];
+    laugh_text = .{
+        .active = true,
+        .room_index = source_room_index,
+        .start_x = room.world_x + cutscene.laugh_start.x,
+        .start_y = room.world_y + cutscene.laugh_start.y,
+        .end_x = room.world_x + cutscene.laugh_end.x,
+        .end_y = room.world_y + cutscene.laugh_end.y,
+        .timer = 0,
+        .emitted = 0,
+        .emit_total = emit_total,
+        .follow_camera = follow_camera,
+        .continuous = continuous,
+        .particles = [_]LaughHaParticle{.{}} ** cutscene_laugh_object_count,
+    };
+    loadLaughHaTiles();
+    spawnInitialLaughHaParticles();
+}
+
+fn updateLaughText(room_index: usize, camera: Camera) void {
+    if (!laugh_text.active) return;
+    if (laugh_text.follow_camera and laugh_text.room_index != room_index) {
+        retargetLaughTextToView(room_index, camera);
+    }
+    laugh_text.timer +%= 1;
+
+    var any_active = false;
+    var index: usize = 0;
+    while (index < cutscene_laugh_object_count) : (index += 1) {
+        var particle = &laugh_text.particles[index];
+        if (!particle.active) continue;
+        any_active = true;
+        particle.age += 1;
+        particle.vy += particle.ay;
+        particle.x += particle.vx;
+        particle.y += particle.vy;
+        if (particle.age >= cutscene_laugh_life_frames) {
+            particle.active = false;
+        }
+    }
+
+    if ((laugh_text.continuous or laugh_text.emitted < laugh_text.emit_total) and laugh_text.timer % cutscene_laugh_emit_every_frames == 0) {
+        spawnLaughHaParticle();
+    }
+
+    if (!laugh_text.continuous and !any_active and laugh_text.emitted >= laugh_text.emit_total) {
+        laugh_text.active = false;
+        hideCutsceneLaughObjects();
+    }
+}
+
+fn handleLaughTextRoomTransition(from_room: usize, to_room: usize) void {
+    if (!granny_intro_done or !laugh_text.active) return;
+    if (from_room == granny_scene_room_index and to_room != granny_laugh_carry_room_index) {
+        stopLaughText();
+    }
+}
+
+fn stopLaughText() void {
+    laugh_text = .{};
+    hideCutsceneLaughObjects();
+}
+
+fn retargetLaughTextToView(room_index: usize, camera: Camera) void {
+    const room = rooms[room_index];
+    laugh_text.room_index = room_index;
+    laugh_text.start_x = room.world_x + camera.x + 4;
+    laugh_text.start_y = room.world_y + camera.y + 28;
+    laugh_text.end_x = laugh_text.start_x + 96;
+    laugh_text.end_y = laugh_text.start_y - 12;
+    laugh_text.timer = 0;
+    laugh_text.emitted = 0;
+    laugh_text.emit_total = 0;
+    laugh_text.particles = [_]LaughHaParticle{.{}} ** cutscene_laugh_object_count;
+    loadLaughHaTiles();
+    spawnInitialLaughHaParticles();
+}
+
+fn spawnInitialLaughHaParticles() void {
+    if (laugh_text.continuous or laugh_text.emitted < laugh_text.emit_total) {
+        spawnLaughHaParticle();
+    }
+}
+
+fn spawnLaughHaParticle() void {
+    const slot = firstFreeLaughHaParticle() orelse return;
+    const seed = laugh_text.emitted;
+    laugh_text.particles[slot] = .{
+        .active = true,
+        .x = pixelToFixed(laugh_text.start_x),
+        .y = pixelToFixed(laugh_text.start_y),
+        .vx = cutscene_laugh_vx + @as(i32, @intCast(seed % 3)) * 0x08,
+        .vy = cutscene_laugh_vy - @as(i32, @intCast((seed + 1) % 3)) * 0x04,
+        .ay = cutscene_laugh_ay,
+        .age = 0,
+        .seed = seed,
+    };
+    laugh_text.emitted += 1;
+}
+
+fn firstFreeLaughHaParticle() ?usize {
+    var index: usize = 0;
+    while (index < cutscene_laugh_object_count) : (index += 1) {
+        if (!laugh_text.particles[index].active) return index;
+    }
+    return null;
+}
+
+fn laughBob(tick: u8) i16 {
+    const phase = tick & 15;
+    if (phase < 4) return -1;
+    if (phase < 8) return -3;
+    if (phase < 12) return -2;
+    return 0;
+}
+
+fn loadLaughHaTiles() void {
+    if (cutscene_laugh_tiles_loaded) return;
+    gba.display.memcpyObjectTiles4Bpp(cutscene_laugh_base_tile, @ptrCast(&granny_haha_tiles_data));
+    cutscene_laugh_tiles_loaded = true;
 }
 
 fn wallSlideContact(player: Player, horizontal: i16, room_index: usize) bool {
@@ -1868,15 +4006,96 @@ fn playerInDeathPit(player: Player, room_index: usize) bool {
     return fixedToPixel(player.y) > room.height_pixels + 8;
 }
 
-fn beginPlayerDeath(death_timer: *u8, player: Player) void {
+fn playerTouchingSpike(player: Player, room_index: usize) bool {
+    return spikeRectAt(
+        fixedToPixel(player.x),
+        fixedToPixel(player.y),
+        player_body_width,
+        player_body_height,
+        room_index,
+    );
+}
+
+fn beginPlayerDeath(death_timer: *u8, player: Player, room_index: usize, camera: Camera, cause: PlayerDeathCause) void {
+    _ = room_index;
+    if (granny_intro_done and laugh_text.active) {
+        stopLaughText();
+    }
     death_timer.* = player_death_anim_frames;
     death_origin_x = player.x + (player_body_width / 2) * fixed_one;
     death_origin_y = player.y + (player_body_height / 2) * fixed_one;
+    death_player_x = player.x;
+    death_player_y = player.y;
+    death_player_facing_left = player.facing_left;
+    death_intro_offset_x = 0;
+    death_intro_offset_y = 0;
+    if (cause == .fall_down) {
+        death_intro_first_frame = 0;
+        death_intro_frame_count = 0;
+        death_intro_total_frames = 0;
+    } else {
+        const death_intro = selectPlayerDeathIntro(player, cause);
+        death_intro_first_frame = death_intro.first_frame;
+        death_intro_frame_count = death_intro.frame_count;
+        death_intro_total_frames = playerDeathIntroTotalFrames(death_intro.frame_count);
+        if (death_intro.frame_count != 0) {
+            const offset = deathIntroScreenCenterOffset(player, camera);
+            death_intro_offset_x = @as(i32, offset.x) << fixed_shift;
+            death_intro_offset_y = @as(i32, offset.y) << fixed_shift;
+            death_origin_x += death_intro_offset_x;
+            death_origin_y += death_intro_offset_y;
+        }
+    }
     hideObject(player_object);
     hideObject(hair_root_object);
     hideObject(hair_object);
     hideObject(sweat_object);
     clearDustParticles();
+    clearDashEffects();
+}
+
+fn deathIntroScreenCenterOffset(player: Player, camera: Camera) struct { x: i16, y: i16 } {
+    const player_center_x = fixedToPixel(player.x) + player_body_width / 2 - camera.x;
+    const player_center_y = fixedToPixel(player.y) + player_body_height / 2 - camera.y;
+    const to_center_x: i16 = screen_width / 2 - player_center_x;
+    const to_center_y: i16 = screen_height / 2 - player_center_y;
+    const max_component = maxI16(absI16(to_center_x), absI16(to_center_y));
+    if (max_component == 0) return .{ .x = 0, .y = -player_death_intro_travel_pixels };
+
+    const travel = @min(max_component, player_death_intro_travel_pixels);
+    return .{
+        .x = @intCast(@divTrunc(@as(i32, to_center_x) * travel, max_component)),
+        .y = @intCast(@divTrunc(@as(i32, to_center_y) * travel, max_component)),
+    };
+}
+
+fn selectPlayerDeathIntro(player: Player, cause: PlayerDeathCause) PlayerDeathIntro {
+    if (cause == .fall_down and player_deadown_frame_count != 0) {
+        return .{ .first_frame = player_deadown_first_frame, .frame_count = player_deadown_frame_count };
+    }
+    if (player.vy < -fixed_one and player_deathup_frame_count != 0) {
+        return .{ .first_frame = player_deathup_first_frame, .frame_count = player_deathup_frame_count };
+    }
+    if (absI32(player.vx) > fixed_one and player_deathside_frame_count != 0) {
+        death_player_facing_left = player.vx < 0;
+        return .{ .first_frame = player_deathside_first_frame, .frame_count = player_deathside_frame_count };
+    }
+    if (player_deadown_frame_count != 0) {
+        return .{ .first_frame = player_deadown_first_frame, .frame_count = player_deadown_frame_count };
+    }
+    if (player_deathside_frame_count != 0) {
+        return .{ .first_frame = player_deathside_first_frame, .frame_count = player_deathside_frame_count };
+    }
+    if (player_deathup_frame_count != 0) {
+        return .{ .first_frame = player_deathup_first_frame, .frame_count = player_deathup_frame_count };
+    }
+    return .{ .first_frame = 0, .frame_count = 0 };
+}
+
+fn playerDeathIntroTotalFrames(frame_count: u16) u8 {
+    if (frame_count == 0) return 0;
+    const total = frame_count * player_death_intro_frame_hold;
+    return @intCast(@min(@as(u16, player_death_intro_max_frames), total));
 }
 
 fn updateCamera(player: Player, room_index: usize) Camera {
@@ -1894,7 +4113,62 @@ fn applyCamera(camera: Camera) void {
     gba.display.bg_scroll[0] = .init(@intCast(camera.x), @intCast(camera.y));
 }
 
+fn renderCameraWithCutsceneShake(camera: Camera, room_index: usize) Camera {
+    if ((!granny_cutscene.active or granny_cutscene.shake_timer == 0) and bridge_collapse_shake_tick == 0) return camera;
+    const room = rooms[room_index];
+    var offset_x: i16 = 0;
+    var offset_y: i16 = 0;
+    if (granny_cutscene.active and granny_cutscene.shake_timer > 0) {
+        const offset = cutsceneShakeOffset(granny_cutscene.shake_timer);
+        offset_x += offset.x;
+        offset_y += offset.y;
+    }
+    if (bridge_collapse_shake_tick > 0) {
+        const offset = bridgeCollapseShakeOffset(bridge_collapse_shake_tick);
+        offset_x += offset.x;
+        offset_y += offset.y;
+    }
+    return .{
+        .x = clampI16(camera.x + offset_x, 0, room.width_pixels - screen_width),
+        .y = clampI16(camera.y + offset_y, 0, room.height_pixels - screen_height),
+    };
+}
+
+fn cutsceneShakeOffset(timer: u8) Spawn {
+    return switch (timer & 7) {
+        0 => .{ .x = 2, .y = 0 },
+        1 => .{ .x = -2, .y = 1 },
+        2 => .{ .x = 1, .y = -1 },
+        3 => .{ .x = -1, .y = 0 },
+        4 => .{ .x = 2, .y = 1 },
+        5 => .{ .x = -1, .y = -1 },
+        6 => .{ .x = 1, .y = 0 },
+        else => .{ .x = 0, .y = 0 },
+    };
+}
+
+fn bridgeCollapseShakeOffset(timer: u8) Spawn {
+    return switch (timer & 7) {
+        0 => .{ .x = 1, .y = 0 },
+        1 => .{ .x = -1, .y = 0 },
+        2 => .{ .x = 0, .y = -1 },
+        3 => .{ .x = -1, .y = 1 },
+        4 => .{ .x = 1, .y = 0 },
+        5 => .{ .x = 0, .y = -1 },
+        6 => .{ .x = 1, .y = 1 },
+        else => .{ .x = 0, .y = 0 },
+    };
+}
+
 fn streamRoomBackground(room_index: usize, camera: Camera) void {
+    const room = rooms[room_index];
+    if (roomFitsHardwareBackground(room)) {
+        if (bg_stream_room_index != room_index or bg_stream_tile_x != 0 or bg_stream_tile_y != 0) {
+            streamRoomBackgroundFull(room_index, 0, 0);
+        }
+        return;
+    }
+
     const tile_x = @divTrunc(camera.x, 8);
     const tile_y = @divTrunc(camera.y, 8);
     if (bg_stream_room_index != room_index) {
@@ -1927,6 +4201,10 @@ fn streamRoomBackground(room_index: usize, camera: Camera) void {
     bg_stream_tile_y = tile_y;
 }
 
+fn roomFitsHardwareBackground(room: RoomBackground) bool {
+    return room.width_tiles <= bg_hardware_width_tiles and room.height_tiles <= bg_hardware_height_tiles;
+}
+
 fn streamRoomBackgroundFull(room_index: usize, source_tile_x: i16, source_tile_y: i16) void {
     const room = rooms[room_index];
     const entries: [*]volatile gba.display.Screenblock.Entry = @ptrCast(&gba.display.screenblocks[bg_screenblock].entries);
@@ -1946,6 +4224,9 @@ fn streamRoomBackgroundFull(room_index: usize, source_tile_x: i16, source_tile_y
     bg_stream_room_index = room_index;
     bg_stream_tile_x = source_tile_x;
     bg_stream_tile_y = source_tile_y;
+    if (source_tile_x == 0 and source_tile_y == 0 and roomFitsHardwareBackground(room)) {
+        stampStaticRoomWires(room_index);
+    }
 }
 
 fn streamRoomBackgroundColumn(room_index: usize, src_x: i16, source_tile_y: i16) void {
@@ -1974,6 +4255,126 @@ fn streamRoomBackgroundRow(room_index: usize, source_tile_x: i16, src_y: i16) vo
     }
 }
 
+fn stampStaticRoomWires(room_index: usize) void {
+    const room = rooms[room_index];
+    const data = room.wires;
+    if (data.len < 2 or room.wire_tiles.len == 0) return;
+    if (!canStampStaticRoomWires(room_index)) return;
+
+    const room_tile_count = room.tiles.len / 64;
+    const tile_capacity = staticWireTileCapacity(room);
+    if (room_tile_count >= tile_capacity) return;
+
+    const entries: [*]volatile gba.display.Screenblock.Entry = @ptrCast(&gba.display.screenblocks[bg_screenblock].entries);
+    const count = @min(readU16Le(data, 0), max_wire_chunks);
+    var output_tile_count: usize = 0;
+    var offset: usize = 2;
+    var index: usize = 0;
+    while (index < count and offset + 8 <= data.len and output_tile_count + 4 <= static_wire_bg_max_tiles and room_tile_count + output_tile_count + 4 <= tile_capacity) : ({
+        index += 1;
+        offset += 8;
+    }) {
+        const wire_x = readI16Le(data, offset);
+        const wire_y = readI16Le(data, offset + 2);
+        if (wire_x < 0 or wire_y < 0) continue;
+
+        const tile_x: usize = @intCast(@divTrunc(wire_x, 8));
+        const tile_y: usize = @intCast(@divTrunc(wire_y, 8));
+        if (tile_y >= room.height_tiles or tile_x >= room.width_tiles) continue;
+
+        const wire_tile_offset = readU16Le(data, offset + 4);
+        var part: usize = 0;
+        while (part < 4 and tile_x + part < room.width_tiles) : (part += 1) {
+            const map_x = tile_x + part;
+            const raw_entry = logicalRoomMapEntry(room, @intCast(map_x), @intCast(tile_y));
+            const source_tile = raw_entry & 0x03ff;
+            if (@as(usize, source_tile) * 64 + 63 >= room.tiles.len) continue;
+
+            composeStaticWireTile(room, raw_entry, @as(usize, wire_tile_offset) + part, output_tile_count);
+            const new_tile: u16 = @intCast(room_tile_count + output_tile_count);
+            entries[normalBgMapIndex(map_x, tile_y, bg_hardware_width_tiles)] = @bitCast((raw_entry & 0xf000) | new_tile);
+            output_tile_count += 1;
+        }
+    }
+
+    if (output_tile_count != 0) {
+        gba.display.memcpyTiles8Bpp(0, @intCast(room_tile_count), static_wire_bg_tiles[0..output_tile_count]);
+    }
+}
+
+fn canStampStaticRoomWires(room_index: usize) bool {
+    const room = rooms[room_index];
+    if (!roomFitsHardwareBackground(room) or room.wires.len < 2 or room.wire_tiles.len == 0) return false;
+
+    const output_tile_count = staticWireOutputTileCount(room);
+    if (output_tile_count == 0 or output_tile_count > static_wire_bg_max_tiles) return false;
+    return room.tiles.len / 64 + output_tile_count <= staticWireTileCapacity(room);
+}
+
+fn staticWireTileCapacity(room: RoomBackground) usize {
+    const first_reserved_screenblock: usize = if (room.parallax != null)
+        @min(@as(usize, bg_screenblock), @as(usize, parallax_screenblock))
+    else
+        @as(usize, bg_screenblock);
+    return (first_reserved_screenblock * 2048) / 64;
+}
+
+fn staticWireOutputTileCount(room: RoomBackground) usize {
+    const data = room.wires;
+    const count = @min(readU16Le(data, 0), max_wire_chunks);
+    var output_tile_count: usize = 0;
+    var offset: usize = 2;
+    var index: usize = 0;
+    while (index < count and offset + 8 <= data.len) : ({
+        index += 1;
+        offset += 8;
+    }) {
+        const wire_x = readI16Le(data, offset);
+        const wire_y = readI16Le(data, offset + 2);
+        if (wire_x < 0 or wire_y < 0) continue;
+
+        const tile_x: usize = @intCast(@divTrunc(wire_x, 8));
+        const tile_y: usize = @intCast(@divTrunc(wire_y, 8));
+        if (tile_y >= room.height_tiles or tile_x >= room.width_tiles) continue;
+
+        var part: usize = 0;
+        while (part < 4 and tile_x + part < room.width_tiles) : (part += 1) {
+            const raw_entry = logicalRoomMapEntry(room, @intCast(tile_x + part), @intCast(tile_y));
+            const source_tile = raw_entry & 0x03ff;
+            if (@as(usize, source_tile) * 64 + 63 >= room.tiles.len) continue;
+            output_tile_count += 1;
+        }
+    }
+    return output_tile_count;
+}
+
+fn composeStaticWireTile(room: RoomBackground, raw_entry: u16, wire_tile_index: usize, output_tile_index: usize) void {
+    const source_tile = @as(usize, raw_entry & 0x03ff);
+    const hflip = (raw_entry & 0x0400) != 0;
+    const vflip = (raw_entry & 0x0800) != 0;
+
+    var y: usize = 0;
+    while (y < 8) : (y += 1) {
+        var x: usize = 0;
+        while (x < 8) : (x += 1) {
+            const source_x = if (hflip) 7 - x else x;
+            const source_y = if (vflip) 7 - y else y;
+            var color = room.tiles[source_tile * 64 + source_y * 8 + source_x];
+            if (wireTilePixel(wire_tile_index, x, y, room.wire_tiles) != 0) {
+                color = static_wire_bg_color_index;
+            }
+            static_wire_bg_tiles[output_tile_index].pixels[y * 8 + x] = color;
+        }
+    }
+}
+
+fn wireTilePixel(tile_index: usize, x: usize, y: usize, tiles: []align(4) const u8) u8 {
+    const byte_offset = tile_index * 32 + y * 4 + x / 2;
+    if (byte_offset >= tiles.len) return 0;
+    const byte = tiles[byte_offset];
+    return if ((x & 1) == 0) byte & 0x0f else byte >> 4;
+}
+
 fn logicalRoomMapEntry(room: RoomBackground, x: i16, y: i16) u16 {
     if (x < 0 or y < 0) return 0;
     const ux: usize = @intCast(x);
@@ -1982,6 +4383,107 @@ fn logicalRoomMapEntry(room: RoomBackground, x: i16, y: i16) u16 {
     const offset = (uy * room.width_tiles + ux) * 2;
     if (offset + 1 >= room.map.len) return 0;
     return @as(u16, room.map[offset]) | (@as(u16, room.map[offset + 1]) << 8);
+}
+
+fn streamParallaxBackground(room_index: usize, parallax: ParallaxLayer, scroll_x: i16, scroll_y: i16) void {
+    const tile_x = @divTrunc(scroll_x, 8);
+    const tile_y = @divTrunc(scroll_y, 8);
+    if (parallax_stream_room_index != room_index) {
+        streamParallaxBackgroundFull(room_index, parallax, tile_x, tile_y);
+        return;
+    }
+
+    const delta_x = tile_x - parallax_stream_tile_x;
+    const delta_y = tile_y - parallax_stream_tile_y;
+    if (delta_x == 0 and delta_y == 0) return;
+    if (delta_x < -1 or delta_x > 1 or delta_y < -1 or delta_y > 1) {
+        streamParallaxBackgroundFull(room_index, parallax, tile_x, tile_y);
+        return;
+    }
+
+    if (delta_x > 0) {
+        streamParallaxBackgroundColumn(parallax, tile_x + @as(i16, @intCast(parallax_hardware_width_tiles - 1)), tile_y);
+    } else if (delta_x < 0) {
+        streamParallaxBackgroundColumn(parallax, tile_x, tile_y);
+    }
+
+    if (delta_y > 0) {
+        streamParallaxBackgroundRow(parallax, tile_x, tile_y + @as(i16, @intCast(parallax_hardware_height_tiles - 1)));
+    } else if (delta_y < 0) {
+        streamParallaxBackgroundRow(parallax, tile_x, tile_y);
+    }
+
+    parallax_stream_room_index = room_index;
+    parallax_stream_tile_x = tile_x;
+    parallax_stream_tile_y = tile_y;
+}
+
+fn streamParallaxBackgroundFull(room_index: usize, parallax: ParallaxLayer, source_tile_x: i16, source_tile_y: i16) void {
+    const entries: [*]volatile gba.display.Screenblock.Entry = @ptrCast(&gba.display.screenblocks[parallax_screenblock].entries);
+    var dest_y: usize = 0;
+    while (dest_y < parallax_hardware_height_tiles) : (dest_y += 1) {
+        const src_y = source_tile_y + @as(i16, @intCast(dest_y));
+        var dest_x: usize = 0;
+        while (dest_x < parallax_hardware_width_tiles) : (dest_x += 1) {
+            const src_x = source_tile_x + @as(i16, @intCast(dest_x));
+            const raw_entry = logicalParallaxMapEntry(parallax, src_x, src_y);
+            const adjusted_entry = adjustParallaxMapEntry(raw_entry);
+            const hardware_x = wrapTileIndex(src_x, parallax_hardware_width_tiles);
+            const hardware_y = wrapTileIndex(src_y, parallax_hardware_height_tiles);
+            entries[normalBgMapIndex(hardware_x, hardware_y, parallax_hardware_width_tiles)] = @bitCast(adjusted_entry);
+        }
+    }
+    parallax_stream_room_index = room_index;
+    parallax_stream_tile_x = source_tile_x;
+    parallax_stream_tile_y = source_tile_y;
+}
+
+fn streamParallaxBackgroundColumn(parallax: ParallaxLayer, src_x: i16, source_tile_y: i16) void {
+    const entries: [*]volatile gba.display.Screenblock.Entry = @ptrCast(&gba.display.screenblocks[parallax_screenblock].entries);
+    const hardware_x = wrapTileIndex(src_x, parallax_hardware_width_tiles);
+    var offset_y: usize = 0;
+    while (offset_y < parallax_hardware_height_tiles) : (offset_y += 1) {
+        const src_y = source_tile_y + @as(i16, @intCast(offset_y));
+        const hardware_y = wrapTileIndex(src_y, parallax_hardware_height_tiles);
+        const raw_entry = logicalParallaxMapEntry(parallax, src_x, src_y);
+        const adjusted_entry = adjustParallaxMapEntry(raw_entry);
+        entries[normalBgMapIndex(hardware_x, hardware_y, parallax_hardware_width_tiles)] = @bitCast(adjusted_entry);
+    }
+}
+
+fn streamParallaxBackgroundRow(parallax: ParallaxLayer, source_tile_x: i16, src_y: i16) void {
+    const entries: [*]volatile gba.display.Screenblock.Entry = @ptrCast(&gba.display.screenblocks[parallax_screenblock].entries);
+    const hardware_y = wrapTileIndex(src_y, parallax_hardware_height_tiles);
+    var offset_x: usize = 0;
+    while (offset_x < parallax_hardware_width_tiles) : (offset_x += 1) {
+        const src_x = source_tile_x + @as(i16, @intCast(offset_x));
+        const hardware_x = wrapTileIndex(src_x, parallax_hardware_width_tiles);
+        const raw_entry = logicalParallaxMapEntry(parallax, src_x, src_y);
+        const adjusted_entry = adjustParallaxMapEntry(raw_entry);
+        entries[normalBgMapIndex(hardware_x, hardware_y, parallax_hardware_width_tiles)] = @bitCast(adjusted_entry);
+    }
+}
+
+fn logicalParallaxMapEntry(parallax: ParallaxLayer, x: i16, y: i16) u16 {
+    if (x < 0 or y < 0) return 0;
+    const ux: usize = @intCast(x);
+    const uy: usize = @intCast(y);
+    if (ux >= parallax.width_tiles or uy >= parallax.height_tiles) return 0;
+    const offset = (uy * parallax.width_tiles + ux) * 2;
+    if (offset + 1 >= parallax.map.len) return 0;
+    return @as(u16, parallax.map[offset]) | (@as(u16, parallax.map[offset + 1]) << 8);
+}
+
+fn adjustParallaxMapEntry(entry: u16) u16 {
+    return (entry & 0xFC00) | (((entry & 0x03FF) + parallax_tile_offset) & 0x03FF);
+}
+
+fn clearParallaxMap() void {
+    const entries: [*]volatile gba.display.Screenblock.Entry = @ptrCast(&gba.display.screenblocks[parallax_screenblock].entries);
+    var index: usize = 0;
+    while (index < 1024) : (index += 1) {
+        entries[index] = @bitCast(@as(u16, 0));
+    }
 }
 
 fn normalBgMapIndex(x: usize, y: usize, map_width_tiles: usize) usize {
@@ -1997,6 +4499,477 @@ fn wrapTileIndex(value: i16, comptime modulo: usize) usize {
     return @intCast(wrapped);
 }
 
+fn drawCutsceneOverlay(camera: Camera, room_index: usize) void {
+    if (granny_cutscene.active and granny_cutscene.room_index == room_index and granny_cutscene.phase == .dialogue) {
+        if (rooms[room_index].granny_cutscene) |cutscene| {
+            renderCutsceneDialogueTiles(cutscene);
+            drawCutsceneDialogueObjects(camera, cutscene);
+        }
+    } else {
+        hideCutsceneDialogueObjects();
+    }
+
+    drawLaughText(camera, room_index);
+}
+
+fn renderCutsceneDialogueTiles(cutscene: *const GrannyCutscene) void {
+    if (granny_cutscene.dialogue_index >= cutscene.dialogue.len) return;
+    const page = cutscene.dialogue[granny_cutscene.dialogue_index];
+    const page_end = wrappedTextNextOffset(page.text, granny_cutscene.dialogue_offset, cutscene_dialogue_text_max_chars, cutscene_dialogue_text_max_lines);
+    const reveal_end = if (grannyDialogueUsesTypewriter(page.text))
+        @min(granny_cutscene.dialogue_reveal_offset, page_end)
+    else
+        page_end;
+    if (granny_cutscene.rendered_dialogue_index == granny_cutscene.dialogue_index and
+        granny_cutscene.rendered_dialogue_offset == granny_cutscene.dialogue_offset and
+        granny_cutscene.rendered_dialogue_reveal_offset == reveal_end)
+    {
+        return;
+    }
+
+    clearCutsceneDialogueTiles();
+    drawCutsceneBox();
+    drawTextLine(page.speaker, 6, 4, speakerNameColor(page.speaker));
+    granny_cutscene.dialogue_next_offset = page_end;
+    drawWrappedTextUntil(page.text, granny_cutscene.dialogue_offset, reveal_end, 6, 17, cutscene_dialogue_text_max_chars, cutscene_dialogue_text_max_lines, 1);
+    gba.display.memcpyObjectTiles4Bpp(cutscene_dialogue_base_tile, &cutscene_dialogue_tiles);
+    granny_cutscene.rendered_dialogue_index = granny_cutscene.dialogue_index;
+    granny_cutscene.rendered_dialogue_offset = granny_cutscene.dialogue_offset;
+    granny_cutscene.rendered_dialogue_reveal_offset = reveal_end;
+}
+
+fn drawCutsceneDialogueObjects(camera: Camera, cutscene: *const GrannyCutscene) void {
+    const position = Spawn{
+        .x = clampI16(cutscene.dialogue_box.x - camera.x, 0, screen_width - cutscene_dialogue_width),
+        .y = clampI16(cutscene.dialogue_box.y - camera.y, 0, screen_height - cutscene_dialogue_height),
+    };
+    var row: usize = 0;
+    while (row < cutscene_dialogue_rows) : (row += 1) {
+        var col: usize = 0;
+        while (col < cutscene_dialogue_cols) : (col += 1) {
+            const object_index = cutscene_dialogue_first_object + row * cutscene_dialogue_cols + col;
+            const tile_index: u10 = @intCast((row * cutscene_dialogue_cols + col) * cutscene_dialogue_tiles_per_object);
+            gba.display.objects[object_index] = gba.display.Object.init(.{
+                .size = .size_32x16,
+                .x = objX(position.x + @as(i16, @intCast(col * 32))),
+                .y = objY(position.y + @as(i16, @intCast(row * 16))),
+                .base_tile = cutscene_dialogue_base_tile + tile_index,
+                .priority = 0,
+                .palette = cutscene_dialogue_palette_bank,
+            });
+        }
+    }
+    cutscene_dialogue_visible = true;
+}
+
+fn speakerNameColor(speaker: []const u8) u8 {
+    if (textStartsWith(speaker, "Madeline")) return cutscene_dialogue_madeline_name_color;
+    if (textStartsWith(speaker, "Old") or textStartsWith(speaker, "Granny")) return cutscene_dialogue_granny_name_color;
+    return cutscene_dialogue_default_name_color;
+}
+
+fn textStartsWith(text: []const u8, prefix: []const u8) bool {
+    if (text.len < prefix.len) return false;
+    var index: usize = 0;
+    while (index < prefix.len) : (index += 1) {
+        if (text[index] != prefix[index]) return false;
+    }
+    return true;
+}
+
+fn textEquals(text: []const u8, other: []const u8) bool {
+    return text.len == other.len and textStartsWith(text, other);
+}
+
+fn textContains(text: []const u8, needle: []const u8) bool {
+    return findSubstring(text, needle) != null;
+}
+
+fn findSubstring(text: []const u8, needle: []const u8) ?usize {
+    if (needle.len == 0) return 0;
+    if (text.len < needle.len) return null;
+    var index: usize = 0;
+    while (index + needle.len <= text.len) : (index += 1) {
+        var matched = true;
+        var needle_index: usize = 0;
+        while (needle_index < needle.len) : (needle_index += 1) {
+            if (text[index + needle_index] != needle[needle_index]) {
+                matched = false;
+                break;
+            }
+        }
+        if (matched) return index;
+    }
+    return null;
+}
+
+fn hideCutsceneDialogueObjects() void {
+    if (!cutscene_dialogue_visible) return;
+    var index: usize = 0;
+    while (index < cutscene_dialogue_object_count) : (index += 1) {
+        hideObject(cutscene_dialogue_first_object + index);
+    }
+    cutscene_dialogue_visible = false;
+}
+
+fn drawLaughText(camera: Camera, room_index: usize) void {
+    if (!laugh_text.active) {
+        hideCutsceneLaughObjects();
+        return;
+    }
+    loadLaughHaTiles();
+    const room = rooms[room_index];
+    var index: usize = 0;
+    while (index < cutscene_laugh_object_count) : (index += 1) {
+        const particle = laugh_text.particles[index];
+        if (!particle.active) {
+            hideObject(cutscene_laugh_first_object + index);
+            continue;
+        }
+        const screen_x = fixedToPixel(particle.x) - (room.world_x + camera.x);
+        const screen_y = fixedToPixel(particle.y) + laughWave(particle.age, particle.seed) - (room.world_y + camera.y);
+        const frame = laughHaFrame(particle.age);
+        gba.display.objects[cutscene_laugh_first_object + index] = gba.display.Object.init(.{
+            .size = .size_16x16,
+            .x = objX(screen_x),
+            .y = objY(screen_y),
+            .base_tile = cutscene_laugh_base_tile + @as(u10, @intCast(frame)) * cutscene_laugh_tiles_per_frame,
+            .priority = 0,
+            .palette = cutscene_dialogue_palette_bank,
+        });
+    }
+    cutscene_laugh_visible = true;
+}
+
+fn laughHaFrame(age: u8) u8 {
+    if (age < cutscene_laugh_flash_life_frames) {
+        return @intCast((age / cutscene_laugh_flash_frame_hold_frames) & 1);
+    }
+    const tail_age = age - cutscene_laugh_flash_life_frames;
+    return @min(@as(u8, cutscene_laugh_haha_frame_count - 1), 2 + tail_age / cutscene_laugh_tail_frame_hold_frames);
+}
+
+fn laughWave(age: u8, seed: u8) i16 {
+    const wave = [_]i16{
+        0,  -1, -2, -3, -4, -4, -3, -2,
+        -1, 0,  1,  2,  3,  3,  2,  1,
+        0,  -1, -2, -2, -1, 0,  1,  1,
+    };
+    const phase: usize = @intCast((@divTrunc(@as(u16, age), 3) + @as(u16, seed) * 5) % wave.len);
+    return wave[phase];
+}
+
+fn hideCutsceneLaughObjects() void {
+    if (!cutscene_laugh_visible) return;
+    var index: usize = 0;
+    while (index < cutscene_laugh_object_count) : (index += 1) {
+        hideObject(cutscene_laugh_first_object + index);
+    }
+    cutscene_laugh_visible = false;
+}
+
+fn clearCutsceneDialogueTiles() void {
+    cutscene_dialogue_tiles = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** cutscene_dialogue_tile_count;
+}
+
+fn drawCutsceneBox() void {
+    var y: i16 = 0;
+    while (y < cutscene_dialogue_height) : (y += 1) {
+        var x: i16 = 0;
+        while (x < cutscene_dialogue_width) : (x += 1) {
+            const border = x == 0 or y == 0 or x == cutscene_dialogue_width - 1 or y == cutscene_dialogue_height - 1;
+            setCutsceneDialoguePixel(x, y, if (border) 1 else 6);
+        }
+    }
+    var x: i16 = 4;
+    while (x < cutscene_dialogue_width - 4) : (x += 1) {
+        setCutsceneDialoguePixel(x, 14, 1);
+    }
+}
+
+fn drawWrappedSmallText(text: []const u8, start_offset: usize, x: i16, y: i16, max_chars: usize, max_lines: usize, color: u8) usize {
+    var offset = skipTextSpaces(text, start_offset);
+    var line: usize = 0;
+    while (line < max_lines and offset < text.len) : (line += 1) {
+        const line_start = offset;
+        var pos = offset;
+        var count: usize = 0;
+        var last_space: usize = text.len + 1;
+        while (pos < text.len and count < max_chars) : ({
+            pos += 1;
+            count += 1;
+        }) {
+            const ch = text[pos];
+            if (ch == '\n') break;
+            if (ch == ' ') last_space = pos;
+        }
+
+        var line_end = pos;
+        if (pos < text.len and text[pos] != ' ' and text[pos] != '\n' and count >= max_chars and last_space > line_start and last_space <= text.len) {
+            line_end = last_space;
+        }
+        drawSmallTextLine(text[line_start..line_end], x, y + @as(i16, @intCast(line * 6)), color);
+
+        offset = line_end;
+        if (offset < text.len and text[offset] == '\n') {
+            offset += 1;
+        }
+        offset = skipTextSpaces(text, offset);
+    }
+    return offset;
+}
+
+fn wrappedTextNextOffset(text: []const u8, start_offset: usize, max_chars: usize, max_lines: usize) usize {
+    var offset = skipTextSpaces(text, start_offset);
+    var line: usize = 0;
+    while (line < max_lines and offset < text.len) : (line += 1) {
+        offset = advanceWrappedTextOffset(text, wrappedTextLineEnd(text, offset, max_chars));
+    }
+    return offset;
+}
+
+fn drawWrappedTextUntil(text: []const u8, start_offset: usize, visible_offset: usize, x: i16, y: i16, max_chars: usize, max_lines: usize, color: u8) void {
+    var offset = skipTextSpaces(text, start_offset);
+    var line: usize = 0;
+    while (line < max_lines and offset < text.len) : (line += 1) {
+        const line_start = offset;
+        const line_end = wrappedTextLineEnd(text, offset, max_chars);
+        const visible_end = @min(line_end, visible_offset);
+        if (visible_end > line_start) {
+            drawTextLine(text[line_start..visible_end], x, y + @as(i16, @intCast(line * 9)), color);
+        }
+        if (visible_offset <= line_end) break;
+        offset = advanceWrappedTextOffset(text, line_end);
+    }
+}
+
+fn drawWrappedText(text: []const u8, start_offset: usize, x: i16, y: i16, max_chars: usize, max_lines: usize, color: u8) usize {
+    var offset = skipTextSpaces(text, start_offset);
+    var line: usize = 0;
+    while (line < max_lines and offset < text.len) : (line += 1) {
+        const line_end = wrappedTextLineEnd(text, offset, max_chars);
+        drawTextLine(text[offset..line_end], x, y + @as(i16, @intCast(line * 9)), color);
+        offset = advanceWrappedTextOffset(text, line_end);
+    }
+    return offset;
+}
+
+fn wrappedTextLineEnd(text: []const u8, offset: usize, max_chars: usize) usize {
+    const line_start = offset;
+    var pos = offset;
+    var count: usize = 0;
+    var last_space: usize = text.len + 1;
+    while (pos < text.len and count < max_chars) : ({
+        pos += 1;
+        count += 1;
+    }) {
+        const ch = text[pos];
+        if (ch == '\n') break;
+        if (ch == ' ') last_space = pos;
+    }
+
+    var line_end = pos;
+    if (pos < text.len and text[pos] != ' ' and text[pos] != '\n' and count >= max_chars and last_space > line_start and last_space <= text.len) {
+        line_end = last_space;
+    }
+    return line_end;
+}
+
+fn advanceWrappedTextOffset(text: []const u8, line_end: usize) usize {
+    var offset = line_end;
+    if (offset < text.len and text[offset] == '\n') {
+        offset += 1;
+    }
+    return skipTextSpaces(text, offset);
+}
+
+fn advanceTextRevealByWords(text: []const u8, start_offset: usize, target_offset: usize, word_count: u8) usize {
+    var offset = skipTextSpacesUntil(text, start_offset, target_offset);
+    var words: u8 = 0;
+    while (offset < target_offset and words < word_count) : (words += 1) {
+        while (offset < target_offset and text[offset] != ' ' and text[offset] != '\n') : (offset += 1) {}
+        offset = skipTextSpacesUntil(text, offset, target_offset);
+    }
+    return offset;
+}
+
+fn skipTextSpacesUntil(text: []const u8, start: usize, end: usize) usize {
+    var offset = start;
+    while (offset < end and offset < text.len and text[offset] == ' ') : (offset += 1) {}
+    return offset;
+}
+
+fn drawSmallTextLine(text: []const u8, x: i16, y: i16, color: u8) void {
+    var cursor = x;
+    for (text) |ch| {
+        if (cursor > cutscene_dialogue_width - 4) break;
+        drawSmallGlyph(ch, cursor, y, color);
+        cursor += 4;
+    }
+}
+
+fn drawSmallGlyph(input: u8, x: i16, y: i16, color: u8) void {
+    const ch = if (input >= 'a' and input <= 'z') input - 32 else input;
+    const rows = smallFontRows(ch);
+    for (rows, 0..) |row_bits, row| {
+        var col: usize = 0;
+        while (col < 3) : (col += 1) {
+            if ((row_bits & (@as(u3, 1) << @intCast(2 - col))) != 0) {
+                setCutsceneDialoguePixel(x + @as(i16, @intCast(col)), y + @as(i16, @intCast(row)), color);
+            }
+        }
+    }
+}
+
+fn smallFontRows(ch: u8) [5]u3 {
+    return switch (ch) {
+        'A' => .{ 0b010, 0b101, 0b111, 0b101, 0b101 },
+        'B' => .{ 0b110, 0b101, 0b110, 0b101, 0b110 },
+        'C' => .{ 0b011, 0b100, 0b100, 0b100, 0b011 },
+        'D' => .{ 0b110, 0b101, 0b101, 0b101, 0b110 },
+        'E' => .{ 0b111, 0b100, 0b110, 0b100, 0b111 },
+        'F' => .{ 0b111, 0b100, 0b110, 0b100, 0b100 },
+        'G' => .{ 0b011, 0b100, 0b101, 0b101, 0b011 },
+        'H' => .{ 0b101, 0b101, 0b111, 0b101, 0b101 },
+        'I' => .{ 0b111, 0b010, 0b010, 0b010, 0b111 },
+        'J' => .{ 0b001, 0b001, 0b001, 0b101, 0b010 },
+        'K' => .{ 0b101, 0b101, 0b110, 0b101, 0b101 },
+        'L' => .{ 0b100, 0b100, 0b100, 0b100, 0b111 },
+        'M' => .{ 0b101, 0b111, 0b111, 0b101, 0b101 },
+        'N' => .{ 0b101, 0b111, 0b111, 0b111, 0b101 },
+        'O' => .{ 0b010, 0b101, 0b101, 0b101, 0b010 },
+        'P' => .{ 0b110, 0b101, 0b110, 0b100, 0b100 },
+        'Q' => .{ 0b010, 0b101, 0b101, 0b111, 0b011 },
+        'R' => .{ 0b110, 0b101, 0b110, 0b101, 0b101 },
+        'S' => .{ 0b011, 0b100, 0b010, 0b001, 0b110 },
+        'T' => .{ 0b111, 0b010, 0b010, 0b010, 0b010 },
+        'U' => .{ 0b101, 0b101, 0b101, 0b101, 0b111 },
+        'V' => .{ 0b101, 0b101, 0b101, 0b101, 0b010 },
+        'W' => .{ 0b101, 0b101, 0b111, 0b111, 0b101 },
+        'X' => .{ 0b101, 0b101, 0b010, 0b101, 0b101 },
+        'Y' => .{ 0b101, 0b101, 0b010, 0b010, 0b010 },
+        'Z' => .{ 0b111, 0b001, 0b010, 0b100, 0b111 },
+        '0' => .{ 0b111, 0b101, 0b101, 0b101, 0b111 },
+        '1' => .{ 0b010, 0b110, 0b010, 0b010, 0b111 },
+        '2' => .{ 0b110, 0b001, 0b010, 0b100, 0b111 },
+        '3' => .{ 0b110, 0b001, 0b010, 0b001, 0b110 },
+        '4' => .{ 0b101, 0b101, 0b111, 0b001, 0b001 },
+        '5' => .{ 0b111, 0b100, 0b110, 0b001, 0b110 },
+        '6' => .{ 0b011, 0b100, 0b110, 0b101, 0b010 },
+        '7' => .{ 0b111, 0b001, 0b010, 0b010, 0b010 },
+        '8' => .{ 0b010, 0b101, 0b010, 0b101, 0b010 },
+        '9' => .{ 0b010, 0b101, 0b011, 0b001, 0b110 },
+        '.' => .{ 0, 0, 0, 0, 0b010 },
+        ',' => .{ 0, 0, 0, 0b010, 0b100 },
+        '?' => .{ 0b110, 0b001, 0b010, 0, 0b010 },
+        '!' => .{ 0b010, 0b010, 0b010, 0, 0b010 },
+        '\'' => .{ 0b010, 0b010, 0, 0, 0 },
+        '"' => .{ 0b101, 0b101, 0, 0, 0 },
+        '-' => .{ 0, 0, 0b111, 0, 0 },
+        ':' => .{ 0, 0b010, 0, 0b010, 0 },
+        else => .{ 0, 0, 0, 0, 0 },
+    };
+}
+
+fn skipTextSpaces(text: []const u8, start: usize) usize {
+    var offset = start;
+    while (offset < text.len and text[offset] == ' ') : (offset += 1) {}
+    return offset;
+}
+
+fn drawTextLine(text: []const u8, x: i16, y: i16, color: u8) void {
+    var cursor = x;
+    for (text) |ch| {
+        if (cursor > cutscene_dialogue_width - 6) break;
+        drawGlyph(ch, cursor, y, color);
+        cursor += 6;
+    }
+}
+
+fn drawGlyph(input: u8, x: i16, y: i16, color: u8) void {
+    const ch = if (input >= 'a' and input <= 'z') input - 32 else input;
+    const rows = fontRows(ch);
+    for (rows, 0..) |row_bits, row| {
+        var col: usize = 0;
+        while (col < 5) : (col += 1) {
+            if ((row_bits & (@as(u8, 1) << @intCast(4 - col))) != 0) {
+                setCutsceneDialoguePixel(x + @as(i16, @intCast(col)), y + @as(i16, @intCast(row)), color);
+            }
+        }
+    }
+}
+
+fn fontRows(ch: u8) [7]u8 {
+    return switch (ch) {
+        'A' => .{ 0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001 },
+        'B' => .{ 0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110 },
+        'C' => .{ 0b01111, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b01111 },
+        'D' => .{ 0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110 },
+        'E' => .{ 0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111 },
+        'F' => .{ 0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000 },
+        'G' => .{ 0b01111, 0b10000, 0b10000, 0b10111, 0b10001, 0b10001, 0b01110 },
+        'H' => .{ 0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001 },
+        'I' => .{ 0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b11111 },
+        'J' => .{ 0b00111, 0b00010, 0b00010, 0b00010, 0b10010, 0b10010, 0b01100 },
+        'K' => .{ 0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001 },
+        'L' => .{ 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111 },
+        'M' => .{ 0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001 },
+        'N' => .{ 0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001 },
+        'O' => .{ 0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110 },
+        'P' => .{ 0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000 },
+        'Q' => .{ 0b01110, 0b10001, 0b10001, 0b10001, 0b10101, 0b10010, 0b01101 },
+        'R' => .{ 0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001 },
+        'S' => .{ 0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110 },
+        'T' => .{ 0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100 },
+        'U' => .{ 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110 },
+        'V' => .{ 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b01010, 0b00100 },
+        'W' => .{ 0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b10101, 0b01010 },
+        'X' => .{ 0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001 },
+        'Y' => .{ 0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100 },
+        'Z' => .{ 0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111 },
+        '0' => .{ 0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110 },
+        '1' => .{ 0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110 },
+        '2' => .{ 0b11110, 0b00001, 0b00001, 0b01110, 0b10000, 0b10000, 0b11111 },
+        '3' => .{ 0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110 },
+        '4' => .{ 0b10010, 0b10010, 0b10010, 0b11111, 0b00010, 0b00010, 0b00010 },
+        '5' => .{ 0b11111, 0b10000, 0b10000, 0b11110, 0b00001, 0b00001, 0b11110 },
+        '6' => .{ 0b01111, 0b10000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110 },
+        '7' => .{ 0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000 },
+        '8' => .{ 0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110 },
+        '9' => .{ 0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00001, 0b11110 },
+        '.' => .{ 0, 0, 0, 0, 0, 0b01100, 0b01100 },
+        ',' => .{ 0, 0, 0, 0, 0, 0b01100, 0b01000 },
+        '?' => .{ 0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0, 0b00100 },
+        '!' => .{ 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0, 0b00100 },
+        '\'' => .{ 0b00100, 0b00100, 0b01000, 0, 0, 0, 0 },
+        '"' => .{ 0b01010, 0b01010, 0, 0, 0, 0, 0 },
+        '-' => .{ 0, 0, 0, 0b11110, 0, 0, 0 },
+        ':' => .{ 0, 0b01100, 0b01100, 0, 0b01100, 0b01100, 0 },
+        '/' => .{ 0b00001, 0b00010, 0b00010, 0b00100, 0b01000, 0b01000, 0b10000 },
+        else => .{ 0, 0, 0, 0, 0, 0, 0 },
+    };
+}
+
+fn setCutsceneDialoguePixel(x: i16, y: i16, color: u8) void {
+    if (x < 0 or x >= cutscene_dialogue_width or y < 0 or y >= cutscene_dialogue_height) return;
+    const ux: usize = @intCast(x);
+    const uy: usize = @intCast(y);
+    const chunk_x = ux / 32;
+    const chunk_y = uy / 16;
+    const chunk_index = chunk_y * cutscene_dialogue_cols + chunk_x;
+    const tile_x = (ux & 31) / 8;
+    const tile_y = (uy & 15) / 8;
+    const local_x = ux & 7;
+    const local_y = uy & 7;
+    const tile_index = chunk_index * cutscene_dialogue_tiles_per_object + tile_y * 4 + tile_x;
+    const byte_index = local_y * 4 + local_x / 2;
+    if ((local_x & 1) == 0) {
+        cutscene_dialogue_tiles[tile_index].data_8[byte_index] = (cutscene_dialogue_tiles[tile_index].data_8[byte_index] & 0xF0) | color;
+    } else {
+        cutscene_dialogue_tiles[tile_index].data_8[byte_index] = (cutscene_dialogue_tiles[tile_index].data_8[byte_index] & 0x0F) | (color << 4);
+    }
+}
+
 fn drawPlayer(player: Player, camera: Camera) void {
     updatePlayerPalette(player);
     loadPlayerFrame(player.frame);
@@ -2007,10 +4980,51 @@ fn drawPlayer(player: Player, camera: Camera) void {
         .x = objX(draw_x),
         .y = objY(draw_y),
         .base_tile = 0,
-        .priority = 0,
+        .priority = 1,
         .palette = 0,
         .flip = gba.math.Vec2B.init(player.facing_left, false),
     });
+}
+
+fn drawDashEffects(camera: Camera) void {
+    var index: usize = 0;
+    while (index < dash_afterimage_count) : (index += 1) {
+        const object_index = dash_afterimage_first_object + index;
+        const image = dash_afterimages[index];
+        if (!image.active) {
+            hideObject(object_index);
+            continue;
+        }
+        gba.display.objects[object_index] = gba.display.Object.init(.{
+            .size = .size_32x32,
+            .x = objX(fixedToPixel(image.x) + player_draw_offset_x - camera.x),
+            .y = objY(fixedToPixel(image.y) + player_draw_offset_y - camera.y),
+            .base_tile = 0,
+            .priority = 1,
+            .palette = dashAfterimagePalette(image.life),
+            .flip = gba.math.Vec2B.init(image.facing_left, false),
+        });
+    }
+
+    if (dash_burst.active) {
+        gba.display.objects[dash_burst_object] = gba.display.Object.init(.{
+            .size = .size_32x32,
+            .x = objX(dash_burst.x - camera.x),
+            .y = objY(dash_burst.y - camera.y),
+            .base_tile = dash_effect_base_tile,
+            .priority = 2,
+            .palette = dash_effect_palette_bank,
+            .flip = gba.math.Vec2B.init(dash_burst.flip_x, dash_burst.flip_y),
+        });
+    } else {
+        hideObject(dash_burst_object);
+    }
+}
+
+fn dashAfterimagePalette(life: u8) u4 {
+    if (life > 9) return dash_shadow_palette_bank;
+    if (life > 4) return dash_shadow_palette_bank + 1;
+    return dash_shadow_palette_bank + 2;
 }
 
 fn updatePlayerPalette(player: Player) void {
@@ -2021,7 +5035,7 @@ fn updatePlayerPalette(player: Player) void {
     }
 
     gba.display.obj_palette.colors[0] = base_palette[0];
-    var index: usize = 1;
+    var index: usize = 0;
     while (index < 16) : (index += 1) {
         gba.display.obj_palette.colors[index] = redFatigueTint(base_palette[index]);
     }
@@ -2065,7 +5079,7 @@ fn drawSweat(player: *Player, camera: Camera) void {
         .x = objX(draw_x),
         .y = objY(draw_y),
         .base_tile = sweat_base_tile,
-        .priority = 0,
+        .priority = 1,
         .palette = sweat_palette_bank,
         .flip = gba.math.Vec2B.init(player.facing_left, false),
     });
@@ -2074,42 +5088,62 @@ fn drawSweat(player: *Player, camera: Camera) void {
 fn updateHair(player: *Player) void {
     const anchor = hairAnchorWorld(player.*);
     const dir = anchor.dir;
-    const falling_hair = player.animation == .fall;
+    const ending_hair = bridge_ending_hold;
+    const falling_hair = player.animation == .fall and !ending_hair;
     const climb_hair = player.animation == .climb or player.animation == .dangling or player.animation == .climb_pull or player.animation == .wallslide;
-    const root = hairRootTailAnchorWorld(anchor, player.animation);
+    const run_hair = player.animation == .run;
+    const root = hairRootWorld(anchor, player.animation);
     const root_x = root.x;
     const root_y = root.y;
     if (!player.hair_initialized) {
         var index: usize = 0;
         while (index < hair_node_count) : (index += 1) {
             player.hair_nodes[index] = .{
-                .x = root_x + @as(i32, dir) * @as(i32, @intCast(index + 1)) * fixed_one * 2,
-                .y = root_y + @as(i32, @intCast(index)) * (fixed_one / 2),
+                .x = root_x + @as(i32, dir) * @as(i32, @intCast(index + 1)) * fixed_one,
+                .y = root_y + @as(i32, @intCast(index + 1)) * fixed_one * 2,
             };
         }
         player.hair_initialized = true;
     }
 
-    const speed_x = absI32(player.vx);
-    const speed_y = absI32(player.vy);
-    const lateral_push = fixed_one / 4 + @divTrunc(minI32(speed_x, fixed_one + fixed_one / 2), 7);
-    const vertical_push: i32 = if (falling_hair)
-        -(fixed_one / 2 + @divTrunc(minI32(speed_y, fixed_one * 3), 5))
-    else if (player.animation == .jump)
-        fixed_one / 8
+    const speed_x = minI32(absI32(player.vx), fixed_one * 2);
+    const speed_y = minI32(absI32(player.vy), fixed_one * 4);
+    const rest_x: i32 = if (ending_hair)
+        @as(i32, dir) * fixed_one
+    else if (falling_hair)
+        @as(i32, dir) * (fixed_one + @divTrunc(speed_x, 8))
     else if (climb_hair)
-        fixed_one / 3
+        @as(i32, dir) * fixed_one
     else
-        fixed_one / 2;
-    const desired_dist: i32 = if (climb_hair) fixed_one * 2 else fixed_one + fixed_one / 2;
+        @as(i32, dir) * (fixed_one / 2);
+    const rest_y: i32 = if (falling_hair)
+        -@divTrunc(speed_y, 8)
+    else if (ending_hair)
+        fixed_one / 2
+    else if (player.animation == .jump)
+        fixed_one
+    else if (climb_hair)
+        fixed_one + fixed_one / 2
+    else if (run_hair)
+        fixed_one + fixed_one * 3 / 4
+    else
+        fixed_one * 2;
+    const desired_dist: i32 = if (ending_hair)
+        fixed_one + fixed_one / 2
+    else if (run_hair)
+        fixed_one + fixed_one * 3 / 4
+    else
+        fixed_one * 2;
 
     var prev_x = root_x;
     var prev_y = root_y;
     var index: usize = 0;
     while (index < hair_node_count) : (index += 1) {
-        const segment_push = @as(i32, @intCast(hair_node_count - index));
-        player.hair_nodes[index].x += @as(i32, dir) * @divTrunc(lateral_push * segment_push, @as(i32, hair_node_count));
-        player.hair_nodes[index].y += vertical_push - @as(i32, @intCast(index)) * (fixed_one / 12);
+        const segment_lift: i32 = if ((falling_hair or ending_hair) and index > 1) fixed_one / 8 else 0;
+        const target_x = prev_x + rest_x;
+        const target_y = prev_y + rest_y - segment_lift;
+        player.hair_nodes[index].x += @divTrunc(target_x - player.hair_nodes[index].x, 4);
+        player.hair_nodes[index].y += @divTrunc(target_y - player.hair_nodes[index].y, 4);
 
         constrainHairNode(&player.hair_nodes[index], prev_x, prev_y, desired_dist);
         prev_x = player.hair_nodes[index].x;
@@ -2118,28 +5152,26 @@ fn updateHair(player: *Player) void {
 }
 
 fn drawHair(player: Player, camera: Camera) void {
+    updateHairPalette(player);
     const anchor = hairAnchorWorld(player);
-    const falling_hair = player.animation == .fall;
+    const ending_hair = bridge_ending_hold;
+    const falling_hair = player.animation == .fall and !ending_hair;
     const climb_hair = player.animation == .climb or player.animation == .dangling or player.animation == .climb_pull or player.animation == .wallslide;
-    const root = hairRootTailAnchorWorld(anchor, player.animation);
+    const run_hair = player.animation == .run;
+    const root = hairRootWorld(anchor, player.animation);
     const sprite_x = fixedToPixel(root.x) - camera.x - 8;
-    const sprite_offset_y: i16 = if (falling_hair) 11 else 9;
+    const sprite_offset_y: i16 = if (falling_hair) 5 else 4;
     const sprite_y = fixedToPixel(root.y) - camera.y - sprite_offset_y;
     clearHairPixels();
+    clearHairBangPixels();
 
+    var points: [hair_node_count + 1]HairNode = undefined;
+    points[0] = root;
     var index: usize = 0;
-    var prev_x = root.x;
-    var prev_y = root.y;
-    drawHairMaskBlobWorld(prev_x, prev_y, sprite_x + camera.x, sprite_y + camera.y, 1);
     while (index < hair_node_count) : (index += 1) {
-        const size: u8 = if ((falling_hair or climb_hair) and index == 1) 2 else 1;
-        const node_x = player.hair_nodes[index].x;
-        const node_y = player.hair_nodes[index].y;
-        drawHairMaskStrokeWorld(prev_x, prev_y, node_x, node_y, sprite_x + camera.x, sprite_y + camera.y, size);
-        prev_x = node_x;
-        prev_y = node_y;
+        points[index + 1] = player.hair_nodes[index];
     }
-    renderHairMask();
+    drawHairPointChain(&points, sprite_x + camera.x, sprite_y + camera.y, anchor.dir, falling_hair, climb_hair, ending_hair, run_hair);
     packHairTiles();
     gba.display.memcpyObjectTiles4Bpp(hair_base_tile, &hair_tiles);
     gba.display.objects[hair_object] = gba.display.Object.init(.{
@@ -2147,10 +5179,50 @@ fn drawHair(player: Player, camera: Camera) void {
         .x = objX(sprite_x),
         .y = objY(sprite_y),
         .base_tile = hair_base_tile,
+        .priority = 1,
+        .palette = hair_palette_bank,
+    });
+
+    drawHairBangs(anchor.dir);
+    packHairBangTile();
+    gba.display.memcpyObjectTiles4Bpp(hair_bang_base_tile, &hair_bang_tiles);
+    gba.display.objects[hair_root_object] = gba.display.Object.init(.{
+        .size = .size_8x8,
+        .x = objX(fixedToPixel(root.x) - camera.x - 4),
+        .y = objY(fixedToPixel(root.y) - camera.y - 4),
+        .base_tile = hair_bang_base_tile,
         .priority = 0,
         .palette = hair_palette_bank,
     });
-    drawHairRoot(anchor, camera);
+}
+
+fn updateHairPalette(player: Player) void {
+    const base_palette: [*]align(2) const gba.ColorRgb555 = @ptrCast(&hair_palette_data);
+    const palette_base = @as(usize, hair_palette_bank) * 16;
+    if (player.dash_timer > 0) {
+        gba.display.obj_palette.colors[palette_base] = base_palette[0];
+        gba.display.obj_palette.colors[palette_base + 1] = .black;
+        gba.display.obj_palette.colors[palette_base + 2] = gba.ColorRgb555.rgb(22, 23, 24);
+        gba.display.obj_palette.colors[palette_base + 3] = .white;
+        var white_index: usize = 4;
+        while (white_index < 16) : (white_index += 1) {
+            gba.display.obj_palette.colors[palette_base + white_index] = base_palette[white_index];
+        }
+        return;
+    }
+    if (player.dashes > 0) {
+        gba.mem.memcpy16(&gba.display.obj_palette.colors[palette_base], base_palette, 16);
+        return;
+    }
+
+    gba.display.obj_palette.colors[palette_base] = base_palette[0];
+    gba.display.obj_palette.colors[palette_base + 1] = .black;
+    gba.display.obj_palette.colors[palette_base + 2] = gba.ColorRgb555.rgb(3, 12, 22);
+    gba.display.obj_palette.colors[palette_base + 3] = gba.ColorRgb555.rgb(8, 22, 31);
+    var index: usize = 4;
+    while (index < 16) : (index += 1) {
+        gba.display.obj_palette.colors[palette_base + index] = base_palette[index];
+    }
 }
 
 fn constrainHairNode(node: *HairNode, prev_x: i32, prev_y: i32, desired_dist: i32) void {
@@ -2168,44 +5240,11 @@ fn constrainHairNode(node: *HairNode, prev_x: i32, prev_y: i32, desired_dist: i3
     node.y = prev_y + @as(i32, @intCast(@divTrunc(@as(i64, diff_y) * desired_dist, dist)));
 }
 
-fn drawHairRoot(anchor: HairAnchor, camera: Camera) void {
-    const root = hairRootRect(anchor);
-    gba.display.objects[hair_root_object] = gba.display.Object.init(.{
-        .size = .size_8x8,
-        .x = objX(root.x - camera.x),
-        .y = objY(root.y - camera.y),
-        .base_tile = hair_root_base_tile,
-        .priority = 0,
-        .palette = hair_palette_bank,
-        .flip = gba.math.Vec2B.init(root.flip_x, false),
-    });
-}
-
-fn hairRootRect(anchor: HairAnchor) HairRootRect {
-    const anchor_x = fixedToPixel(anchor.x);
-    const anchor_y = fixedToPixel(anchor.y);
-    const flip_x = anchor.dir > 0;
-    const root_offset_x: i16 = if (flip_x) -4 else -3;
+fn hairRootWorld(anchor: HairAnchor, animation: PlayerAnimation) HairNode {
+    _ = animation;
     return .{
-        .x = anchor_x + root_offset_x,
-        .y = anchor_y - 7,
-        .flip_x = flip_x,
-    };
-}
-
-fn hairRootTailAnchorWorld(anchor: HairAnchor, animation: PlayerAnimation) HairNode {
-    const root = hairRootRect(anchor);
-    const tail_offset_x: i16 = if (anchor.dir > 0) 7 else 0;
-    const tail_x: i16 = root.x + tail_offset_x + anchor.tail_bias_x;
-    const tail_offset_y: i16 = switch (animation) {
-        .idle => 4,
-        .jump, .fall, .wallslide, .climb, .dangling, .climb_pull => 5,
-        .run => 6,
-    };
-    const tail_y: i16 = root.y + tail_offset_y + anchor.tail_bias_y;
-    return .{
-        .x = pixelToFixed(tail_x),
-        .y = pixelToFixed(tail_y),
+        .x = anchor.x,
+        .y = anchor.y,
     };
 }
 
@@ -2214,19 +5253,14 @@ fn hairAnchorWorld(player: Player) HairAnchor {
     var anchor_x: i16 = 18;
     var anchor_y: i16 = 19;
     var dir: i16 = -1;
-    var tail_bias_x: i16 = 0;
-    var tail_bias_y: i16 = 0;
     if (anchor_offset + 4 < player_hair_anchors_data.len) {
         anchor_x = player_hair_anchors_data[anchor_offset];
         anchor_y = player_hair_anchors_data[anchor_offset + 1];
         dir = if (player_hair_anchors_data[anchor_offset + 2] == 0) -1 else 1;
-        tail_bias_x = signedAnchorByte(player_hair_anchors_data[anchor_offset + 3]);
-        tail_bias_y = signedAnchorByte(player_hair_anchors_data[anchor_offset + 4]);
     }
     if (player.facing_left) {
         anchor_x = 31 - anchor_x;
         dir = -dir;
-        tail_bias_x = -tail_bias_x;
     }
     const body_x = fixedToPixel(player.x) + player_draw_offset_x;
     const body_y = fixedToPixel(player.y) + player_draw_offset_y;
@@ -2234,112 +5268,122 @@ fn hairAnchorWorld(player: Player) HairAnchor {
         .x = pixelToFixed(body_x + anchor_x),
         .y = pixelToFixed(body_y + anchor_y),
         .dir = dir,
-        .tail_bias_x = tail_bias_x,
-        .tail_bias_y = tail_bias_y,
     };
-}
-
-fn signedAnchorByte(value: u8) i16 {
-    return if (value < 128) @intCast(value) else @as(i16, @intCast(value)) - 256;
 }
 
 fn clearHairPixels() void {
     var index: usize = 0;
     while (index < hair_pixels.len) : (index += 1) {
         hair_pixels[index] = 0;
-        hair_mask[index] = 0;
     }
 }
 
-fn drawHairMaskStrokeWorld(world_x0: i32, world_y0: i32, world_x1: i32, world_y1: i32, origin_x: i16, origin_y: i16, size: u8) void {
-    const x0 = fixedToPixel(world_x0) - origin_x;
-    const y0 = fixedToPixel(world_y0) - origin_y;
-    const x1 = fixedToPixel(world_x1) - origin_x;
-    const y1 = fixedToPixel(world_y1) - origin_y;
-    const steps = maxI16(absI16(x1 - x0), absI16(y1 - y0));
-    if (steps == 0) {
-        drawHairMaskBlobLocal(x0, y0, size);
-        return;
+fn drawHairPointChain(points: *const [hair_node_count + 1]HairNode, origin_x: i16, origin_y: i16, dir: i16, falling_hair: bool, climb_hair: bool, ending_hair: bool, run_hair: bool) void {
+    var index: usize = 0;
+    while (index < points.len) : (index += 1) {
+        drawHairDiscWorld(hairPointDrawX(points, index, dir), points[index].y + fixed_one / 3, origin_x, origin_y, hairPointShadowRadius(index, falling_hair, climb_hair, ending_hair, run_hair), 2);
     }
 
-    var step: i16 = 0;
-    while (step <= steps) : (step += 1) {
-        const x = x0 + @divTrunc((x1 - x0) * step, steps);
-        const y = y0 + @divTrunc((y1 - y0) * step, steps);
-        drawHairMaskBlobLocal(x, y, size);
+    index = 0;
+    while (index + 1 < points.len) : (index += 1) {
+        const radius = minU8(hairPointRadius(index, falling_hair, climb_hair, ending_hair, run_hair), hairPointRadius(index + 1, falling_hair, climb_hair, ending_hair, run_hair));
+        drawHairDiscWorld(@divTrunc(hairPointDrawX(points, index, dir) + hairPointDrawX(points, index + 1, dir), 2), @divTrunc(points[index].y + points[index + 1].y, 2), origin_x, origin_y, radius, 3);
+    }
+
+    index = 0;
+    while (index < points.len) : (index += 1) {
+        drawHairDiscWorld(hairPointDrawX(points, index, dir), points[index].y, origin_x, origin_y, hairPointRadius(index, falling_hair, climb_hair, ending_hair, run_hair), 3);
+    }
+
+    index = 0;
+    while (index < points.len) : (index += 1) {
+        drawHairEdgePixels(hairPointDrawX(points, index, dir), points[index].y, origin_x, origin_y, dir, hairPointRadius(index, falling_hair, climb_hair, ending_hair, run_hair));
     }
 }
 
-fn drawHairMaskBlobLocal(local_x: i16, local_y: i16, size: u8) void {
-    drawHairMaskDisc(local_x, local_y + 1, size, 2);
-    drawHairMaskDisc(local_x, local_y, size, 3);
+fn hairPointDrawX(points: *const [hair_node_count + 1]HairNode, index: usize, dir: i16) i32 {
+    const forward: i32 = if (dir > 0) -1 else 1;
+    const crown_offset = if (index == 0) forward * fixed_one else 0;
+    return points[index].x + crown_offset;
 }
 
-fn drawHairMaskBlobWorld(world_x: i32, world_y: i32, origin_x: i16, origin_y: i16, size: u8) void {
-    const local_x = fixedToPixel(world_x) - origin_x;
-    const local_y = fixedToPixel(world_y) - origin_y;
-    drawHairMaskBlobLocal(local_x, local_y, size);
+fn hairPointRadius(index: usize, falling_hair: bool, climb_hair: bool, ending_hair: bool, run_hair: bool) u8 {
+    if (ending_hair) return if (index == 0) 4 else if (index <= 2) 3 else if (index <= 4) 2 else 1;
+    if (falling_hair) return if (index == 0) 4 else if (index <= 2) 3 else if (index <= 4) 2 else 1;
+    if (climb_hair) return if (index == 0) 3 else if (index <= 2) 2 else if (index <= 4) 1 else 0;
+    if (run_hair) return if (index == 0) 4 else if (index <= 2) 3 else if (index <= 3) 2 else if (index <= 5) 1 else 0;
+    if (index == 0) return 4;
+    if (index <= 2) return 3;
+    if (index <= 4) return 2;
+    if (index <= 5) return 1;
+    return 0;
 }
 
-fn drawHairMaskDisc(center_x: i16, center_y: i16, radius: u8, color: u8) void {
+fn hairPointShadowRadius(index: usize, falling_hair: bool, climb_hair: bool, ending_hair: bool, run_hair: bool) u8 {
+    const radius = hairPointRadius(index, falling_hair, climb_hair, ending_hair, run_hair);
+    return if (radius > 0) radius - 1 else 0;
+}
+
+fn drawHairDiscWorld(world_x: i32, world_y: i32, origin_x: i16, origin_y: i16, radius: u8, color: u8) void {
+    const center_x = fixedToPixel(world_x) - origin_x;
+    const center_y = fixedToPixel(world_y) - origin_y;
+    drawHairDiscLocal(center_x, center_y, radius, color);
+}
+
+fn drawHairEdgePixels(world_x: i32, world_y: i32, origin_x: i16, origin_y: i16, dir: i16, radius: u8) void {
+    if (radius < 2) return;
+    const center_x = fixedToPixel(world_x) - origin_x;
+    const center_y = fixedToPixel(world_y) - origin_y;
+    const back: i16 = if (dir > 0) 1 else -1;
+    const r: i16 = @intCast(radius);
+
+    setHairPixel(center_x + back * r, center_y, 2);
+    setHairPixel(center_x + back * (r - 1), center_y + r - 1, 2);
+    if (radius >= 3) {
+        setHairPixel(center_x + back * (r - 1), center_y - r + 1, 2);
+    }
+}
+
+fn drawHairDiscLocal(center_x: i16, center_y: i16, radius: u8, color: u8) void {
     const r: i16 = @intCast(radius);
     var y: i16 = -r;
     while (y <= r) : (y += 1) {
         var x: i16 = -r;
         while (x <= r) : (x += 1) {
             if (x * x + y * y <= r * r) {
-                setHairMaskPixel(center_x + x, center_y + y, color);
+                setHairPixel(center_x + x, center_y + y, color);
             }
         }
     }
 }
 
-fn renderHairMask() void {
-    var y: i16 = 0;
-    while (y < hair_sprite_size) : (y += 1) {
-        var x: i16 = 0;
-        while (x < hair_sprite_size) : (x += 1) {
-            if (hairMaskPixel(x, y) == 0) continue;
+fn drawHairBangs(dir: i16) void {
+    const forward: i16 = if (dir > 0) -1 else 1;
+    const root_x: i16 = 4;
+    const root_y: i16 = 4;
 
-            var oy: i16 = -1;
-            while (oy <= 1) : (oy += 1) {
-                var ox: i16 = -1;
-                while (ox <= 1) : (ox += 1) {
-                    if (ox == 0 and oy == 0) continue;
-                    if (hairMaskPixel(x + ox, y + oy) == 0) {
-                        setHairPixel(x + ox, y + oy, 1);
-                    }
-                }
-            }
-        }
-    }
-
-    y = 0;
-    while (y < hair_sprite_size) : (y += 1) {
-        var x: i16 = 0;
-        while (x < hair_sprite_size) : (x += 1) {
-            const color = hairMaskPixel(x, y);
-            if (color != 0) setHairPixel(x, y, color);
-        }
-    }
-}
-
-fn hairMaskPixel(x: i16, y: i16) u8 {
-    if (x < 0 or x >= hair_sprite_size or y < 0 or y >= hair_sprite_size) return 0;
-    const index: usize = @intCast(y * hair_sprite_size + x);
-    return hair_mask[index];
-}
-
-fn setHairMaskPixel(x: i16, y: i16, color: u8) void {
-    if (x < 0 or x >= hair_sprite_size or y < 0 or y >= hair_sprite_size) return;
-    const index: usize = @intCast(y * hair_sprite_size + x);
-    hair_mask[index] = color;
+    setHairBangPixel(root_x + forward * 2, root_y - 1, 2);
+    setHairBangPixel(root_x + forward, root_y, 2);
+    setHairBangPixel(root_x + forward * 2, root_y, 2);
 }
 
 fn setHairPixel(x: i16, y: i16, color: u8) void {
     if (x < 0 or x >= hair_sprite_size or y < 0 or y >= hair_sprite_size) return;
     const index: usize = @intCast(y * hair_sprite_size + x);
     hair_pixels[index] = color;
+}
+
+fn clearHairBangPixels() void {
+    var index: usize = 0;
+    while (index < hair_bang_pixels.len) : (index += 1) {
+        hair_bang_pixels[index] = 0;
+    }
+}
+
+fn setHairBangPixel(x: i16, y: i16, color: u8) void {
+    if (x < 0 or x >= 8 or y < 0 or y >= 8) return;
+    const index: usize = @intCast(y * 8 + x);
+    hair_bang_pixels[index] = color;
 }
 
 fn packHairTiles() void {
@@ -2365,15 +5409,32 @@ fn packHairTiles() void {
     }
 }
 
+fn packHairBangTile() void {
+    var byte_index: usize = 0;
+    var y: usize = 0;
+    while (y < 8) : (y += 1) {
+        var x_pair: usize = 0;
+        while (x_pair < 4) : (x_pair += 1) {
+            const px_x = x_pair * 2;
+            const left = hair_bang_pixels[y * 8 + px_x] & 0x0f;
+            const right = hair_bang_pixels[y * 8 + px_x + 1] & 0x0f;
+            hair_bang_tiles[0].data_8[byte_index] = left | (right << 4);
+            byte_index += 1;
+        }
+    }
+}
+
 fn drawDust(camera: Camera) void {
     var index: usize = 0;
+    var any_active = false;
     while (index < max_dust_particles) : (index += 1) {
-        clearDustTile(index);
         if (!dust_particles[index].active) {
             hideObject(dust_first_object + index);
             continue;
         }
 
+        any_active = true;
+        clearDustTile(index);
         drawDustShape(index, dust_particles[index]);
         const draw_x = fixedToPixel(dust_particles[index].x) - camera.x - 4;
         const draw_y = fixedToPixel(dust_particles[index].y) - camera.y - 4;
@@ -2386,11 +5447,54 @@ fn drawDust(camera: Camera) void {
             .palette = dust_palette_bank,
         });
     }
-    gba.display.memcpyObjectTiles4Bpp(dust_base_tile, &dust_tiles);
+    if (any_active) {
+        gba.display.memcpyObjectTiles4Bpp(dust_base_tile, &dust_tiles);
+    }
 }
 
-fn drawDeathBurst(camera: Camera, death_timer: u8) void {
+fn drawPlayerDeathEffect(camera: Camera, death_timer: u8) void {
     const elapsed: u8 = player_death_anim_frames - death_timer;
+    if (death_intro_frame_count != 0 and elapsed < death_intro_total_frames) {
+        drawPlayerDeathIntro(camera, elapsed);
+        hideDeathBurstObjects();
+        return;
+    }
+
+    hideObject(player_object);
+    if (death_intro_frame_count != 0) {
+        const burst_elapsed = elapsed - death_intro_total_frames;
+        drawDeathBalls(camera, burst_elapsed);
+        return;
+    }
+
+    drawDeathBurst(camera, elapsed);
+}
+
+fn drawPlayerDeathIntro(camera: Camera, elapsed: u8) void {
+    const frame_offset: u16 = @min(
+        death_intro_frame_count - 1,
+        @as(u16, elapsed / player_death_intro_frame_hold),
+    );
+    const base_palette: [*]align(2) const gba.ColorRgb555 = @ptrCast(&player_palette_data);
+    gba.mem.memcpy16(&gba.display.obj_palette.colors[0], base_palette, 16);
+    loadPlayerFrame(death_intro_first_frame + frame_offset);
+    const travel_elapsed = @min(elapsed, death_intro_total_frames);
+    const draw_world_x = death_player_x + @divTrunc(death_intro_offset_x * @as(i32, travel_elapsed), @as(i32, death_intro_total_frames));
+    const draw_world_y = death_player_y + @divTrunc(death_intro_offset_y * @as(i32, travel_elapsed), @as(i32, death_intro_total_frames));
+    const draw_x = clampI16(fixedToPixel(draw_world_x) - camera.x + player_draw_offset_x, -8, screen_width - 24);
+    const draw_y = clampI16(fixedToPixel(draw_world_y) - camera.y + player_draw_offset_y, -8, screen_height - 32);
+    gba.display.objects[player_object] = gba.display.Object.init(.{
+        .size = .size_32x32,
+        .x = objX(draw_x),
+        .y = objY(draw_y),
+        .base_tile = 0,
+        .priority = 0,
+        .palette = 0,
+        .flip = gba.math.Vec2B.init(death_player_facing_left, false),
+    });
+}
+
+fn drawDeathBurst(camera: Camera, elapsed: u8) void {
     if (elapsed < 3) {
         drawDeathCore(camera, .size_8x8, death_burst_base_tile, -4, -4);
         return;
@@ -2610,6 +5714,167 @@ fn setDustTilePixel(tile_index: usize, x: i16, y: i16, color: u4) void {
     }
 }
 
+fn resetChimneySmoke(room_index: usize) void {
+    chimney_smoke_counter = 0;
+    _ = room_index;
+    hideChimneySmokeObjects();
+}
+
+fn updateChimneySmoke(room_index: usize) void {
+    if (!chimneySmokeActive(room_index)) {
+        hideChimneySmokeObjects();
+        return;
+    }
+    if ((foreground_anim_counter & 1) != 0) return;
+    chimney_smoke_counter +%= 1;
+}
+
+fn drawChimneySmoke(camera: Camera, room_index: usize) void {
+    if (!chimneySmokeActive(room_index)) {
+        hideChimneySmokeObjects();
+        return;
+    }
+
+    var index: usize = 0;
+    while (index < chimney_smoke_object_count) : (index += 1) {
+        clearChimneySmokeTile(index);
+        const age = chimneySmokeAge(index);
+        drawChimneySmokeShape(index, age, index);
+
+        const rise: i16 = @intCast(age / 5);
+        const draw_x = chimney_smoke_origin_x + chimneySmokeWobble(age, index) - camera.x - 8;
+        const draw_y = chimney_smoke_origin_y - rise - camera.y - 8;
+        gba.display.objects[chimney_smoke_first_object + index] = gba.display.Object.init(.{
+            .size = .size_16x16,
+            .x = objX(draw_x),
+            .y = objY(draw_y),
+            .base_tile = chimney_smoke_base_tile + @as(u10, @intCast(index * chimney_smoke_tiles_per_object)),
+            .priority = 1,
+            .palette = chimney_smoke_palette_bank,
+        });
+    }
+
+    gba.display.memcpyObjectTiles4Bpp(chimney_smoke_base_tile, &chimney_smoke_tiles);
+}
+
+fn chimneySmokeActive(room_index: usize) bool {
+    return room_index == chimney_smoke_room_index;
+}
+
+fn chimneySmokeAge(index: usize) u8 {
+    const offset = @as(u16, @intCast(index)) * (@as(u16, chimney_smoke_cycle_frames) / chimney_smoke_object_count);
+    return @intCast((@as(u16, chimney_smoke_counter) + offset) % chimney_smoke_cycle_frames);
+}
+
+fn chimneySmokeWobble(age: u8, index: usize) i16 {
+    const phase = ((@as(usize, age) / 16) + index) & 3;
+    return switch (phase) {
+        0 => 0,
+        1 => 1,
+        2 => 0,
+        else => 0,
+    };
+}
+
+fn drawChimneySmokeShape(tile_index: usize, age: u8, variant: usize) void {
+    const x_shift: i16 = if (((@as(usize, age) / 24) + variant) & 1 == 0) 0 else 1;
+    const stage = age / 24;
+    switch (stage) {
+        0 => {
+            const cx: i16 = 7 + x_shift;
+            drawChimneySmokeDisc(tile_index, cx, 10, 3, chimney_smoke_soft_color);
+            drawChimneySmokePixelBlock(tile_index, cx, 10, 1);
+            setChimneySmokeTilePixel(tile_index, cx - 2, 10, 1);
+            setChimneySmokeTilePixel(tile_index, cx + 2, 9, chimney_smoke_soft_color);
+            setChimneySmokeTilePixel(tile_index, cx - 3, 11, chimney_smoke_soft_color);
+        },
+        1 => {
+            const cx: i16 = 7 + x_shift;
+            drawChimneySmokeDisc(tile_index, cx, 8, 4, chimney_smoke_soft_color);
+            drawChimneySmokeDisc(tile_index, cx + 2, 9, 2, chimney_smoke_soft_color);
+            drawChimneySmokePixelBlock(tile_index, cx, 8, 1);
+            setChimneySmokeTilePixel(tile_index, cx - 1, 7, 1);
+            setChimneySmokeTilePixel(tile_index, cx + 2, 8, 1);
+            setChimneySmokeTilePixel(tile_index, cx - 3, 10, chimney_smoke_soft_color);
+            setChimneySmokeTilePixel(tile_index, cx + 4, 10, chimney_smoke_soft_color);
+        },
+        2 => {
+            const cx: i16 = 8 - x_shift;
+            drawChimneySmokeDisc(tile_index, cx, 7, 4, chimney_smoke_soft_color);
+            drawChimneySmokeDisc(tile_index, cx - 3, 8, 2, chimney_smoke_soft_color);
+            setChimneySmokeTilePixel(tile_index, cx, 7, 1);
+            setChimneySmokeTilePixel(tile_index, cx - 1, 7, 1);
+            setChimneySmokeTilePixel(tile_index, cx + 1, 6, 1);
+            setChimneySmokeTilePixel(tile_index, cx + 3, 7, chimney_smoke_soft_color);
+            setChimneySmokeTilePixel(tile_index, cx - 4, 9, chimney_smoke_soft_color);
+        },
+        else => {
+            const cx: i16 = 7 + x_shift;
+            drawChimneySmokeDisc(tile_index, cx, 6, 2, chimney_smoke_soft_color);
+            setChimneySmokeTilePixel(tile_index, cx - 3, 7, chimney_smoke_soft_color);
+            setChimneySmokeTilePixel(tile_index, cx + 3, 6, chimney_smoke_soft_color);
+            if (age < 64) {
+                setChimneySmokeTilePixel(tile_index, cx, 6, 1);
+                setChimneySmokeTilePixel(tile_index, cx + 1, 7, chimney_smoke_soft_color);
+            }
+        },
+    }
+}
+
+fn drawChimneySmokePixelBlock(tile_index: usize, x: i16, y: i16, color: u4) void {
+    setChimneySmokeTilePixel(tile_index, x, y, color);
+    setChimneySmokeTilePixel(tile_index, x + 1, y, color);
+    setChimneySmokeTilePixel(tile_index, x, y + 1, color);
+    setChimneySmokeTilePixel(tile_index, x + 1, y + 1, color);
+}
+
+fn drawChimneySmokeDisc(tile_index: usize, center_x: i16, center_y: i16, radius: u8, color: u4) void {
+    const r: i16 = @intCast(radius);
+    var y: i16 = -r;
+    while (y <= r) : (y += 1) {
+        var x: i16 = -r;
+        while (x <= r) : (x += 1) {
+            if (x * x + y * y <= r * r) {
+                setChimneySmokeTilePixel(tile_index, center_x + x, center_y + y, color);
+            }
+        }
+    }
+}
+
+fn clearChimneySmokeTile(tile_index: usize) void {
+    const first_tile = tile_index * chimney_smoke_tiles_per_object;
+    var local_tile: usize = 0;
+    while (local_tile < chimney_smoke_tiles_per_object) : (local_tile += 1) {
+        var byte_index: usize = 0;
+        while (byte_index < 32) : (byte_index += 1) {
+            chimney_smoke_tiles[first_tile + local_tile].data_8[byte_index] = 0;
+        }
+    }
+}
+
+fn setChimneySmokeTilePixel(tile_index: usize, x: i16, y: i16, color: u4) void {
+    if (x < 0 or x >= 16 or y < 0 or y >= 16) return;
+    const tile_x: usize = @intCast(@divTrunc(x, 8));
+    const tile_y: usize = @intCast(@divTrunc(y, 8));
+    const local_x: i16 = @intCast(@mod(x, 8));
+    const local_y: i16 = @intCast(@mod(y, 8));
+    const object_tile_index = tile_index * chimney_smoke_tiles_per_object + tile_y * 2 + tile_x;
+    const pixel_index: u8 = @intCast(local_y * 8 + local_x);
+    const byte_index = pixel_index >> 1;
+    if ((pixel_index & 1) == 0) {
+        chimney_smoke_tiles[object_tile_index].data_8[byte_index] = (chimney_smoke_tiles[object_tile_index].data_8[byte_index] & 0xf0) | color;
+    } else {
+        chimney_smoke_tiles[object_tile_index].data_8[byte_index] = (chimney_smoke_tiles[object_tile_index].data_8[byte_index] & 0x0f) | (@as(u8, color) << 4);
+    }
+}
+
+fn hideChimneySmokeObjects() void {
+    var index: usize = 0;
+    while (index < chimney_smoke_object_count) : (index += 1) {
+        hideObject(chimney_smoke_first_object + index);
+    }
+}
+
 fn setWindSnowPixel(tile_index: usize, x: i16, y: i16, color: u4) void {
     if (x < 0 or x >= 8 or y < 0 or y >= 8) return;
     const pixel_index: u8 = @intCast(y * 8 + x);
@@ -2623,26 +5888,38 @@ fn setWindSnowPixel(tile_index: usize, x: i16, y: i16, color: u4) void {
 
 fn resetWindSnow(room_index: usize, camera: Camera) void {
     wind_snow_particles = [_]WindSnowParticle{.{}} ** max_wind_snow_particles;
-    if (rooms[room_index].wind_snow_strength == 0) {
+    if (windSnowSuppressed(room_index) or rooms[room_index].wind_snow_strength == 0) {
         hideWindSnowObjects();
+        wind_snow_visible = false;
+        wind_snow_particle_count = 0;
         return;
     }
 
+    wind_snow_visible = true;
+    const particle_limit = windSnowParticleLimit(room_index);
+    wind_snow_particle_count = particle_limit;
     var index: usize = 0;
-    while (index < max_wind_snow_particles) : (index += 1) {
+    while (index < particle_limit) : (index += 1) {
         wind_snow_particles[index] = newWindSnowParticle(room_index, camera, index, true);
     }
 }
 
 fn updateWindSnow(room_index: usize, camera: Camera) void {
     const room = rooms[room_index];
-    if (room.wind_snow_strength == 0) {
-        hideWindSnowObjects();
+    if (windSnowSuppressed(room_index) or room.wind_snow_strength == 0) {
+        if (wind_snow_visible) {
+            hideWindSnowObjects();
+        }
+        wind_snow_visible = false;
+        wind_snow_particle_count = 0;
         return;
     }
 
+    wind_snow_visible = true;
+    const particle_limit = windSnowParticleLimit(room_index);
+    wind_snow_particle_count = particle_limit;
     var index: usize = 0;
-    while (index < max_wind_snow_particles) : (index += 1) {
+    while (index < particle_limit) : (index += 1) {
         if (!wind_snow_particles[index].active) {
             wind_snow_particles[index] = newWindSnowParticle(room_index, camera, index, false);
             continue;
@@ -2665,6 +5942,14 @@ fn updateWindSnow(room_index: usize, camera: Camera) void {
             wind_snow_particles[index] = newWindSnowParticle(room_index, camera, index, false);
         }
     }
+}
+
+fn windSnowSuppressed(room_index: usize) bool {
+    return isPrologueEndRoom(room_index) and bridge_sequence_started;
+}
+
+fn windSnowParticleLimit(room_index: usize) usize {
+    return if (isPrologueEndRoom(room_index)) bridge_room_wind_snow_particles else max_wind_snow_particles;
 }
 
 fn newWindSnowParticle(room_index: usize, camera: Camera, index: usize, fill_screen: bool) WindSnowParticle {
@@ -2692,14 +5977,13 @@ fn newWindSnowParticle(room_index: usize, camera: Camera, index: usize, fill_scr
 }
 
 fn pickWindSnowY(room_index: usize, camera: Camera, index: usize, x: i16) i16 {
-    _ = room_index;
     _ = x;
     const min_y = camera.y + 4;
     const max_y = camera.y + screen_height - 18;
     const span: usize = @intCast(max_y - min_y);
-    const lane_count = max_wind_snow_particles;
+    const lane_count = windSnowParticleLimit(room_index);
     if (span <= 1) return min_y;
-    if (index < max_wind_snow_particles and wind_snow_particles[index].active == false) {
+    if (index < lane_count and wind_snow_particles[index].active == false) {
         return min_y + @as(i16, @intCast(hashIndex(index, 29) % span));
     }
     const y_lane = (index * 17 + 5) % lane_count;
@@ -2717,8 +6001,10 @@ fn hashIndex(index: usize, salt: u16) u16 {
 }
 
 fn drawWindSnow(camera: Camera) void {
+    if (!wind_snow_visible) return;
+
     var index: usize = 0;
-    while (index < max_wind_snow_particles) : (index += 1) {
+    while (index < wind_snow_particle_count) : (index += 1) {
         if (!wind_snow_particles[index].active) {
             hideObject(wind_snow_first_object + index);
             continue;
@@ -2737,46 +6023,28 @@ fn drawWindSnow(camera: Camera) void {
 }
 
 fn hideWindSnowObjects() void {
+    wind_snow_particle_count = 0;
     var index: usize = 0;
     while (index < max_wind_snow_particles) : (index += 1) {
         hideObject(wind_snow_first_object + index);
     }
 }
 
-fn drawParallaxObjects(camera: Camera, room_index: usize) void {
+fn updateParallaxBackground(camera: Camera, room_index: usize) void {
     const maybe_parallax = rooms[room_index].parallax;
     if (maybe_parallax == null) {
-        hideParallaxObjects();
+        gba.display.ctrl.bg1 = false;
         return;
     }
 
     const parallax = maybe_parallax.?;
     const extra_x: i16 = if (parallax.scroll_extra_x_divisor == 0) 0 else @divTrunc(camera.x, parallax.scroll_extra_x_divisor);
     const extra_y: i16 = if (parallax.scroll_extra_y_divisor == 0) 0 else @divTrunc(camera.y, parallax.scroll_extra_y_divisor);
-    const base_x = parallax.world_x - camera.x - extra_x;
-    const base_y = parallax.world_y - camera.y - extra_y;
-    var index: usize = 0;
-    while (index < parallax_max_objects) : (index += 1) {
-        if (index >= parallax.chunk_count) {
-            hideObject(parallax_first_object + index);
-            continue;
-        }
-        gba.display.objects[parallax_first_object + index] = gba.display.Object.init(.{
-            .size = .size_64x64,
-            .x = objX(base_x + @as(i16, @intCast(index)) * parallax_chunk_size),
-            .y = objY(base_y),
-            .base_tile = parallax_base_tile + @as(u10, @intCast(index * 64)),
-            .priority = 0,
-            .palette = parallax_palette_bank,
-        });
-    }
-}
-
-fn hideParallaxObjects() void {
-    var index: usize = 0;
-    while (index < parallax_max_objects) : (index += 1) {
-        hideObject(parallax_first_object + index);
-    }
+    const scroll_x = camera.x + extra_x - parallax.world_x;
+    const scroll_y = camera.y + extra_y - parallax.world_y;
+    streamParallaxBackground(room_index, parallax, scroll_x, scroll_y);
+    gba.display.bg_scroll[1] = .init(@intCast(scroll_x), @intCast(scroll_y));
+    gba.display.ctrl.bg1 = true;
 }
 
 fn updateBirdNpc(player: Player, camera: Camera) void {
@@ -2860,6 +6128,20 @@ fn updateBirdNpc(player: Player, camera: Camera) void {
                 bird_npc.timer = 0;
             }
         },
+        .ending_fly_in => {
+            bird_npc.frame = bird_fly_first_frame + @as(u16, @intCast(@divTrunc(bird_npc.timer, bird_anim_speed) % bird_fly_frame_count));
+            bird_npc.x = approach(bird_npc.x, pixelToFixed(bird_npc.home_x), 0x1A0);
+            bird_npc.y = approach(bird_npc.y, pixelToFixed(bird_npc.home_y), 0x110);
+            bird_npc.facing_left = true;
+            if (bird_npc.x == pixelToFixed(bird_npc.home_x) and bird_npc.y == pixelToFixed(bird_npc.home_y)) {
+                bird_npc.state = .ending_idle;
+                bird_npc.timer = 0;
+            }
+        },
+        .ending_idle => {
+            bird_npc.frame = birdIdlePeckFrame();
+            bird_npc.facing_left = true;
+        },
         .done => {
             bird_npc.frame = birdIdlePeckFrame();
         },
@@ -2942,6 +6224,62 @@ fn advanceBirdAlongPath() bool {
     return true;
 }
 
+fn updateTinyBirds(player: Player, room_index: usize) void {
+    if (room_index != tiny_bird_room_index or tiny_bird_count == 0) return;
+
+    if (!tiny_bird_flock_triggered and playerNearTinyBirdFlock(player)) {
+        tiny_bird_flock_triggered = true;
+        var trigger_index: usize = 0;
+        while (trigger_index < tiny_bird_count) : (trigger_index += 1) {
+            tiny_birds[trigger_index].flying = true;
+        }
+    }
+
+    var any_active = false;
+    var index: usize = 0;
+    while (index < tiny_bird_count) : (index += 1) {
+        var tiny_bird = &tiny_birds[index];
+        if (!tiny_bird.active) continue;
+        any_active = true;
+        if (!tiny_bird.flying) continue;
+
+        tiny_bird.x += tiny_bird.vx;
+        tiny_bird.y += tiny_bird.vy;
+        if ((foreground_anim_counter & 7) == 0) {
+            const drift: i32 = if (((foreground_anim_counter >> 3) + tiny_bird.phase) & 1 == 0) fixed_one / 4 else -fixed_one / 4;
+            tiny_bird.x += drift;
+        }
+        if (fixedToPixel(tiny_bird.y) < -12) {
+            tiny_bird.active = false;
+            hideObject(tiny_bird_first_object + index);
+        }
+    }
+
+    if (tiny_bird_flock_triggered and !any_active) {
+        room_states[room_index].tiny_birds_flown = true;
+        tiny_bird_count = 0;
+        hideTinyBirds();
+    }
+}
+
+fn playerNearTinyBirdFlock(player: Player) bool {
+    const player_x = fixedToPixel(player.x) + player_body_width / 2;
+    const player_y = fixedToPixel(player.y) + player_body_height / 2;
+    var index: usize = 0;
+    while (index < tiny_bird_count) : (index += 1) {
+        const tiny_bird = tiny_birds[index];
+        if (!tiny_bird.active) continue;
+        const bird_x = fixedToPixel(tiny_bird.x) + 4;
+        const bird_y = fixedToPixel(tiny_bird.y) + 4;
+        if (absI16(player_x - bird_x) <= tiny_bird_trigger_distance_x and
+            absI16(player_y - bird_y) <= tiny_bird_trigger_distance_y)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 fn drawBirdNpc(camera: Camera) void {
     if (!bird_npc.active or bird_npc.state == .inactive or bird_npc.state == .gone) {
         hideObject(bird_object);
@@ -2964,12 +6302,15 @@ fn drawBirdNpc(camera: Camera) void {
 
     const show_squawk_hint = bird_npc.state == .squawk and bird_npc.timer >= bird_hint_show_delay_frames;
     const show_hide_hint = bird_npc.state == .hide_hint or (bird_npc.state == .liftoff and bird_npc.timer < bird_hint_hide_frames);
-    if (show_squawk_hint or bird_npc.state == .hold_hint or bird_npc.state == .climb_hint or show_hide_hint) {
-        if (bird_npc.state == .squawk or bird_npc.state == .hold_hint) {
-            gba.display.memcpyObjectTiles4Bpp(bird_hint_base_tile, @ptrCast(&bird_hold_hint_tiles_data));
-        } else {
-            gba.display.memcpyObjectTiles4Bpp(bird_hint_base_tile, @ptrCast(&bird_climb_hint_tiles_data));
-        }
+    const show_dash_hint = bird_npc.state == .ending_idle;
+    if (show_squawk_hint or bird_npc.state == .hold_hint or bird_npc.state == .climb_hint or show_hide_hint or show_dash_hint) {
+        const hint_kind: BirdHintKind = if (show_dash_hint)
+            .dash
+        else if (bird_npc.state == .squawk or bird_npc.state == .hold_hint)
+            .hold
+        else
+            .climb;
+        loadBirdHint(hint_kind);
         const hide_lift: i16 = if (bird_npc.state == .hide_hint) @intCast(@divTrunc(bird_npc.timer, 4)) else 0;
         gba.display.objects[bird_hint_object] = gba.display.Object.init(.{
             .size = .size_64x64,
@@ -2984,12 +6325,128 @@ fn drawBirdNpc(camera: Camera) void {
     }
 }
 
+fn drawTinyBirds(camera: Camera) void {
+    if (tiny_bird_count == 0) return;
+
+    var index: usize = 0;
+    while (index < max_tiny_birds) : (index += 1) {
+        if (index >= tiny_bird_count or !tiny_birds[index].active) {
+            hideObject(tiny_bird_first_object + index);
+            continue;
+        }
+        const tiny_bird = tiny_birds[index];
+        const frame: u8 = if (tiny_bird.flying)
+            @intCast((foreground_anim_counter / 4 + tiny_bird.phase) % tiny_bird_frame_count)
+        else
+            @intCast((foreground_anim_counter / 28 + tiny_bird.phase) % tiny_bird_frame_count);
+        gba.display.objects[tiny_bird_first_object + index] = gba.display.Object.init(.{
+            .size = .size_8x8,
+            .x = objX(fixedToPixel(tiny_bird.x) - camera.x),
+            .y = objY(fixedToPixel(tiny_bird.y) - camera.y),
+            .base_tile = tiny_bird_base_tile + @as(u10, tiny_bird.variant) * tiny_bird_tiles_per_variant + frame,
+            .priority = 1,
+            .palette = tiny_bird_palette_bank,
+        });
+    }
+}
+
+fn hideTinyBirds() void {
+    var index: usize = 0;
+    while (index < max_tiny_birds) : (index += 1) {
+        hideObject(tiny_bird_first_object + index);
+    }
+}
+
 fn loadBirdFrame(frame: u16) void {
     const safe_frame = @min(frame, bird_total_frame_count - 1);
+    if (loaded_bird_frame == safe_frame) return;
     const byte_offset = @as(usize, safe_frame) * bird_tiles_per_frame * 32;
     const byte_len = bird_tiles_per_frame * 32;
     const frame_bytes = bird_intro_tiles_data[byte_offset .. byte_offset + byte_len];
     gba.display.memcpyObjectTiles4Bpp(bird_base_tile, @ptrCast(@alignCast(frame_bytes)));
+    loaded_bird_frame = safe_frame;
+}
+
+fn loadBirdHint(kind: BirdHintKind) void {
+    if (loaded_bird_hint_kind == kind) return;
+    switch (kind) {
+        .hold => gba.display.memcpyObjectTiles4Bpp(bird_hint_base_tile, @ptrCast(&bird_hold_hint_tiles_data)),
+        .climb => gba.display.memcpyObjectTiles4Bpp(bird_hint_base_tile, @ptrCast(&bird_climb_hint_tiles_data)),
+        .dash => gba.display.memcpyObjectTiles4Bpp(bird_hint_base_tile, @ptrCast(&bird_dash_hint_tiles_data)),
+        .none => {},
+    }
+    loaded_bird_hint_kind = kind;
+}
+
+fn drawGrannyNpc(camera: Camera, room_index: usize) void {
+    const cutscene = rooms[room_index].granny_cutscene orelse {
+        hideGrannyNpc();
+        return;
+    };
+
+    const animation = grannyAnimationForRoom(room_index);
+    const frame_count = grannyAnimationFrameCount(animation);
+    const frame: u16 = @intCast((foreground_anim_counter / granny_anim_speed) % frame_count);
+    loadGrannyFrame(animation, frame);
+    gba.display.objects[granny_object] = gba.display.Object.init(.{
+        .size = .size_32x32,
+        .x = objX(cutscene.granny.x - granny_origin_offset_x - camera.x),
+        .y = objY(cutscene.granny.y - granny_origin_offset_y - camera.y),
+        .base_tile = granny_base_tile,
+        .priority = 1,
+        .palette = granny_palette_bank,
+        .flip = gba.math.Vec2B.init(grannyFacingLeftForRoom(cutscene, room_index), false),
+    });
+    granny_visible = true;
+}
+
+fn grannyAnimationForRoom(room_index: usize) GrannyAnimation {
+    if (laugh_text.active and laugh_text.room_index == room_index) return .laugh;
+    if (granny_cutscene.active and granny_cutscene.room_index == room_index and granny_cutscene.phase == .laugh_pause) return .laugh;
+    if (granny_cutscene.active and granny_cutscene.room_index == room_index and granny_cutscene.phase == .dialogue and granny_cutscene.dialogue_index == 4) return .quotes;
+    return .idle;
+}
+
+fn grannyAnimationFrameCount(animation: GrannyAnimation) u16 {
+    return switch (animation) {
+        .laugh => granny_laugh_frame_count,
+        .quotes => granny_quotes_frame_count,
+        else => granny_idle_frame_count,
+    };
+}
+
+fn grannyFacingLeftForRoom(cutscene: *const GrannyCutscene, room_index: usize) bool {
+    if (granny_cutscene.active and granny_cutscene.room_index == room_index) {
+        return switch (granny_cutscene.phase) {
+            .walk_edge, .laugh_pause => false,
+            .dialogue => if (granny_cutscene.dialogue_index >= 3) false else cutscene.granny_facing_left,
+            else => cutscene.granny_facing_left,
+        };
+    }
+    if (granny_intro_done) return false;
+    return cutscene.granny_facing_left;
+}
+
+fn loadGrannyFrame(animation: GrannyAnimation, frame: u16) void {
+    const frame_count = grannyAnimationFrameCount(animation);
+    const safe_frame = @min(frame, frame_count - 1);
+    if (loaded_granny_animation == animation and loaded_granny_frame == safe_frame) return;
+    const byte_offset = @as(usize, safe_frame) * granny_tiles_per_frame * 32;
+    const byte_len = granny_tiles_per_frame * 32;
+    const frame_bytes = switch (animation) {
+        .laugh => granny_laugh_tiles_data[byte_offset .. byte_offset + byte_len],
+        .quotes => granny_quotes_tiles_data[byte_offset .. byte_offset + byte_len],
+        else => granny_idle_tiles_data[byte_offset .. byte_offset + byte_len],
+    };
+    gba.display.memcpyObjectTiles4Bpp(granny_base_tile, @ptrCast(@alignCast(frame_bytes)));
+    loaded_granny_frame = safe_frame;
+    loaded_granny_animation = animation;
+}
+
+fn hideGrannyNpc() void {
+    if (!granny_visible) return;
+    hideObject(granny_object);
+    granny_visible = false;
 }
 
 fn drawForegroundStampObjects(camera: Camera) void {
@@ -3037,7 +6494,7 @@ fn drawForegroundStampObjects(camera: Camera) void {
             .x = objX(stamp.x - camera.x),
             .y = objY(stamp.y - camera.y),
             .base_tile = base_tile + @as(u10, @intCast(frame * tiles_per_frame)),
-            .priority = 0,
+            .priority = if (occludes) 0 else 1,
             .palette = palette,
             .flip = gba.math.Vec2B.init(false, (stamp.flags & 2) != 0),
         });
@@ -3051,6 +6508,91 @@ fn drawForegroundStampObjects(camera: Camera) void {
     while (index < max_foreground_stamps) : (index += 1) {
         hideObject(foreground_behind_stamp_first_object + index);
     }
+}
+
+fn drawRoomWires(camera: Camera) void {
+    if (disable_wire_drawing_for_perf_test) {
+        return;
+    }
+
+    if (wire_chunk_count == 0) return;
+    var index: usize = 0;
+    while (index < max_wire_chunks) : (index += 1) {
+        const object_index = wireObjectIndex(index) orelse continue;
+        if (index >= wire_chunk_count or !wire_chunks[index].active) {
+            hideObject(object_index);
+            continue;
+        }
+        const chunk = wire_chunks[index];
+        gba.display.objects[object_index] = gba.display.Object.init(.{
+            .size = .size_32x8,
+            .x = objX(chunk.x - camera.x),
+            .y = objY(chunk.y - camera.y),
+            .base_tile = wire_base_tile + @as(u10, @intCast(chunk.tile_offset)),
+            .priority = 1,
+            .palette = wire_palette_bank,
+        });
+    }
+}
+
+fn wireSag(phase: u8) u8 {
+    const gust = wireGustSag(phase);
+    if (gust != 0) return gust;
+
+    const tick = (@as(u16, foreground_anim_counter >> 1) + phase) & 127;
+    if (tick >= 28 and tick < 72) return 1;
+    if (tick >= 72 and tick < 104) return 2;
+    if (tick >= 104 and tick < 120) return 1;
+    return 0;
+}
+
+fn wireGustSag(phase: u8) u8 {
+    const gust_period: u16 = 480;
+    const gust_tick = (foreground_anim_counter + @as(u16, phase >> 2)) % gust_period;
+    if (gust_tick >= 34) return 0;
+
+    if (gust_tick < 8) return 1;
+    if (gust_tick < 14) return 2;
+    if (gust_tick < 26) return 1;
+    return 0;
+}
+
+fn hideRoomWires() void {
+    const used_falling_objects = falling_block_count * falling_block_objects_per_block;
+    var index: usize = used_falling_objects;
+    while (index < max_falling_blocks * falling_block_objects_per_block) : (index += 1) {
+        hideObject(falling_block_first_object + index);
+    }
+
+    if (bridge_active) return;
+    index = foregroundBehindObjectCount();
+    while (index < max_foreground_stamps) : (index += 1) {
+        hideObject(foreground_behind_stamp_first_object + index);
+    }
+}
+
+fn wireObjectIndex(index: usize) ?usize {
+    const used_falling_objects = falling_block_count * falling_block_objects_per_block;
+    const falling_object_capacity = max_falling_blocks * falling_block_objects_per_block;
+    const free_falling_objects = falling_object_capacity - used_falling_objects;
+    if (index < free_falling_objects) return falling_block_first_object + used_falling_objects + index;
+
+    if (bridge_active) return null;
+    const behind_count = foregroundBehindObjectCount();
+    const behind_index = index - free_falling_objects;
+    if (behind_index >= max_foreground_stamps - behind_count) return null;
+    return foreground_behind_stamp_first_object + behind_count + behind_index;
+}
+
+fn foregroundBehindObjectCount() usize {
+    var count: usize = 0;
+    var index: usize = 0;
+    while (index < foreground_stamp_count) : (index += 1) {
+        const stamp = foreground_stamps[index];
+        if (!stamp.active or stamp.kind > 1 or (stamp.flags & 4) != 0) continue;
+        count += 1;
+    }
+    return count;
 }
 
 fn updateFunnyCars(player: Player) void {
@@ -3176,7 +6718,7 @@ fn drawFallingBlockChunk(object_index: usize, x: i16, y: i16, base_tile: u10, si
         .x = objX(x),
         .y = objY(y),
         .base_tile = base_tile,
-        .priority = 0,
+        .priority = 1,
         .palette = falling_block_palette_bank,
     });
 }
@@ -3197,6 +6739,7 @@ fn hideFallingBlockObjects() void {
 
 fn drawBridgeObjects(camera: Camera) void {
     if (!bridge_active) {
+        if (bridge_drawn_object_count != 0) hideBridgeObjects();
         return;
     }
 
@@ -3212,21 +6755,26 @@ fn drawBridgeObjects(camera: Camera) void {
         const shake_x: i16 = if (chunk.state == .shaking and (chunk.timer & 3) == 0) -1 else 0;
         const shake_y: i16 = if (chunk.state == .shaking and (chunk.timer & 7) == 0) 1 else 0;
         const screen_y = fixedToPixel(chunk.y) - camera.y;
+        if (screen_y < -bridge_chunk_height or screen_y >= screen_height) continue;
+
         const base_tile = bridge_base_tile + @as(u10, @intCast(@as(u16, chunk.variant) * bridge_tiles_per_chunk));
+        const palette = if (chunk.state == .falling) bridge_falling_palette_bank else bridge_palette_bank;
         gba.display.objects[bridge_first_object + object_offset] = gba.display.Object.init(.{
             .size = .size_8x32,
             .x = objX(screen_x + shake_x),
             .y = objY(screen_y + shake_y),
             .base_tile = base_tile,
-            .priority = 0,
-            .palette = bridge_palette_bank,
+            .priority = 1,
+            .palette = palette,
         });
         object_offset += 1;
     }
 
-    while (object_offset < bridge_max_objects) : (object_offset += 1) {
-        hideObject(bridge_first_object + object_offset);
+    var hide_offset = object_offset;
+    while (hide_offset < bridge_drawn_object_count) : (hide_offset += 1) {
+        hideObject(bridge_first_object + hide_offset);
     }
+    bridge_drawn_object_count = object_offset;
 }
 
 fn hideBridgeObjects() void {
@@ -3234,6 +6782,7 @@ fn hideBridgeObjects() void {
     while (index < bridge_max_objects) : (index += 1) {
         hideObject(bridge_first_object + index);
     }
+    bridge_drawn_object_count = 0;
 }
 
 fn hideObject(object_index: usize) void {
@@ -3557,6 +7106,52 @@ fn solidRectAt(x: i16, y: i16, width: i16, height: i16, room_index: usize) bool 
     return false;
 }
 
+fn spikeRectAt(x: i16, y: i16, width: i16, height: i16, room_index: usize) bool {
+    const room = rooms[room_index];
+    const left = x;
+    const right = x + width - 1;
+    const top = y;
+    const bottom = y + height - 1;
+    const rect_left = x;
+    const rect_right = x + width;
+    const rect_top = y;
+    const rect_bottom = y + height;
+    if (right < 0 or left >= room.width_pixels) return false;
+    if (bottom < 0 or top >= room.height_pixels) return false;
+
+    const clipped_left: i16 = if (left < 0) 0 else left;
+    const clipped_right: i16 = if (right >= room.width_pixels) room.width_pixels - 1 else right;
+    const clipped_top: i16 = if (top < 0) 0 else top;
+    const clipped_bottom: i16 = if (bottom >= room.height_pixels) room.height_pixels - 1 else bottom;
+    const tile_left: usize = @intCast(@divTrunc(clipped_left, 8));
+    const tile_right: usize = @intCast(@divTrunc(clipped_right, 8));
+    const tile_top: usize = @intCast(@divTrunc(clipped_top, 8));
+    const tile_bottom: usize = @intCast(@divTrunc(clipped_bottom, 8));
+    var tile_y = tile_top;
+    while (tile_y <= tile_bottom) : (tile_y += 1) {
+        var tile_x = tile_left;
+        while (tile_x <= tile_right) : (tile_x += 1) {
+            const collision_value = room.collision[tile_y * room.width_tiles + tile_x];
+            if (collision_value >= 3 and collision_value <= 6) {
+                const spike_left: i16 = @as(i16, @intCast(tile_x)) * 8;
+                var hit_left = spike_left;
+                var hit_top: i16 = @as(i16, @intCast(tile_y)) * 8;
+                var hit_right = spike_left + 8;
+                var hit_bottom = hit_top + 8;
+                switch (collision_value) {
+                    3 => hit_top += 3,
+                    4 => hit_bottom = hit_top + 5,
+                    5 => hit_left += 3,
+                    6 => hit_right = hit_left + 5,
+                    else => {},
+                }
+                if (rectsOverlap(rect_left, rect_top, rect_right, rect_bottom, hit_left, hit_top, hit_right, hit_bottom)) return true;
+            }
+        }
+    }
+    return false;
+}
+
 fn oneWayFloorAt(x: i16, player_y: i16, room_index: usize) bool {
     const player_bottom = player_y + player_body_height;
     return oneWayPlatformAtBottom(x, player_bottom, room_index) or
@@ -3683,7 +7278,8 @@ fn dynamicSolidRectAt(x: i16, y: i16, width: i16, height: i16) bool {
         }
     }
     if (bridge_active) {
-        if (bottom <= bridge_world_y or y >= bridge_world_y + bridge_visual_height) return false;
+        if (bridgeEndingSolidRectAt(x, y, right, bottom)) return true;
+
         const start = bridgeChunkIndexAtX(x) orelse 0;
         const end = bridgeChunkIndexAtX(right - 1) orelse if (right <= bridge_world_x) 0 else bridge_chunk_count - 1;
         index = start;
@@ -3694,6 +7290,24 @@ fn dynamicSolidRectAt(x: i16, y: i16, width: i16, height: i16) bool {
             if (right > chunk.x and x < chunk.x + bridge_chunk_width and bottom > chunk_y and y < chunk_y + bridge_visual_height) {
                 return true;
             }
+        }
+    }
+    return false;
+}
+
+fn bridgeEndingSolidRectAt(x: i16, y: i16, right: i16, bottom: i16) bool {
+    if (!bridge_ending.active) return false;
+    if (!rectsOverlap(x, y, right, bottom, bridge_ending.platform.x, bridge_ending.platform.y, bridge_ending.platform.right(), bridge_ending.platform.y + bridge_visual_height)) {
+        return false;
+    }
+
+    var index = bridge_ending.start_index;
+    while (index <= bridge_ending.end_index and index < bridge_chunk_count) : (index += 1) {
+        const chunk = bridge_chunks[index];
+        if (chunk.state != .solid and chunk.state != .shaking) continue;
+        const chunk_y = fixedToPixel(chunk.y);
+        if (right > chunk.x and x < chunk.x + bridge_chunk_width and bottom > chunk_y and y < chunk_y + bridge_visual_height) {
+            return true;
         }
     }
     return false;
@@ -3745,6 +7359,10 @@ fn minI32(a: i32, b: i32) i32 {
     return if (a < b) a else b;
 }
 
+fn minU8(a: u8, b: u8) u8 {
+    return if (a < b) a else b;
+}
+
 fn absI16(value: i16) i16 {
     return if (value < 0) -value else value;
 }
@@ -3754,6 +7372,12 @@ fn maxI16(a: i16, b: i16) i16 {
 }
 
 fn signI32(value: i32) i16 {
+    if (value < 0) return -1;
+    if (value > 0) return 1;
+    return 0;
+}
+
+fn signI16(value: i16) i16 {
     if (value < 0) return -1;
     if (value > 0) return 1;
     return 0;

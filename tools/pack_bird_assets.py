@@ -87,6 +87,7 @@ def main() -> int:
     parser.add_argument("--fly", type=Path, required=True)
     parser.add_argument("--hold-hint", type=Path, required=True)
     parser.add_argument("--climb-hint", type=Path, required=True)
+    parser.add_argument("--dash-hint", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
 
@@ -98,8 +99,9 @@ def main() -> int:
 
     hold_hint = read_png_rgba(args.hold_hint)
     climb_hint = read_png_rgba(args.climb_hint)
+    dash_hint = read_png_rgba(args.dash_hint)
     bird_palette = palette_for(frames)
-    hint_palette = palette_for([hold_hint, climb_hint])
+    hint_palette = palette_for([hold_hint, climb_hint, dash_hint])
 
     bird_tiles = bytearray()
     for frame in frames:
@@ -112,6 +114,7 @@ def main() -> int:
     )
     (args.output_dir / "hold_hint_tiles.bin").write_bytes(pack_image(hold_hint, 64, 64, hint_palette))
     (args.output_dir / "climb_hint_tiles.bin").write_bytes(pack_image(climb_hint, 64, 64, hint_palette))
+    (args.output_dir / "dash_hint_tiles.bin").write_bytes(pack_image(dash_hint, 64, 64, hint_palette))
     (args.output_dir / "hint_palette.bin").write_bytes(
         b"".join(rgba_to_rgb555(color).to_bytes(2, "little") for color in hint_palette)
     )
