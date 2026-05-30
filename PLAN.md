@@ -92,23 +92,28 @@ chapter 1 city stub, and the runtime refactor is underway. Completed splits:
   lifecycle/update hooks, reusable dust/snow puff particles, reusable wind/snow
   environmental particles, reusable cutscene dialogue box rendering, reusable
   cutscene text helpers, gameplay scene drawing/effect hooks, active chapter
-  system dispatch, shared frame sync, and the dummy overworld placeholder screen
-  loader live under `src/runtime/`.
+  system dispatch, room-aware chapter scene hooks, chapter/session flow
+  dispatch, fixed scene object slot names, shared gameplay-room loading, shared
+  frame sync, and the dummy overworld placeholder screen loader live under
+  top-level domain folders: `src/core/`, `src/player/`, `src/world/`,
+  `src/room/`, `src/effects/`, `src/cutscene/`, and `src/chapters/`.
   Prologue-specific actors, cutscenes, bridge/end-platform logic, session flow,
   bird prompts, funny cars, room wires, tiny birds, Granny rendering, chimney
   smoke, and laugh text now live under
-  `src/runtime/chapters/prologue/` behind the `src/runtime/chapters/prologue.zig`
-  facade.
-- `src/runtime.zig` now delegates room lifecycle, room transitions, death flow,
+  `src/chapters/prologue/` behind the `src/chapters/prologue.zig`
+  facade. The chapter 1 city stub now has its own
+  `src/chapters/city/` module that owns the `chapter 1 / room 1` to
+  generated `city_1` mapping and empty systems hooks for future city mechanics.
+- `src/game.zig` now delegates room lifecycle, room transitions, death flow,
   player movement, player collision, chapter/end-level flow, frame sync, and
   scene drawing to focused runtime modules while retaining only startup,
-  death/respawn timers, normal frame ordering, and camera-shake composition.
+  death/respawn timers, and normal frame ordering.
 
 Next refactor targets:
 
-- Treat `src/runtime.zig` as the frame-loop shell. Future refactors should be
-  tactical: death/respawn timer ownership, camera/cutscene shake composition, or
-  a fuller entity registry only when new chapter work creates real pressure.
+- Treat `src/game.zig` as the frame-loop shell. Future refactors should be
+  tactical: death/respawn timer ownership or a fuller entity registry only when
+  new chapter work creates real pressure.
 - Use the extracted falling block system as the pattern for
   load/update/draw/collision hooks and side-effect event reporting, and the
   foreground stamp system as the pattern for reusable room decoration/occlusion
@@ -116,16 +121,17 @@ Next refactor targets:
   system adapter, with prologue funny cars as the first implementation; bird
   NPCs are now the first tutorial-prompt NPC extraction;
   footsteps now own terrain surface classification and SFX sample rotation;
-  gameplay scene drawing/effect hooks, frame sync, prologue chapter flow, and
-  the dummy overworld screen loader are now separated from the frame loop; room
+  gameplay scene drawing/effect hooks, frame sync, chapter flow dispatch,
+  prologue chapter flow, and the dummy overworld screen loader are now separated
+  from the frame loop; room
   transitions, room-system updates, and death/respawn state now have dedicated
   owners; prologue-specific Granny sprite rendering, floating laugh text, the
   Granny cutscene script, bird actors, funny cars, room wires, tiny birds,
   chimney smoke, prologue flow, and bridge runtime are now in the prologue
   chapter folder.
 - Keep player movement behavior stable. Future chapter mechanics should reuse
-  `player_controller`, `player_collision`, and room-system hooks rather than
-  reintroducing direct room branches in the frame loop.
+  `src/player/controller.zig`, `src/player/collision.zig`, and room-system
+  hooks rather than reintroducing direct room branches in the frame loop.
 - Preserve the current prologue, overworld placeholder, and chapter 1 room
   wiring behavior after every pass.
 
@@ -374,14 +380,12 @@ Those are too broad and will damage coherence.
 - Room `0` has a foreground/parallax occlusion image packed into OBJ chunks.
 - Foreground grass stamp editing and sway generation exist, but runtime drawing currently supports only `grass1` and `grass2`.
 - Project handoff docs now live under `docs/`: `current-status.md`, `runtime-architecture.md`, and `asset-pipeline.md`.
-- Runtime refactor has started: `src/main.zig` is now a small root wrapper,
-  shared generated-room contracts live in `src/runtime/room_data.zig`, fixed
-  helpers live in `src/runtime/math.zig`, asset embeds live in
-  `src/runtime/assets.zig`, small support modules now own audio init, debug FPS,
-  OAM helpers, RNG, camera helpers, video constants, BG/parallax streaming,
-  player collision context, player movement control, frame sync, and
-  chapter/end-level flow, and the remaining `src/runtime.zig` file is a thin
-  frame-loop shell.
+- Runtime refactor has split the old monolithic shape into top-level domain
+  folders: `src/core/`, `src/player/`, `src/world/`, `src/room/`,
+  `src/effects/`, `src/cutscene/`, and `src/chapters/`. `src/main.zig` is a
+  small GBA wrapper and `src/game.zig` is the thin frame-loop shell. Chapter
+  systems, chapter flow, room scene drawing, room loading, and fixed scene
+  object slots now have explicit adapters for future city mechanics.
 - Remaining Milestone 0 gap: keep future splits tactical and driven by chapter
   work; the broad monolithic runtime refactor is largely complete without
   changing movement behavior.
@@ -460,4 +464,4 @@ This should be treated as a learning/fan demake unless original branding and ass
 3. Add a simple debug collision/player overlay before making more complex movement changes.
 4. Extend runtime foreground stamp support beyond `grass1` and `grass2` only after the grass art workflow is satisfying.
 5. Add `docs/reference-map.md` linking each mechanic to official, NES, and GBA reference files.
-6. Continue moving input, player, collision, rendering, entities, cutscenes, and effects out of `src/runtime.zig` into small modules once mechanics are less volatile.
+6. Keep future refactors tactical and chapter-driven; avoid broad movement/collision/rendering rewrites unless a new mechanic requires the boundary change.

@@ -14,6 +14,7 @@
                 --line: #3a414a;
                 --accent: #72d6ff;
                 --solid: rgba(255, 72, 72, 0.52);
+                --breakable: rgba(255, 154, 76, 0.62);
                 --oneway: rgba(92, 188, 255, 0.64);
                 --spike: rgba(255, 72, 188, 0.68);
                 --spring: rgba(255, 205, 74, 0.72);
@@ -21,6 +22,8 @@
                 --dash-refill: rgba(100, 245, 255, 0.82);
                 --stone: rgba(150, 160, 172, 0.72);
                 --mech: rgba(92, 255, 220, 0.68);
+                --exit-line: rgba(104, 255, 152, 0.95);
+                --death-line: rgba(255, 72, 72, 0.95);
                 --spawn: rgba(80, 255, 136, 0.88);
                 --falling: rgba(255, 205, 74, 0.88);
                 --stamp: rgba(180, 255, 92, 0.88);
@@ -174,6 +177,7 @@
                 <label for="mode">Mode</label>
                 <select id="mode">
                     <option value="solid">Solid Collision</option>
+                    <option value="breakableWall">Breakable Wall</option>
                     <option value="oneWay">One-way Platform</option>
                     <option value="spike">Spike</option>
                     <option value="spring">Spring</option>
@@ -181,6 +185,8 @@
                     <option value="dashRefill">Dash Refill</option>
                     <option value="stonePlatform">Stone Platform</option>
                     <option value="mechBlock">Mech Block</option>
+                    <option value="exitLine">Exit Line</option>
+                    <option value="pitDeathLine">Pit Death Line</option>
                     <option value="spawn">Spawn Point</option>
                     <option value="fallingBlock">Falling Block</option>
                     <option value="foregroundStamp">Foreground Stamp</option>
@@ -202,6 +208,11 @@
                         <input id="strawberryFlying" type="checkbox" style="width: auto; margin-right: 6px" />
                         Flying strawberry
                     </label>
+                </div>
+
+                <div id="exitPanel">
+                    <label for="exitTargetRoom">Exit Target Room</label>
+                    <input id="exitTargetRoom" type="text" placeholder="5a" />
                 </div>
 
                 <div id="stampPanel">
@@ -256,6 +267,7 @@
                     <div>Image: <span id="imageStats">none</span></div>
                     <div>Grid: <span id="gridStats">none</span></div>
                     <div>Solid: <span id="markedStats">0</span></div>
+                    <div>Breakable Walls: <span id="breakableStats">0</span></div>
                     <div>One-way: <span id="oneWayStats">0</span></div>
                     <div>Spikes: <span id="spikeStats">0</span></div>
                     <div>Springs: <span id="springStats">0</span></div>
@@ -263,6 +275,8 @@
                     <div>Dash Refills: <span id="dashRefillStats">0</span></div>
                     <div>Stone Platforms: <span id="stonePlatformStats">0</span></div>
                     <div>Mech Blocks: <span id="mechBlockStats">0</span></div>
+                    <div>Exits: <span id="exitLineStats">0</span></div>
+                    <div>Pit Deaths: <span id="pitDeathLineStats">0</span></div>
                     <div>Spawn: <span id="spawnStats">none</span></div>
                     <div>Falling Blocks: <span id="fallingBlockStats">0</span></div>
                     <div>Bridge Poles: <span id="bridgePoleStats">0</span></div>
@@ -272,10 +286,10 @@
                 </div>
 
                 <div class="hint">
-                    Solid, one-way, and spike modes: click or drag to mark tiles. Spring mode: click a pixel position for
+                    Solid, Breakable Wall, one-way, and spike modes: click or drag to mark tiles. Spring mode: click a pixel position for
                     a 14px spring. Strawberry and Dash Refill modes: click the center point. Stone Platform mode: click or drag 8x8 blocks.
                     Mech Block mode: drag an 8px-grid start rectangle, then Shift-click or Shift-drag the target center.
-                    Right click or hold Option/Alt to erase. Spawn mode: click to add respawn points. Falling
+                    Exit and Pit Death modes: drag a one-pixel line. Right click or hold Option/Alt to erase. Spawn mode: click to add respawn points. Falling
                     Block mode: drag a rectangle around the block tiles, click a block to select it. Shift-click sets the
                     selected block's landing row. Foreground Stamp mode: choose a stamp, click to place, right click or
                     Option-click to erase. Bridge poles are placed as foreground stamps. Bird NPC mode: click for bird
@@ -305,6 +319,7 @@
             const imageStats = document.getElementById("imageStats");
             const gridStats = document.getElementById("gridStats");
             const markedStats = document.getElementById("markedStats");
+            const breakableStats = document.getElementById("breakableStats");
             const oneWayStats = document.getElementById("oneWayStats");
             const spikeStats = document.getElementById("spikeStats");
             const springStats = document.getElementById("springStats");
@@ -312,6 +327,8 @@
             const dashRefillStats = document.getElementById("dashRefillStats");
             const stonePlatformStats = document.getElementById("stonePlatformStats");
             const mechBlockStats = document.getElementById("mechBlockStats");
+            const exitLineStats = document.getElementById("exitLineStats");
+            const pitDeathLineStats = document.getElementById("pitDeathLineStats");
             const spawnStats = document.getElementById("spawnStats");
             const fallingBlockStats = document.getElementById("fallingBlockStats");
             const bridgePoleStats = document.getElementById("bridgePoleStats");
@@ -326,6 +343,7 @@
             const stampAnchorXInput = document.getElementById("stampAnchorX");
             const stampAnchorYInput = document.getElementById("stampAnchorY");
             const strawberryFlyingInput = document.getElementById("strawberryFlying");
+            const exitTargetRoomInput = document.getElementById("exitTargetRoom");
             const stage = document.getElementById("stage");
             const base = document.getElementById("base");
             const overlay = document.getElementById("overlay");
@@ -334,10 +352,12 @@
 
             let backgrounds = [];
             let currentBackground = null;
+            let exitTargetRoomsByImage = new Map();
             let image = null;
             let gridW = 0;
             let gridH = 0;
             let tiles = new Set();
+            let breakableTiles = new Set();
             let oneWayTiles = new Set();
             let spikeTiles = new Map();
             let springs = [];
@@ -346,6 +366,8 @@
             let stonePlatforms = new Set();
             let mechBlocks = new Map();
             let selectedMechBlock = "";
+            let exitLines = [];
+            let pitDeathLines = [];
             let respawnPoints = [];
             let fallingBlocks = [];
             let stampFolders = [];
@@ -360,6 +382,7 @@
             let dragStartTile = null;
             let dragExistingBlock = -1;
             let dragStartPixel = null;
+            let dragLineStart = null;
             let drawingBirdPath = false;
             let hoverTile = null;
             let hoverPixel = null;
@@ -551,7 +574,42 @@
                 }
             }
 
+            function currentExitTargetRoom() {
+                return exitTargetRoomInput.value.trim();
+            }
+
+            function rememberCurrentExitTargetRoom() {
+                if (!currentBackground) return;
+                exitTargetRoomsByImage.set(currentBackground.image, currentExitTargetRoom());
+            }
+
+            function inferredExitTargetRoom(data) {
+                const explicit = String((data && data.exitTargetRoom) || "").trim();
+                if (explicit) return explicit;
+                const loadedExitLines = [
+                    ...((data && data.exits) || []),
+                    ...((data && data.exitLines) || []),
+                ];
+                const targets = [
+                    ...new Set(
+                        loadedExitLines
+                            .map((line) => String(line.targetRoom || line.target || line.room || "").trim())
+                            .filter(Boolean),
+                    ),
+                ];
+                return targets.length === 1 ? targets[0] : "";
+            }
+
+            function applyExitTargetRoomForBackground(imagePath, data) {
+                const value = exitTargetRoomsByImage.has(imagePath)
+                    ? exitTargetRoomsByImage.get(imagePath)
+                    : inferredExitTargetRoom(data);
+                exitTargetRoomInput.value = value || "";
+                exitTargetRoomsByImage.set(imagePath, exitTargetRoomInput.value);
+            }
+
             async function loadSelectedBackground() {
+                rememberCurrentExitTargetRoom();
                 currentBackground = backgrounds.find((item) => item.image === backgroundSelect.value) || backgrounds[0];
                 if (!currentBackground) return;
                 await Promise.all([loadImage(currentBackground.image), loadAnnotation(currentBackground.image)]);
@@ -570,6 +628,7 @@
 
             async function loadAnnotation(imagePath) {
                 tiles = new Set();
+                breakableTiles = new Set();
                 oneWayTiles = new Set();
                 spikeTiles = new Map();
                 springs = [];
@@ -578,6 +637,8 @@
                 stonePlatforms = new Set();
                 mechBlocks = new Map();
                 selectedMechBlock = "";
+                exitLines = [];
+                pitDeathLines = [];
                 respawnPoints = [];
                 fallingBlocks = [];
                 foregroundStamps = [];
@@ -619,6 +680,8 @@
                     const kind = tile.kind || "solid";
                     if (kind === "solid") {
                         tiles.add(key(tile.x, tile.y));
+                    } else if (kind === "breakableWall" || kind === "breakable") {
+                        breakableTiles.add(key(tile.x, tile.y));
                     } else if (kind === "oneWay") {
                         oneWayTiles.add(key(tile.x, tile.y));
                     } else if (kind === "spike" || kind === "hazard") {
@@ -640,6 +703,25 @@
                             clampDashRefillCenter({
                                 x: (Number(tile.x) || 0) * tileSize + tileSize / 2,
                                 y: (Number(tile.y) || 0) * tileSize + tileSize / 2,
+                            }),
+                        );
+                    } else if (kind === "exit" || kind === "exitLine") {
+                        exitLines.push(
+                            clampAnnotationLine({
+                                x1: (Number(tile.x) || 0) * currentTileSize(),
+                                y1: (Number(tile.y) || 0) * currentTileSize(),
+                                x2: (Number(tile.x) || 0) * currentTileSize() + currentTileSize() - 1,
+                                y2: (Number(tile.y) || 0) * currentTileSize(),
+                                targetRoom: tile.targetRoom || tile.target || tile.room || "",
+                            }),
+                        );
+                    } else if (kind === "pitDeath" || kind === "pitDeathLine" || kind === "deathLine") {
+                        pitDeathLines.push(
+                            clampAnnotationLine({
+                                x1: (Number(tile.x) || 0) * currentTileSize(),
+                                y1: (Number(tile.y) || 0) * currentTileSize(),
+                                x2: (Number(tile.x) || 0) * currentTileSize() + currentTileSize() - 1,
+                                y2: (Number(tile.y) || 0) * currentTileSize(),
                             }),
                         );
                     } else if (kind === "stonePlatform" || kind === "stone") {
@@ -691,6 +773,37 @@
                     const centerY = Number(refill.centerY ?? refill.y) || 0;
                     dashRefills.push(clampDashRefillCenter({ x: centerX, y: centerY }));
                 }
+                const loadedExitLines = [
+                    ...((result.data && result.data.exits) || []),
+                    ...((result.data && result.data.exitLines) || []),
+                ];
+                for (const line of loadedExitLines) {
+                    exitLines.push(
+                        clampAnnotationLine({
+                            x1: Number(line.x1 ?? line.startX) || 0,
+                            y1: Number(line.y1 ?? line.startY) || 0,
+                            x2: Number(line.x2 ?? line.endX) || 0,
+                            y2: Number(line.y2 ?? line.endY) || 0,
+                            targetRoom: line.targetRoom || line.target || line.room || "",
+                        }),
+                    );
+                }
+                const loadedPitDeathLines = [
+                    ...((result.data && result.data.pitDeathLines) || []),
+                    ...((result.data && result.data.deathLines) || []),
+                    ...((result.data && result.data.pitLines) || []),
+                ];
+                for (const line of loadedPitDeathLines) {
+                    pitDeathLines.push(
+                        clampAnnotationLine({
+                            x1: Number(line.x1 ?? line.startX) || 0,
+                            y1: Number(line.y1 ?? line.startY) || 0,
+                            x2: Number(line.x2 ?? line.endX) || 0,
+                            y2: Number(line.y2 ?? line.endY) || 0,
+                        }),
+                    );
+                }
+                applyExitTargetRoomForBackground(imagePath, result.data || {});
                 for (const platform of (result.data && result.data.stonePlatforms) || []) {
                     const next = clampStonePlatformPosition({
                         x: Number(platform.x) || 0,
@@ -779,6 +892,21 @@
                 for (const tileKey of tiles) {
                     const tile = splitKey(tileKey);
                     overlayCtx.fillRect(tile.x * tileSize, tile.y * tileSize, tileSize, tileSize);
+                }
+                overlayCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--breakable");
+                for (const tileKey of breakableTiles) {
+                    const tile = splitKey(tileKey);
+                    const x = tile.x * tileSize;
+                    const y = tile.y * tileSize;
+                    overlayCtx.fillRect(x, y, tileSize, tileSize);
+                    overlayCtx.strokeStyle = "rgba(255,255,255,0.42)";
+                    overlayCtx.lineWidth = 1;
+                    overlayCtx.beginPath();
+                    overlayCtx.moveTo(x + 2, y + 2);
+                    overlayCtx.lineTo(x + tileSize - 2, y + tileSize - 2);
+                    overlayCtx.moveTo(x + tileSize - 2, y + 2);
+                    overlayCtx.lineTo(x + 2, y + tileSize - 2);
+                    overlayCtx.stroke();
                 }
                 overlayCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--oneway");
                 for (const tileKey of oneWayTiles) {
@@ -927,9 +1055,30 @@
                 }
                 overlayCtx.stroke();
 
+                for (const line of pitDeathLines) {
+                    drawAnnotationLine(line, getComputedStyle(document.documentElement).getPropertyValue("--death-line"), 0.92, "");
+                }
+                for (const line of exitLines) {
+                    drawAnnotationLine(
+                        line,
+                        getComputedStyle(document.documentElement).getPropertyValue("--exit-line"),
+                        0.92,
+                        line.targetRoom,
+                    );
+                }
+                if ((modeSelect.value === "exitLine" || modeSelect.value === "pitDeathLine") && !eraseMode && dragLineStart && hoverPixel) {
+                    const preview = annotationLineFromPoints(dragLineStart, hoverPixel, exitTargetRoomInput.value);
+                    const color =
+                        modeSelect.value === "exitLine"
+                            ? getComputedStyle(document.documentElement).getPropertyValue("--exit-line")
+                            : getComputedStyle(document.documentElement).getPropertyValue("--death-line");
+                    drawAnnotationLine(preview, color, 0.72, modeSelect.value === "exitLine" ? preview.targetRoom : "");
+                }
+
                 imageStats.textContent = `${image.width}x${image.height}`;
                 gridStats.textContent = `${gridW}x${gridH}`;
                 markedStats.textContent = String(tiles.size);
+                breakableStats.textContent = String(breakableTiles.size);
                 oneWayStats.textContent = String(oneWayTiles.size);
                 spikeStats.textContent = String(spikeTiles.size);
                 springStats.textContent = String(springs.length);
@@ -937,6 +1086,8 @@
                 dashRefillStats.textContent = String(dashRefills.length);
                 stonePlatformStats.textContent = String(stonePlatforms.size);
                 mechBlockStats.textContent = mechBlockStatsText();
+                exitLineStats.textContent = String(exitLines.length);
+                pitDeathLineStats.textContent = String(pitDeathLines.length);
                 spawnStats.textContent = respawnPoints.length
                     ? respawnPoints.map((point, index) => `${index + 1}:${point.x},${point.y}`).join(" ")
                     : "none";
@@ -987,6 +1138,102 @@
                         overlayCtx.fillText(String(index + 1), point.x + 5, point.y - 4);
                     }
                 }
+            }
+
+            function clampPixelPoint(point) {
+                if (!image) {
+                    return {
+                        x: Math.round(point.x),
+                        y: Math.round(point.y),
+                    };
+                }
+                return {
+                    x: Math.round(Math.max(0, Math.min(image.width - 1, point.x))),
+                    y: Math.round(Math.max(0, Math.min(image.height - 1, point.y))),
+                };
+            }
+
+            function clampAnnotationLine(line) {
+                const start = clampPixelPoint({ x: Number(line.x1) || 0, y: Number(line.y1) || 0 });
+                const end = clampPixelPoint({ x: Number(line.x2) || 0, y: Number(line.y2) || 0 });
+                return {
+                    x1: start.x,
+                    y1: start.y,
+                    x2: end.x,
+                    y2: end.y,
+                    targetRoom: String(line.targetRoom || "").trim(),
+                };
+            }
+
+            function annotationLineFromPoints(startPoint, endPoint, targetRoom) {
+                const start = clampPixelPoint(startPoint);
+                const end = clampPixelPoint(endPoint);
+                return clampAnnotationLine({
+                    x1: start.x,
+                    y1: start.y,
+                    x2: end.x,
+                    y2: end.y,
+                    targetRoom,
+                });
+            }
+
+            function annotationLineLengthSq(line) {
+                const dx = line.x2 - line.x1;
+                const dy = line.y2 - line.y1;
+                return dx * dx + dy * dy;
+            }
+
+            function annotationLineSort(a, b) {
+                return a.y1 - b.y1 || a.x1 - b.x1 || a.y2 - b.y2 || a.x2 - b.x2 || a.targetRoom.localeCompare(b.targetRoom);
+            }
+
+            function drawAnnotationLine(line, color, alpha, label) {
+                overlayCtx.save();
+                overlayCtx.globalAlpha = alpha;
+                overlayCtx.strokeStyle = color;
+                overlayCtx.fillStyle = color;
+                overlayCtx.lineWidth = 1;
+                overlayCtx.beginPath();
+                overlayCtx.moveTo(line.x1 + 0.5, line.y1 + 0.5);
+                overlayCtx.lineTo(line.x2 + 0.5, line.y2 + 0.5);
+                overlayCtx.stroke();
+                overlayCtx.fillRect(line.x1 - 1, line.y1 - 1, 3, 3);
+                overlayCtx.fillRect(line.x2 - 1, line.y2 - 1, 3, 3);
+                const text = String(label || "").trim();
+                if (text) {
+                    const textX = Math.round((line.x1 + line.x2) / 2) + 3;
+                    const textY = Math.round((line.y1 + line.y2) / 2) - 3;
+                    overlayCtx.font = "7px monospace";
+                    const width = Math.ceil(overlayCtx.measureText(text).width);
+                    overlayCtx.fillStyle = "rgba(0,0,0,0.72)";
+                    overlayCtx.fillRect(textX - 1, textY - 7, width + 2, 9);
+                    overlayCtx.fillStyle = color;
+                    overlayCtx.fillText(text, textX, textY);
+                }
+                overlayCtx.restore();
+            }
+
+            function pointToLineDistanceSq(point, line) {
+                const dx = line.x2 - line.x1;
+                const dy = line.y2 - line.y1;
+                if (dx === 0 && dy === 0) {
+                    const px = point.x - line.x1;
+                    const py = point.y - line.y1;
+                    return px * px + py * py;
+                }
+                const t = Math.max(0, Math.min(1, ((point.x - line.x1) * dx + (point.y - line.y1) * dy) / (dx * dx + dy * dy)));
+                const nearestX = line.x1 + t * dx;
+                const nearestY = line.y1 + t * dy;
+                const px = point.x - nearestX;
+                const py = point.y - nearestY;
+                return px * px + py * py;
+            }
+
+            function findAnnotationLineAt(lines, point) {
+                for (let index = lines.length - 1; index >= 0; index -= 1) {
+                    if (pointToLineDistanceSq(point, lines[index]) <= 16) return index;
+                }
+                return -1;
             }
 
             function orientedEdgeBox(x, y, tileSize, direction, depthValue) {
@@ -1277,17 +1524,26 @@
                 const tileKey = key(x, y);
                 if (erase) {
                     tiles.delete(tileKey);
+                    breakableTiles.delete(tileKey);
                     oneWayTiles.delete(tileKey);
                     spikeTiles.delete(tileKey);
                 } else if (kind === "oneWay") {
                     tiles.delete(tileKey);
+                    breakableTiles.delete(tileKey);
                     spikeTiles.delete(tileKey);
                     oneWayTiles.add(tileKey);
                 } else if (kind === "spike") {
                     tiles.delete(tileKey);
+                    breakableTiles.delete(tileKey);
                     oneWayTiles.delete(tileKey);
                     spikeTiles.set(tileKey, currentSpikeDirection());
+                } else if (kind === "breakableWall") {
+                    tiles.delete(tileKey);
+                    oneWayTiles.delete(tileKey);
+                    spikeTiles.delete(tileKey);
+                    breakableTiles.add(tileKey);
                 } else {
+                    breakableTiles.delete(tileKey);
                     oneWayTiles.delete(tileKey);
                     spikeTiles.delete(tileKey);
                     tiles.add(tileKey);
@@ -1618,6 +1874,20 @@
             function paintEvent(event) {
                 if (!image) return;
                 const tile = eventToTile(event);
+                if (modeSelect.value === "exitLine" || modeSelect.value === "pitDeathLine") {
+                    const point = eventToPixel(event);
+                    if (eraseMode && event.type === "pointerdown") {
+                        if (modeSelect.value === "exitLine") {
+                            const index = findAnnotationLineAt(exitLines, point);
+                            if (index >= 0) exitLines.splice(index, 1);
+                        } else {
+                            const index = findAnnotationLineAt(pitDeathLines, point);
+                            if (index >= 0) pitDeathLines.splice(index, 1);
+                        }
+                    }
+                    redraw();
+                    return;
+                }
                 if (modeSelect.value === "fallingBlock") {
                     if (event.shiftKey && selectedFallingBlock >= 0) {
                         const tileSize = currentTileSize();
@@ -1796,7 +2066,9 @@
                         ? "oneWay"
                         : modeSelect.value === "spike"
                           ? "spike"
-                          : "solid";
+                          : modeSelect.value === "breakableWall"
+                            ? "breakableWall"
+                            : "solid";
                 if (event.shiftKey && !eraseMode) {
                     for (let x = tile.x; x < gridW; x += 1) setTile(x, tile.y, false, paintKind);
                 } else {
@@ -1831,6 +2103,7 @@
 
             function annotationObject() {
                 const sorted = [...tiles].map(splitKey).sort((a, b) => a.y - b.y || a.x - b.x);
+                const sortedBreakable = [...breakableTiles].map(splitKey).sort((a, b) => a.y - b.y || a.x - b.x);
                 const sortedOneWay = [...oneWayTiles].map(splitKey).sort((a, b) => a.y - b.y || a.x - b.x);
                 const sortedSpikes = [...spikeTiles.entries()]
                     .map(([tileKey, direction]) => ({ ...splitKey(tileKey), direction: normalizeSpikeDirection(direction) }))
@@ -1842,11 +2115,14 @@
                 const sortedDashRefills = [...dashRefills].sort((a, b) => a.y - b.y || a.x - b.x);
                 const sortedStonePlatforms = [...stonePlatforms].map(splitKey).sort((a, b) => a.y - b.y || a.x - b.x);
                 const sortedMechBlocks = [...mechBlocks.values()].sort((a, b) => a.y - b.y || a.x - b.x);
+                const sortedExitLines = [...exitLines].sort(annotationLineSort);
+                const sortedPitDeathLines = [...pitDeathLines].sort(annotationLineSort);
                 return {
                     image: currentBackground.image.split("/").pop(),
                     tileSize: currentTileSize(),
                     width: image.width,
                     height: image.height,
+                    exitTargetRoom: currentExitTargetRoom(),
                     spawn: respawnPoints[0] || { x: 24, y: 128 },
                     respawnPoints: respawnPoints,
                     fallingBlocks: fallingBlocks.map((block) => ({
@@ -1881,6 +2157,21 @@
                         material: "dashRefill",
                         w: dashRefillSize,
                         h: dashRefillSize,
+                    })),
+                    exits: sortedExitLines.map((line) => ({
+                        kind: "exit",
+                        x1: line.x1,
+                        y1: line.y1,
+                        x2: line.x2,
+                        y2: line.y2,
+                        targetRoom: line.targetRoom,
+                    })),
+                    pitDeathLines: sortedPitDeathLines.map((line) => ({
+                        kind: "pitDeath",
+                        x1: line.x1,
+                        y1: line.y1,
+                        x2: line.x2,
+                        y2: line.y2,
                     })),
                     springs: sortedSprings.map((spring) => ({
                         x: spring.x,
@@ -1921,6 +2212,12 @@
                             y: tile.y,
                             kind: "solid",
                             material: "solid",
+                        })),
+                        ...sortedBreakable.map((tile) => ({
+                            x: tile.x,
+                            y: tile.y,
+                            kind: "breakableWall",
+                            material: "breakableWall",
                         })),
                         ...sortedOneWay.map((tile) => ({
                             x: tile.x,
@@ -1993,6 +2290,9 @@
                 } else if (modeSelect.value === "oneWay") {
                     if (!confirm("Clear all one-way platform tiles for this background?")) return;
                     oneWayTiles.clear();
+                } else if (modeSelect.value === "breakableWall") {
+                    if (!confirm("Clear all breakable wall tiles for this background?")) return;
+                    breakableTiles.clear();
                 } else if (modeSelect.value === "spike") {
                     if (!confirm("Clear all spike tiles for this background?")) return;
                     spikeTiles.clear();
@@ -2012,6 +2312,12 @@
                     if (!confirm("Clear all mech blocks for this background?")) return;
                     mechBlocks.clear();
                     selectedMechBlock = "";
+                } else if (modeSelect.value === "exitLine") {
+                    if (!confirm("Clear all exit lines for this background?")) return;
+                    exitLines = [];
+                } else if (modeSelect.value === "pitDeathLine") {
+                    if (!confirm("Clear all pit death lines for this background?")) return;
+                    pitDeathLines = [];
                 } else {
                     if (!confirm("Clear all solid tiles for this background?")) return;
                     tiles.clear();
@@ -2040,6 +2346,10 @@
             modeSelect.addEventListener("change", resetPaintAndRedraw);
             spikeDirectionSelect.addEventListener("change", resetPaintAndRedraw);
             strawberryFlyingInput.addEventListener("change", resetPaintAndRedraw);
+            exitTargetRoomInput.addEventListener("input", () => {
+                rememberCurrentExitTargetRoom();
+                resetPaintAndRedraw();
+            });
             stampFlipXInput.addEventListener("change", resetPaintAndRedraw);
             stampFlipYInput.addEventListener("change", resetPaintAndRedraw);
             stampOccludesInput.addEventListener("change", resetPaintAndRedraw);
@@ -2056,6 +2366,7 @@
                 lastKey = "";
                 dragStartTile = null;
                 dragStartPixel = null;
+                dragLineStart = null;
                 dragExistingBlock = -1;
                 drawingBirdPath = modeSelect.value === "birdNpc" && event.metaKey && !eraseMode;
                 overlay.setPointerCapture(event.pointerId);
@@ -2064,6 +2375,8 @@
                     dragExistingBlock = findFallingBlockAt(dragStartTile);
                 } else if (modeSelect.value === "mechBlock" && !eraseMode && !event.shiftKey && !findMechBlockAt(hoverPixel)) {
                     dragStartPixel = hoverPixel;
+                } else if ((modeSelect.value === "exitLine" || modeSelect.value === "pitDeathLine") && !eraseMode) {
+                    dragLineStart = hoverPixel;
                 }
                 paintEvent(event);
             });
@@ -2092,6 +2405,16 @@
                 } else if (modeSelect.value === "mechBlock" && dragStartPixel && !eraseMode) {
                     upsertMechBlock(mechBlockRectFromPoints(dragStartPixel, eventToPixel(event)));
                     redraw();
+                } else if ((modeSelect.value === "exitLine" || modeSelect.value === "pitDeathLine") && dragLineStart && !eraseMode) {
+                    const line = annotationLineFromPoints(dragLineStart, eventToPixel(event), exitTargetRoomInput.value);
+                    if (annotationLineLengthSq(line) > 0) {
+                        if (modeSelect.value === "exitLine") {
+                            exitLines.push(line);
+                        } else {
+                            pitDeathLines.push(line);
+                        }
+                    }
+                    redraw();
                 }
                 isPointerDown = false;
                 eraseMode = false;
@@ -2099,6 +2422,7 @@
                 lastKey = "";
                 dragStartTile = null;
                 dragStartPixel = null;
+                dragLineStart = null;
                 dragExistingBlock = -1;
                 redraw();
             });
@@ -2111,6 +2435,7 @@
                 lastKey = "";
                 dragStartTile = null;
                 dragStartPixel = null;
+                dragLineStart = null;
                 dragExistingBlock = -1;
                 redraw();
             });
