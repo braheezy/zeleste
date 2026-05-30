@@ -16,6 +16,10 @@
                 --solid: rgba(255, 72, 72, 0.52);
                 --oneway: rgba(92, 188, 255, 0.64);
                 --spike: rgba(255, 72, 188, 0.68);
+                --spring: rgba(255, 205, 74, 0.72);
+                --strawberry: rgba(255, 64, 96, 0.78);
+                --stone: rgba(150, 160, 172, 0.72);
+                --mech: rgba(92, 255, 220, 0.68);
                 --spawn: rgba(80, 255, 136, 0.88);
                 --falling: rgba(255, 205, 74, 0.88);
                 --stamp: rgba(180, 255, 92, 0.88);
@@ -171,6 +175,10 @@
                     <option value="solid">Solid Collision</option>
                     <option value="oneWay">One-way Platform</option>
                     <option value="spike">Spike</option>
+                    <option value="spring">Spring</option>
+                    <option value="strawberry">Strawberry</option>
+                    <option value="stonePlatform">Stone Platform</option>
+                    <option value="mechBlock">Mech Block</option>
                     <option value="spawn">Spawn Point</option>
                     <option value="fallingBlock">Falling Block</option>
                     <option value="foregroundStamp">Foreground Stamp</option>
@@ -178,13 +186,20 @@
                 </select>
 
                 <div id="spikePanel">
-                    <label for="spikeDirection">Spike Direction</label>
+                    <label for="spikeDirection">Spike/Spring Direction</label>
                     <select id="spikeDirection">
                         <option value="up">Floor, points up</option>
                         <option value="down">Ceiling, points down</option>
                         <option value="left">Right wall, points left</option>
                         <option value="right">Left wall, points right</option>
                     </select>
+                </div>
+
+                <div id="strawberryPanel">
+                    <label>
+                        <input id="strawberryFlying" type="checkbox" style="width: auto; margin-right: 6px" />
+                        Flying strawberry
+                    </label>
                 </div>
 
                 <div id="stampPanel">
@@ -224,7 +239,7 @@
                     </div>
                     <div>
                         <label for="zoom">Zoom</label>
-                        <input id="zoom" type="number" min="1" max="8" value="3" />
+                        <input id="zoom" type="number" min="1" max="8" value="5" />
                     </div>
                 </div>
 
@@ -241,6 +256,10 @@
                     <div>Solid: <span id="markedStats">0</span></div>
                     <div>One-way: <span id="oneWayStats">0</span></div>
                     <div>Spikes: <span id="spikeStats">0</span></div>
+                    <div>Springs: <span id="springStats">0</span></div>
+                    <div>Strawberries: <span id="strawberryStats">0</span></div>
+                    <div>Stone Platforms: <span id="stonePlatformStats">0</span></div>
+                    <div>Mech Blocks: <span id="mechBlockStats">0</span></div>
                     <div>Spawn: <span id="spawnStats">none</span></div>
                     <div>Falling Blocks: <span id="fallingBlockStats">0</span></div>
                     <div>Bridge Poles: <span id="bridgePoleStats">0</span></div>
@@ -250,8 +269,10 @@
                 </div>
 
                 <div class="hint">
-                    Solid, one-way, and spike modes: click or drag to mark tiles. Right click or hold Option/Alt to
-                    erase. Spawn mode: click to add respawn points. Right click or hold Option/Alt to erase one. Falling
+                    Solid, one-way, and spike modes: click or drag to mark tiles. Spring mode: click a pixel position for
+                    a 14px spring. Strawberry mode: click the center point. Stone Platform mode: click or drag 8x8 blocks.
+                    Mech Block mode: drag an 8px-grid start rectangle, then Shift-click or Shift-drag the target center.
+                    Right click or hold Option/Alt to erase. Spawn mode: click to add respawn points. Falling
                     Block mode: drag a rectangle around the block tiles, click a block to select it. Shift-click sets the
                     selected block's landing row. Foreground Stamp mode: choose a stamp, click to place, right click or
                     Option-click to erase. Bridge poles are placed as foreground stamps. Bird NPC mode: click for bird
@@ -283,6 +304,10 @@
             const markedStats = document.getElementById("markedStats");
             const oneWayStats = document.getElementById("oneWayStats");
             const spikeStats = document.getElementById("spikeStats");
+            const springStats = document.getElementById("springStats");
+            const strawberryStats = document.getElementById("strawberryStats");
+            const stonePlatformStats = document.getElementById("stonePlatformStats");
+            const mechBlockStats = document.getElementById("mechBlockStats");
             const spawnStats = document.getElementById("spawnStats");
             const fallingBlockStats = document.getElementById("fallingBlockStats");
             const bridgePoleStats = document.getElementById("bridgePoleStats");
@@ -296,6 +321,7 @@
             const stampFlipYInput = document.getElementById("stampFlipY");
             const stampAnchorXInput = document.getElementById("stampAnchorX");
             const stampAnchorYInput = document.getElementById("stampAnchorY");
+            const strawberryFlyingInput = document.getElementById("strawberryFlying");
             const stage = document.getElementById("stage");
             const base = document.getElementById("base");
             const overlay = document.getElementById("overlay");
@@ -310,6 +336,11 @@
             let tiles = new Set();
             let oneWayTiles = new Set();
             let spikeTiles = new Map();
+            let springs = [];
+            let strawberries = [];
+            let stonePlatforms = new Set();
+            let mechBlocks = new Map();
+            let selectedMechBlock = "";
             let respawnPoints = [];
             let fallingBlocks = [];
             let stampFolders = [];
@@ -323,8 +354,11 @@
             let lastKey = "";
             let dragStartTile = null;
             let dragExistingBlock = -1;
+            let dragStartPixel = null;
             let drawingBirdPath = false;
             let hoverTile = null;
+            let hoverPixel = null;
+            let hoverShift = false;
 
             function key(x, y) {
                 return `${x},${y}`;
@@ -333,6 +367,11 @@
             function splitKey(value) {
                 const [x, y] = value.split(",").map(Number);
                 return { x, y };
+            }
+
+            function numberOr(value, fallback) {
+                const next = Number(value);
+                return Number.isFinite(next) ? next : fallback;
             }
 
             function currentTileSize() {
@@ -344,6 +383,39 @@
             }
 
             const validSpikeDirections = new Set(["up", "down", "left", "right"]);
+            const springLongSize = 14;
+            const springThickness = 4;
+            const stonePlatformSize = 8;
+            const defaultMechBlockWidth = 24;
+            const defaultMechBlockHeight = 16;
+            const strawberryWidth = 18;
+            const strawberryHeight = 16;
+            const strawberrySpritePalette = {
+                K: "#0b0c12",
+                R: "#e32235",
+                D: "#991d2e",
+                G: "#43d943",
+                L: "#96ff55",
+                W: "#fff4c4",
+            };
+            const strawberrySprite = [
+                "..................",
+                "..................",
+                "........G.........",
+                "......GGLG........",
+                ".......GK.........",
+                "......KRRRK.......",
+                ".....KRRRRRK......",
+                "....KRRWRRRK......",
+                "....KRRRRRRK......",
+                "....KRRRWRRK......",
+                ".....KRRRRK.......",
+                "......KDDK........",
+                ".......KK.........",
+                "..................",
+                "..................",
+                "..................",
+            ];
 
             function normalizeSpikeDirection(value) {
                 const direction = String(value || "up");
@@ -352,6 +424,14 @@
 
             function currentSpikeDirection() {
                 return normalizeSpikeDirection(spikeDirectionSelect.value);
+            }
+
+            function normalizeStrawberryType(value) {
+                return String(value || "normal") === "flying" ? "flying" : "normal";
+            }
+
+            function currentStrawberryType() {
+                return strawberryFlyingInput.checked ? "flying" : "normal";
             }
 
             function setStatus(message) {
@@ -465,6 +545,11 @@
                 tiles = new Set();
                 oneWayTiles = new Set();
                 spikeTiles = new Map();
+                springs = [];
+                strawberries = [];
+                stonePlatforms = new Set();
+                mechBlocks = new Map();
+                selectedMechBlock = "";
                 respawnPoints = [];
                 fallingBlocks = [];
                 foregroundStamps = [];
@@ -510,7 +595,79 @@
                         oneWayTiles.add(key(tile.x, tile.y));
                     } else if (kind === "spike" || kind === "hazard") {
                         spikeTiles.set(key(tile.x, tile.y), normalizeSpikeDirection(tile.direction || tile.orientation));
+                    } else if (kind === "spring") {
+                        const direction = normalizeSpikeDirection(tile.direction || tile.orientation);
+                        springs.push(
+                            clampSpringPosition(
+                                {
+                                    x: (Number(tile.x) || 0) * currentTileSize(),
+                                    y: (Number(tile.y) || 0) * currentTileSize(),
+                                },
+                                direction,
+                            ),
+                        );
+                    } else if (kind === "stonePlatform" || kind === "stone") {
+                        const platform = clampStonePlatformPosition({
+                            x: (Number(tile.x) || 0) * currentTileSize(),
+                            y: (Number(tile.y) || 0) * currentTileSize(),
+                        });
+                        stonePlatforms.add(key(platform.x, platform.y));
+                    } else if (
+                        kind === "mechBlock" ||
+                        kind === "movingPlatformMechBlock" ||
+                        kind === "movingPlatformMech"
+                    ) {
+                        const block = makeMechBlock({
+                            x: (Number(tile.x) || 0) * currentTileSize(),
+                            y: (Number(tile.y) || 0) * currentTileSize(),
+                        });
+                        mechBlocks.set(key(block.x, block.y), block);
                     }
+                }
+                for (const spring of (result.data && result.data.springs) || []) {
+                    const direction = normalizeSpikeDirection(spring.direction || spring.orientation);
+                    springs.push(
+                        clampSpringPosition(
+                            {
+                                x: Number(spring.x) || 0,
+                                y: Number(spring.y) || 0,
+                            },
+                            direction,
+                        ),
+                    );
+                    springs[springs.length - 1].direction = direction;
+                }
+                for (const strawberry of (result.data && result.data.strawberries) || []) {
+                    const centerX = Number(strawberry.centerX ?? strawberry.x) || 0;
+                    const centerY = Number(strawberry.centerY ?? strawberry.y) || 0;
+                    strawberries.push({
+                        ...clampStrawberryCenter({ x: centerX, y: centerY }),
+                        type: normalizeStrawberryType(strawberry.type || (strawberry.flying ? "flying" : "normal")),
+                    });
+                }
+                for (const platform of (result.data && result.data.stonePlatforms) || []) {
+                    const next = clampStonePlatformPosition({
+                        x: Number(platform.x) || 0,
+                        y: Number(platform.y) || 0,
+                    });
+                    stonePlatforms.add(key(next.x, next.y));
+                }
+                const loadedMechBlocks = [
+                    ...((result.data && result.data.mechBlocks) || []),
+                    ...((result.data && result.data.movingPlatformMechBlocks) || []),
+                ];
+                for (const block of loadedMechBlocks) {
+                    const width = normalizedMechBlockSize(block.w, defaultMechBlockWidth);
+                    const height = normalizedMechBlockSize(block.h, defaultMechBlockHeight);
+                    const next = makeMechBlock({
+                        x: numberOr(block.x, numberOr(block.startCenterX, numberOr(block.centerX, width / 2)) - width / 2),
+                        y: numberOr(block.y, numberOr(block.startCenterY, numberOr(block.centerY, height / 2)) - height / 2),
+                        w: width,
+                        h: height,
+                        targetX: numberOr(block.targetCenterX, numberOr(block.targetX, numberOr(block.endCenterX, NaN))),
+                        targetY: numberOr(block.targetCenterY, numberOr(block.targetY, numberOr(block.endCenterY, NaN))),
+                    });
+                    mechBlocks.set(key(next.x, next.y), next);
                 }
                 for (const block of (result.data && result.data.fallingBlocks) || []) {
                     fallingBlocks.push({
@@ -592,9 +749,37 @@
                     const y = tile.y * tileSize;
                     drawSpikeTile(x, y, tileSize, direction);
                 }
+                overlayCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--spring");
+                overlayCtx.strokeStyle = "rgba(255,255,255,0.68)";
+                overlayCtx.lineWidth = 1;
+                for (const spring of springs) {
+                    drawSpring(spring, 0.9);
+                }
 
                 for (let index = 0; index < respawnPoints.length; index += 1) {
                     drawSpawnMarker(respawnPoints[index], String(index + 1), index === 0);
+                }
+
+                for (const strawberry of strawberries) {
+                    drawStrawberryPreview(strawberry, 0.88);
+                }
+
+                overlayCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--stone");
+                overlayCtx.strokeStyle = "rgba(255,255,255,0.62)";
+                overlayCtx.lineWidth = 1;
+                for (const platformKey of stonePlatforms) {
+                    const platform = splitKey(platformKey);
+                    drawStonePlatform(platform.x, platform.y, 0.86);
+                }
+
+                for (const [blockKey, block] of mechBlocks) {
+                    drawMechTrack(block, blockKey === selectedMechBlock);
+                }
+                overlayCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--mech");
+                overlayCtx.strokeStyle = "rgba(255,255,255,0.68)";
+                overlayCtx.lineWidth = 1;
+                for (const [blockKey, block] of mechBlocks) {
+                    drawMechBlock(block, 0.86, blockKey === selectedMechBlock);
                 }
 
                 for (let index = 0; index < fallingBlocks.length; index += 1) {
@@ -637,6 +822,44 @@
                         0.46,
                     );
                 }
+                if (modeSelect.value === "strawberry" && !eraseMode && hoverPixel) {
+                    drawStrawberryPreview(clampStrawberryCenter(hoverPixel), 0.52);
+                }
+                if (modeSelect.value === "spring" && !eraseMode && hoverPixel) {
+                    overlayCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--spring");
+                    overlayCtx.strokeStyle = "rgba(255,255,255,0.68)";
+                    overlayCtx.lineWidth = 1;
+                    drawSpring(clampSpringPosition(hoverPixel, currentSpikeDirection()), 0.5);
+                }
+                if (modeSelect.value === "stonePlatform" && !eraseMode && hoverPixel) {
+                    const platform = clampStonePlatformPosition(hoverPixel);
+                    overlayCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--stone");
+                    overlayCtx.strokeStyle = "rgba(255,255,255,0.62)";
+                    overlayCtx.lineWidth = 1;
+                    drawStonePlatform(platform.x, platform.y, 0.48);
+                }
+                if (modeSelect.value === "mechBlock" && !eraseMode && hoverPixel) {
+                    if (hoverShift && mechBlocks.size > 0) {
+                        const selectedKey = validSelectedMechBlockKey() || findNearestMechBlockKey(hoverPixel);
+                        const block = mechBlocks.get(selectedKey);
+                        if (block) {
+                            drawMechTrack({ ...block, ...clampMechBlockTarget(hoverPixel, block) }, true);
+                        }
+                    } else if (dragStartPixel && isPointerDown) {
+                        const block = mechBlockRectFromPoints(dragStartPixel, hoverPixel);
+                        overlayCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--mech");
+                        overlayCtx.strokeStyle = "rgba(255,255,255,0.68)";
+                        overlayCtx.lineWidth = 1;
+                        drawMechBlock(block, 0.48, false);
+                    } else {
+                        const position = clampMechBlockPosition(hoverPixel, stonePlatformSize, stonePlatformSize);
+                        const block = makeMechBlock({ ...position, w: stonePlatformSize, h: stonePlatformSize });
+                        overlayCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--mech");
+                        overlayCtx.strokeStyle = "rgba(255,255,255,0.68)";
+                        overlayCtx.lineWidth = 1;
+                        drawMechBlock(block, 0.48, false);
+                    }
+                }
 
                 overlayCtx.strokeStyle = "rgba(255,255,255,0.48)";
                 overlayCtx.lineWidth = 1;
@@ -656,6 +879,10 @@
                 markedStats.textContent = String(tiles.size);
                 oneWayStats.textContent = String(oneWayTiles.size);
                 spikeStats.textContent = String(spikeTiles.size);
+                springStats.textContent = String(springs.length);
+                strawberryStats.textContent = strawberryStatsText();
+                stonePlatformStats.textContent = String(stonePlatforms.size);
+                mechBlockStats.textContent = mechBlockStatsText();
                 spawnStats.textContent = respawnPoints.length
                     ? respawnPoints.map((point, index) => `${index + 1}:${point.x},${point.y}`).join(" ")
                     : "none";
@@ -708,12 +935,31 @@
                 }
             }
 
-            function spikeHitbox(x, y, tileSize, direction) {
-                const depth = Math.min(5, tileSize);
+            function orientedEdgeBox(x, y, tileSize, direction, depthValue) {
+                const depth = Math.min(depthValue, tileSize);
                 if (direction === "down") return { x, y, w: tileSize, h: depth };
                 if (direction === "left") return { x: x + tileSize - depth, y, w: depth, h: tileSize };
                 if (direction === "right") return { x, y, w: depth, h: tileSize };
                 return { x, y: y + tileSize - depth, w: tileSize, h: depth };
+            }
+
+            function spikeHitbox(x, y, tileSize, direction) {
+                return orientedEdgeBox(x, y, tileSize, direction, 5);
+            }
+
+            function springDimensions(direction) {
+                if (direction === "left" || direction === "right") return { w: springThickness, h: springLongSize };
+                return { w: springLongSize, h: springThickness };
+            }
+
+            function strawberryStatsText() {
+                const flying = strawberries.filter((strawberry) => normalizeStrawberryType(strawberry.type) === "flying").length;
+                return flying > 0 ? `${strawberries.length} (${flying} flying)` : String(strawberries.length);
+            }
+
+            function mechBlockStatsText() {
+                const tracks = [...mechBlocks.values()].filter(mechBlockHasTrack).length;
+                return tracks > 0 ? `${mechBlocks.size} (${tracks} tracks)` : String(mechBlocks.size);
             }
 
             function drawSpikeTile(x, y, tileSize, directionValue) {
@@ -739,6 +985,140 @@
                     overlayCtx.lineTo(hitbox.x + hitbox.w - 1, hitbox.y + hitbox.h - 1);
                 }
                 overlayCtx.stroke();
+            }
+
+            function springRect(spring) {
+                const direction = normalizeSpikeDirection(spring.direction);
+                const size = springDimensions(direction);
+                return { x: spring.x, y: spring.y, w: size.w, h: size.h };
+            }
+
+            function drawSpring(spring, alpha) {
+                const direction = normalizeSpikeDirection(spring.direction);
+                const hitbox = springRect(spring);
+                overlayCtx.save();
+                overlayCtx.globalAlpha = alpha;
+                overlayCtx.fillRect(hitbox.x, hitbox.y, hitbox.w, hitbox.h);
+                overlayCtx.beginPath();
+                if (direction === "down" || direction === "up") {
+                    const centerY = hitbox.y + hitbox.h / 2;
+                    overlayCtx.moveTo(hitbox.x + 1, centerY);
+                    overlayCtx.lineTo(hitbox.x + hitbox.w - 1, centerY);
+                    overlayCtx.moveTo(hitbox.x + 2, hitbox.y + 1);
+                    overlayCtx.lineTo(hitbox.x + 2, hitbox.y + hitbox.h - 1);
+                    overlayCtx.moveTo(hitbox.x + hitbox.w - 3, hitbox.y + 1);
+                    overlayCtx.lineTo(hitbox.x + hitbox.w - 3, hitbox.y + hitbox.h - 1);
+                } else {
+                    const centerX = hitbox.x + hitbox.w / 2;
+                    overlayCtx.moveTo(centerX, hitbox.y + 1);
+                    overlayCtx.lineTo(centerX, hitbox.y + hitbox.h - 1);
+                    overlayCtx.moveTo(hitbox.x + 1, hitbox.y + 2);
+                    overlayCtx.lineTo(hitbox.x + hitbox.w - 1, hitbox.y + 2);
+                    overlayCtx.moveTo(hitbox.x + 1, hitbox.y + hitbox.h - 3);
+                    overlayCtx.lineTo(hitbox.x + hitbox.w - 1, hitbox.y + hitbox.h - 3);
+                }
+                overlayCtx.stroke();
+                overlayCtx.restore();
+            }
+
+            function drawStrawberryPreview(strawberry, alpha) {
+                const x = strawberry.x - strawberryWidth / 2;
+                const y = strawberry.y - strawberryHeight / 2;
+                overlayCtx.save();
+                overlayCtx.globalAlpha = alpha;
+                for (let row = 0; row < strawberrySprite.length; row += 1) {
+                    const line = strawberrySprite[row];
+                    for (let col = 0; col < line.length; col += 1) {
+                        const color = strawberrySpritePalette[line[col]];
+                        if (!color) continue;
+                        overlayCtx.fillStyle = color;
+                        overlayCtx.fillRect(x + col, y + row, 1, 1);
+                    }
+                }
+                overlayCtx.strokeStyle = "rgba(255,255,255,0.72)";
+                overlayCtx.lineWidth = 1;
+                overlayCtx.beginPath();
+                overlayCtx.moveTo(strawberry.x - 3, strawberry.y);
+                overlayCtx.lineTo(strawberry.x + 3, strawberry.y);
+                overlayCtx.moveTo(strawberry.x, strawberry.y - 3);
+                overlayCtx.lineTo(strawberry.x, strawberry.y + 3);
+                overlayCtx.stroke();
+                overlayCtx.restore();
+            }
+
+            function drawStonePlatform(x, y, alpha) {
+                overlayCtx.save();
+                overlayCtx.globalAlpha = alpha;
+                overlayCtx.fillRect(x, y, stonePlatformSize, stonePlatformSize);
+                overlayCtx.strokeRect(x + 0.5, y + 0.5, stonePlatformSize - 1, stonePlatformSize - 1);
+                overlayCtx.beginPath();
+                overlayCtx.moveTo(x + 2, y + 2);
+                overlayCtx.lineTo(x + stonePlatformSize - 2, y + 2);
+                overlayCtx.moveTo(x + 2, y + 5);
+                overlayCtx.lineTo(x + stonePlatformSize - 2, y + 5);
+                overlayCtx.stroke();
+                overlayCtx.restore();
+            }
+
+            function drawMechTrack(block, selected) {
+                const center = mechBlockCenter(block);
+                const target = mechBlockTarget(block);
+                const width = mechBlockWidth(block);
+                const height = mechBlockHeight(block);
+                const endX = target.x - width / 2;
+                const endY = target.y - height / 2;
+                overlayCtx.save();
+                overlayCtx.globalAlpha = selected ? 0.95 : 0.62;
+                overlayCtx.strokeStyle = selected ? "rgba(255,255,255,0.92)" : getComputedStyle(document.documentElement).getPropertyValue("--mech");
+                overlayCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--mech");
+                overlayCtx.lineWidth = selected ? 2 : 1;
+                if (mechBlockHasTrack(block)) {
+                    overlayCtx.beginPath();
+                    overlayCtx.moveTo(center.x + 0.5, center.y + 0.5);
+                    overlayCtx.lineTo(target.x + 0.5, target.y + 0.5);
+                    overlayCtx.stroke();
+                    overlayCtx.globalAlpha = selected ? 0.28 : 0.18;
+                    overlayCtx.strokeRect(endX + 0.5, endY + 0.5, width - 1, height - 1);
+                }
+                overlayCtx.globalAlpha = selected ? 1 : 0.78;
+                overlayCtx.beginPath();
+                overlayCtx.moveTo(target.x - 3, target.y + 0.5);
+                overlayCtx.lineTo(target.x + 3, target.y + 0.5);
+                overlayCtx.moveTo(target.x + 0.5, target.y - 3);
+                overlayCtx.lineTo(target.x + 0.5, target.y + 3);
+                overlayCtx.stroke();
+                overlayCtx.restore();
+            }
+
+            function drawMechBlock(block, alpha, selected) {
+                const { x, y } = block;
+                const width = mechBlockWidth(block);
+                const height = mechBlockHeight(block);
+                overlayCtx.save();
+                overlayCtx.globalAlpha = alpha;
+                overlayCtx.fillRect(x, y, width, height);
+                overlayCtx.strokeRect(x + 0.5, y + 0.5, width - 1, height - 1);
+                overlayCtx.beginPath();
+                for (let gridX = x + stonePlatformSize; gridX < x + width; gridX += stonePlatformSize) {
+                    overlayCtx.moveTo(gridX + 0.5, y + 1);
+                    overlayCtx.lineTo(gridX + 0.5, y + height - 1);
+                }
+                for (let gridY = y + stonePlatformSize; gridY < y + height; gridY += stonePlatformSize) {
+                    overlayCtx.moveTo(x + 1, gridY + 0.5);
+                    overlayCtx.lineTo(x + width - 1, gridY + 0.5);
+                }
+                overlayCtx.moveTo(x + 3, y + 3);
+                overlayCtx.lineTo(x + width - 3, y + height - 3);
+                overlayCtx.moveTo(x + width - 3, y + 3);
+                overlayCtx.lineTo(x + 3, y + height - 3);
+                overlayCtx.stroke();
+                if (selected) {
+                    overlayCtx.globalAlpha = 1;
+                    overlayCtx.strokeStyle = "rgba(255,255,255,0.96)";
+                    overlayCtx.lineWidth = 2;
+                    overlayCtx.strokeRect(x + 1, y + 1, width - 2, height - 2);
+                }
+                overlayCtx.restore();
             }
 
             function drawForegroundStampPreview(stamp, alpha) {
@@ -898,6 +1278,226 @@
                 return -1;
             }
 
+            function clampSpringPosition(point, directionValue) {
+                const direction = normalizeSpikeDirection(directionValue);
+                const size = springDimensions(direction);
+                if (!image) {
+                    return {
+                        x: Math.round(point.x),
+                        y: Math.round(point.y),
+                        direction,
+                    };
+                }
+                return {
+                    x: Math.round(Math.max(0, Math.min(image.width - size.w, point.x))),
+                    y: Math.round(Math.max(0, Math.min(image.height - size.h, point.y))),
+                    direction,
+                };
+            }
+
+            function findSpringAt(point) {
+                for (let index = springs.length - 1; index >= 0; index -= 1) {
+                    const spring = springs[index];
+                    const rect = springRect(spring);
+                    if (point.x >= rect.x && point.x < rect.x + rect.w && point.y >= rect.y && point.y < rect.y + rect.h) {
+                        return index;
+                    }
+                }
+                return -1;
+            }
+
+            function clampStonePlatformPosition(point) {
+                if (!image) {
+                    return { x: Math.round(point.x), y: Math.round(point.y) };
+                }
+                const snappedX = Math.floor(point.x / stonePlatformSize) * stonePlatformSize;
+                const snappedY = Math.floor(point.y / stonePlatformSize) * stonePlatformSize;
+                return {
+                    x: Math.round(Math.max(0, Math.min(image.width - stonePlatformSize, snappedX))),
+                    y: Math.round(Math.max(0, Math.min(image.height - stonePlatformSize, snappedY))),
+                };
+            }
+
+            function normalizedMechBlockSize(value, fallback) {
+                const size = Number(value);
+                if (!Number.isFinite(size) || size <= 0) return fallback;
+                return Math.max(stonePlatformSize, Math.round(size / stonePlatformSize) * stonePlatformSize);
+            }
+
+            function mechBlockWidth(block) {
+                return normalizedMechBlockSize(block && block.w, defaultMechBlockWidth);
+            }
+
+            function mechBlockHeight(block) {
+                return normalizedMechBlockSize(block && block.h, defaultMechBlockHeight);
+            }
+
+            function clampMechBlockPosition(point, widthValue, heightValue) {
+                const width = normalizedMechBlockSize(widthValue, defaultMechBlockWidth);
+                const height = normalizedMechBlockSize(heightValue, defaultMechBlockHeight);
+                if (!image) {
+                    return { x: Math.round(point.x), y: Math.round(point.y) };
+                }
+                const snappedX = Math.floor(point.x / stonePlatformSize) * stonePlatformSize;
+                const snappedY = Math.floor(point.y / stonePlatformSize) * stonePlatformSize;
+                return {
+                    x: Math.round(Math.max(0, Math.min(image.width - width, snappedX))),
+                    y: Math.round(Math.max(0, Math.min(image.height - height, snappedY))),
+                };
+            }
+
+            function clampMechBlockTarget(point, block) {
+                const halfWidth = mechBlockWidth(block) / 2;
+                const halfHeight = mechBlockHeight(block) / 2;
+                if (!image) {
+                    return { targetX: Math.round(point.x), targetY: Math.round(point.y) };
+                }
+                return {
+                    targetX: Math.round(Math.max(halfWidth, Math.min(image.width - halfWidth, point.x))),
+                    targetY: Math.round(Math.max(halfHeight, Math.min(image.height - halfHeight, point.y))),
+                };
+            }
+
+            function mechBlockCenter(block) {
+                return {
+                    x: block.x + mechBlockWidth(block) / 2,
+                    y: block.y + mechBlockHeight(block) / 2,
+                };
+            }
+
+            function mechBlockTarget(block) {
+                const center = mechBlockCenter(block);
+                return {
+                    x: Number.isFinite(block.targetX) ? block.targetX : center.x,
+                    y: Number.isFinite(block.targetY) ? block.targetY : center.y,
+                };
+            }
+
+            function mechBlockHasTrack(block) {
+                const center = mechBlockCenter(block);
+                const target = mechBlockTarget(block);
+                return center.x !== target.x || center.y !== target.y;
+            }
+
+            function makeMechBlock(point) {
+                const width = normalizedMechBlockSize(point.w, defaultMechBlockWidth);
+                const height = normalizedMechBlockSize(point.h, defaultMechBlockHeight);
+                const position = clampMechBlockPosition(point, width, height);
+                const block = { x: position.x, y: position.y, w: width, h: height };
+                const center = mechBlockCenter(block);
+                const target = clampMechBlockTarget({
+                    x: Number.isFinite(point.targetX) ? point.targetX : center.x,
+                    y: Number.isFinite(point.targetY) ? point.targetY : center.y,
+                }, block);
+                return {
+                    ...block,
+                    targetX: target.targetX,
+                    targetY: target.targetY,
+                };
+            }
+
+            function mechBlockRectFromPoints(a, b) {
+                const start = clampMechGridPoint(a);
+                const end = clampMechGridPoint(b);
+                const x = Math.min(start.x, end.x);
+                const y = Math.min(start.y, end.y);
+                const maxX = Math.max(start.x, end.x);
+                const maxY = Math.max(start.y, end.y);
+                return makeMechBlock({
+                    x,
+                    y,
+                    w: maxX - x + stonePlatformSize,
+                    h: maxY - y + stonePlatformSize,
+                });
+            }
+
+            function clampMechGridPoint(point) {
+                if (!image) {
+                    return {
+                        x: Math.floor(point.x / stonePlatformSize) * stonePlatformSize,
+                        y: Math.floor(point.y / stonePlatformSize) * stonePlatformSize,
+                    };
+                }
+                const maxX = Math.max(0, image.width - stonePlatformSize);
+                const maxY = Math.max(0, image.height - stonePlatformSize);
+                return {
+                    x: Math.max(0, Math.min(maxX, Math.floor(point.x / stonePlatformSize) * stonePlatformSize)),
+                    y: Math.max(0, Math.min(maxY, Math.floor(point.y / stonePlatformSize) * stonePlatformSize)),
+                };
+            }
+
+            function validSelectedMechBlockKey() {
+                return selectedMechBlock && mechBlocks.has(selectedMechBlock) ? selectedMechBlock : "";
+            }
+
+            function findNearestMechBlockKey(point) {
+                let bestKey = "";
+                let bestDistance = Infinity;
+                for (const [blockKey, block] of mechBlocks) {
+                    const center = mechBlockCenter(block);
+                    const dx = point.x - center.x;
+                    const dy = point.y - center.y;
+                    const distance = dx * dx + dy * dy;
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        bestKey = blockKey;
+                    }
+                }
+                return bestKey;
+            }
+
+            function findMechBlockAt(point) {
+                for (const [blockKey, block] of mechBlocks) {
+                    if (
+                        point.x >= block.x &&
+                        point.x < block.x + mechBlockWidth(block) &&
+                        point.y >= block.y &&
+                        point.y < block.y + mechBlockHeight(block)
+                    ) {
+                        return blockKey;
+                    }
+                }
+                return "";
+            }
+
+            function upsertMechBlock(block) {
+                const blockKey = key(block.x, block.y);
+                const existing = mechBlocks.get(blockKey);
+                const target = existing ? clampMechBlockTarget(mechBlockTarget(existing), block) : mechBlockTarget(block);
+                const next = { ...block, targetX: target.targetX ?? target.x, targetY: target.targetY ?? target.y };
+                mechBlocks.set(blockKey, next);
+                selectedMechBlock = blockKey;
+            }
+
+            function clampStrawberryCenter(point) {
+                if (!image) {
+                    return { x: Math.round(point.x), y: Math.round(point.y) };
+                }
+                const halfWidth = strawberryWidth / 2;
+                const halfHeight = strawberryHeight / 2;
+                return {
+                    x: Math.round(Math.max(halfWidth, Math.min(image.width - halfWidth, point.x))),
+                    y: Math.round(Math.max(halfHeight, Math.min(image.height - halfHeight, point.y))),
+                };
+            }
+
+            function findStrawberryAt(point) {
+                for (let index = strawberries.length - 1; index >= 0; index -= 1) {
+                    const strawberry = strawberries[index];
+                    const left = strawberry.x - strawberryWidth / 2;
+                    const top = strawberry.y - strawberryHeight / 2;
+                    if (
+                        point.x >= left &&
+                        point.x < left + strawberryWidth &&
+                        point.y >= top &&
+                        point.y < top + strawberryHeight
+                    ) {
+                        return index;
+                    }
+                }
+                return -1;
+            }
+
             function foregroundStampPosition(tile) {
                 const tileSize = currentTileSize();
                 const anchorX = Math.max(0, Math.min(16, Number(stampAnchorXInput.value) || 0));
@@ -953,6 +1553,72 @@
                     redraw();
                     return;
                 }
+                if (modeSelect.value === "strawberry") {
+                    if (event.type !== "pointerdown") return;
+                    const point = clampStrawberryCenter(eventToPixel(event));
+                    const existing = findStrawberryAt(point);
+                    if (eraseMode) {
+                        if (existing >= 0) strawberries.splice(existing, 1);
+                    } else if (existing >= 0) {
+                        strawberries[existing] = { ...point, type: currentStrawberryType() };
+                    } else {
+                        strawberries.push({ ...point, type: currentStrawberryType() });
+                    }
+                    redraw();
+                    return;
+                }
+                if (modeSelect.value === "stonePlatform") {
+                    const platform = clampStonePlatformPosition(eventToPixel(event));
+                    const platformKey = key(platform.x, platform.y);
+                    if (platformKey === lastKey) return;
+                    lastKey = platformKey;
+                    if (eraseMode) {
+                        stonePlatforms.delete(platformKey);
+                    } else {
+                        stonePlatforms.add(platformKey);
+                    }
+                    redraw();
+                    return;
+                }
+                if (modeSelect.value === "mechBlock") {
+                    const point = eventToPixel(event);
+                    const existingKey = findMechBlockAt(point);
+                    if (eraseMode) {
+                        if (existingKey) {
+                            mechBlocks.delete(existingKey);
+                            if (selectedMechBlock === existingKey) selectedMechBlock = "";
+                        }
+                    } else if (event.shiftKey) {
+                        const selectedKey = validSelectedMechBlockKey() || findNearestMechBlockKey(point);
+                        const block = mechBlocks.get(selectedKey);
+                        if (block) {
+                            const target = clampMechBlockTarget(point, block);
+                            mechBlocks.set(selectedKey, { ...block, targetX: target.targetX, targetY: target.targetY });
+                            selectedMechBlock = selectedKey;
+                        }
+                    } else if (existingKey && event.type === "pointerdown") {
+                        selectedMechBlock = existingKey;
+                    }
+                    redraw();
+                    return;
+                }
+                if (modeSelect.value === "spring") {
+                    if (event.type !== "pointerdown") return;
+                    const point = eventToPixel(event);
+                    const existing = findSpringAt(point);
+                    if (eraseMode) {
+                        if (existing >= 0) springs.splice(existing, 1);
+                    } else {
+                        const spring = clampSpringPosition(point, currentSpikeDirection());
+                        if (existing >= 0) {
+                            springs[existing] = spring;
+                        } else {
+                            springs.push(spring);
+                        }
+                    }
+                    redraw();
+                    return;
+                }
                 if (modeSelect.value === "spawn") {
                     const tileSize = currentTileSize();
                     const point = {
@@ -1004,7 +1670,12 @@
                 const tileKey = key(tile.x, tile.y);
                 if (tileKey === lastKey && !event.shiftKey) return;
                 lastKey = tileKey;
-                const paintKind = modeSelect.value === "oneWay" ? "oneWay" : modeSelect.value === "spike" ? "spike" : "solid";
+                const paintKind =
+                    modeSelect.value === "oneWay"
+                        ? "oneWay"
+                        : modeSelect.value === "spike"
+                          ? "spike"
+                          : "solid";
                 if (event.shiftKey && !eraseMode) {
                     for (let x = tile.x; x < gridW; x += 1) setTile(x, tile.y, false, paintKind);
                 } else {
@@ -1043,6 +1714,12 @@
                 const sortedSpikes = [...spikeTiles.entries()]
                     .map(([tileKey, direction]) => ({ ...splitKey(tileKey), direction: normalizeSpikeDirection(direction) }))
                     .sort((a, b) => a.y - b.y || a.x - b.x);
+                const sortedSprings = [...springs].sort((a, b) => a.y - b.y || a.x - b.x);
+                const sortedStrawberries = [...strawberries].sort(
+                    (a, b) => a.y - b.y || a.x - b.x || normalizeStrawberryType(a.type).localeCompare(normalizeStrawberryType(b.type)),
+                );
+                const sortedStonePlatforms = [...stonePlatforms].map(splitKey).sort((a, b) => a.y - b.y || a.x - b.x);
+                const sortedMechBlocks = [...mechBlocks.values()].sort((a, b) => a.y - b.y || a.x - b.x);
                 return {
                     image: currentBackground.image.split("/").pop(),
                     tileSize: currentTileSize(),
@@ -1068,6 +1745,45 @@
                         flipY: stamp.flipY,
                         occludes: stamp.occludes,
                     })),
+                    strawberries: sortedStrawberries.map((strawberry) => ({
+                        centerX: strawberry.x,
+                        centerY: strawberry.y,
+                        w: strawberryWidth,
+                        h: strawberryHeight,
+                        type: normalizeStrawberryType(strawberry.type),
+                    })),
+                    springs: sortedSprings.map((spring) => ({
+                        x: spring.x,
+                        y: spring.y,
+                        kind: "spring",
+                        material: "spring",
+                        direction: normalizeSpikeDirection(spring.direction),
+                        ...springDimensions(spring.direction),
+                    })),
+                    stonePlatforms: sortedStonePlatforms.map((platform) => ({
+                        x: platform.x,
+                        y: platform.y,
+                        kind: "stonePlatform",
+                        material: "stone",
+                        w: stonePlatformSize,
+                        h: stonePlatformSize,
+                    })),
+                    mechBlocks: sortedMechBlocks.map((block) => {
+                        const center = mechBlockCenter(block);
+                        const target = mechBlockTarget(block);
+                        return {
+                            x: block.x,
+                            y: block.y,
+                            kind: "movingPlatformMechBlock",
+                            material: "mech",
+                            w: mechBlockWidth(block),
+                            h: mechBlockHeight(block),
+                            startCenterX: center.x,
+                            startCenterY: center.y,
+                            targetCenterX: target.x,
+                            targetCenterY: target.y,
+                        };
+                    }),
                     birdNpc: birdNpc,
                     tiles: [
                         ...sorted.map((tile) => ({
@@ -1150,6 +1866,19 @@
                 } else if (modeSelect.value === "spike") {
                     if (!confirm("Clear all spike tiles for this background?")) return;
                     spikeTiles.clear();
+                } else if (modeSelect.value === "spring") {
+                    if (!confirm("Clear all springs for this background?")) return;
+                    springs = [];
+                } else if (modeSelect.value === "strawberry") {
+                    if (!confirm("Clear all strawberries for this background?")) return;
+                    strawberries = [];
+                } else if (modeSelect.value === "stonePlatform") {
+                    if (!confirm("Clear all stone platforms for this background?")) return;
+                    stonePlatforms.clear();
+                } else if (modeSelect.value === "mechBlock") {
+                    if (!confirm("Clear all mech blocks for this background?")) return;
+                    mechBlocks.clear();
+                    selectedMechBlock = "";
                 } else {
                     if (!confirm("Clear all solid tiles for this background?")) return;
                     tiles.clear();
@@ -1175,7 +1904,9 @@
 
             tileSizeInput.addEventListener("change", resetPaintAndRedraw);
             zoomInput.addEventListener("change", resetPaintAndRedraw);
+            modeSelect.addEventListener("change", resetPaintAndRedraw);
             spikeDirectionSelect.addEventListener("change", resetPaintAndRedraw);
+            strawberryFlyingInput.addEventListener("change", resetPaintAndRedraw);
             stampFlipXInput.addEventListener("change", resetPaintAndRedraw);
             stampFlipYInput.addEventListener("change", resetPaintAndRedraw);
             stampOccludesInput.addEventListener("change", resetPaintAndRedraw);
@@ -1185,21 +1916,28 @@
             overlay.addEventListener("contextmenu", (event) => event.preventDefault());
             overlay.addEventListener("pointerdown", (event) => {
                 hoverTile = eventToTile(event);
+                hoverPixel = eventToPixel(event);
+                hoverShift = event.shiftKey;
                 isPointerDown = true;
                 eraseMode = event.button === 2 || event.altKey;
                 lastKey = "";
                 dragStartTile = null;
+                dragStartPixel = null;
                 dragExistingBlock = -1;
                 drawingBirdPath = modeSelect.value === "birdNpc" && event.metaKey && !eraseMode;
                 overlay.setPointerCapture(event.pointerId);
                 if (modeSelect.value === "fallingBlock") {
                     dragStartTile = eventToTile(event);
                     dragExistingBlock = findFallingBlockAt(dragStartTile);
+                } else if (modeSelect.value === "mechBlock" && !eraseMode && !event.shiftKey && !findMechBlockAt(hoverPixel)) {
+                    dragStartPixel = hoverPixel;
                 }
                 paintEvent(event);
             });
             overlay.addEventListener("pointermove", (event) => {
                 hoverTile = eventToTile(event);
+                hoverPixel = eventToPixel(event);
+                hoverShift = event.shiftKey;
                 if (drawingBirdPath) {
                     appendBirdPathPoint(eventToPixel(event));
                     redraw();
@@ -1218,12 +1956,16 @@
                         selectedFallingBlock = fallingBlocks.length - 1;
                     }
                     redraw();
+                } else if (modeSelect.value === "mechBlock" && dragStartPixel && !eraseMode) {
+                    upsertMechBlock(mechBlockRectFromPoints(dragStartPixel, eventToPixel(event)));
+                    redraw();
                 }
                 isPointerDown = false;
                 eraseMode = false;
                 drawingBirdPath = false;
                 lastKey = "";
                 dragStartTile = null;
+                dragStartPixel = null;
                 dragExistingBlock = -1;
                 redraw();
             });
@@ -1231,13 +1973,18 @@
                 isPointerDown = false;
                 eraseMode = false;
                 drawingBirdPath = false;
+                hoverPixel = null;
+                hoverShift = false;
                 lastKey = "";
                 dragStartTile = null;
+                dragStartPixel = null;
                 dragExistingBlock = -1;
                 redraw();
             });
             overlay.addEventListener("pointerleave", () => {
                 hoverTile = null;
+                hoverPixel = null;
+                hoverShift = false;
                 redraw();
             });
             window.addEventListener("keydown", (event) => {

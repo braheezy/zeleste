@@ -75,6 +75,58 @@ Avoid starting with the full Celeste entity roster. A smaller set polished to hi
 
 ## Runtime Architecture
 
+### Current Refactor Checkpoint (May 29, 2026)
+
+The prologue milestone is complete, the dummy overworld handoff reaches the
+chapter 1 city stub, and the runtime refactor is underway. Completed splits:
+
+- `src/main.zig` is now only the GBA root/header wrapper and entrypoint.
+- Generated room contracts, fixed-point/math helpers, asset embeds, audio init,
+  debug FPS overlay, OAM helpers, RNG, camera helpers, video constants,
+  BG/parallax streaming, static collision helpers, player state/constants,
+  reusable player collision context, reusable player movement controller,
+  reusable player sprite rendering, reusable player hair rendering, reusable
+  player death/respawn VFX, reusable player death/respawn flow state, dash VFX,
+  reusable falling block hazards, reusable footstep SFX/surface classification,
+  reusable foreground stamps, reusable room wire OBJ fallback, reusable room
+  transition helpers, reusable room lifecycle/update hooks, reusable funny car
+  platform actors, reusable dust/snow puff particles, reusable wind/snow
+  environmental particles, reusable procedural chimney smoke, reusable bird
+  NPC/tutorial prompt actors, reusable tiny bird flock actors, reusable Granny
+  NPC sprite rendering, reusable cutscene dialogue box rendering, reusable
+  floating cutscene text VFX, reusable cutscene text helpers, gameplay scene
+  drawing/effect hooks, shared frame sync, the dummy overworld placeholder
+  screen loader, current chapter/end-level flow, the prologue bridge/end-platform
+  room system, and the prologue Granny cutscene script live under
+  `src/runtime/`.
+- `src/runtime.zig` now delegates room lifecycle, room transitions, death flow,
+  player movement, player collision, chapter/end-level flow, frame sync, and
+  scene drawing to focused runtime modules while retaining only startup,
+  death/respawn timers, normal frame ordering, and camera-shake composition.
+
+Next refactor targets:
+
+- Treat `src/runtime.zig` as the frame-loop shell. Future refactors should be
+  tactical: death/respawn timer ownership, camera/cutscene shake composition, or
+  a fuller entity registry only when new chapter work creates real pressure.
+- Use the extracted falling block system as the pattern for
+  load/update/draw/collision hooks and side-effect event reporting, and the
+  foreground stamp system as the pattern for reusable room decoration/occlusion
+  ownership. Funny cars are now the first actor-backed one-way platform
+  extraction; bird NPCs are now the first tutorial-prompt NPC extraction;
+  footsteps now own terrain surface classification and SFX sample rotation;
+  gameplay scene drawing/effect hooks, frame sync, chapter flow, and the dummy
+  overworld screen loader are now separated from the frame loop; room
+  transitions, room-system updates, and death/respawn state now have dedicated
+  owners; Granny sprite rendering, dialogue rendering, floating laugh text, the
+  Granny cutscene script, and the prologue bridge runtime are now separate
+  owners.
+- Keep player movement behavior stable. Future chapter mechanics should reuse
+  `player_controller`, `player_collision`, and room-system hooks rather than
+  reintroducing direct room branches in the frame loop.
+- Preserve the current prologue, overworld placeholder, and chapter 1 room
+  wiring behavior after every pass.
+
 ### Core Loop
 
 - `main.zig`
@@ -320,7 +372,17 @@ Those are too broad and will damage coherence.
 - Room `0` has a foreground/parallax occlusion image packed into OBJ chunks.
 - Foreground grass stamp editing and sway generation exist, but runtime drawing currently supports only `grass1` and `grass2`.
 - Project handoff docs now live under `docs/`: `current-status.md`, `runtime-architecture.md`, and `asset-pipeline.md`.
-- Remaining Milestone 0 gap: split the single-file prototype into planned source modules only after the first movement loop stabilizes further.
+- Runtime refactor has started: `src/main.zig` is now a small root wrapper,
+  shared generated-room contracts live in `src/runtime/room_data.zig`, fixed
+  helpers live in `src/runtime/math.zig`, asset embeds live in
+  `src/runtime/assets.zig`, small support modules now own audio init, debug FPS,
+  OAM helpers, RNG, camera helpers, video constants, BG/parallax streaming,
+  player collision context, player movement control, frame sync, and
+  chapter/end-level flow, and the remaining `src/runtime.zig` file is a thin
+  frame-loop shell.
+- Remaining Milestone 0 gap: keep future splits tactical and driven by chapter
+  work; the broad monolithic runtime refactor is largely complete without
+  changing movement behavior.
 
 ## Milestones
 
@@ -396,4 +458,4 @@ This should be treated as a learning/fan demake unless original branding and ass
 3. Add a simple debug collision/player overlay before making more complex movement changes.
 4. Extend runtime foreground stamp support beyond `grass1` and `grass2` only after the grass art workflow is satisfying.
 5. Add `docs/reference-map.md` linking each mechanic to official, NES, and GBA reference files.
-6. Move input, player, collision, and rendering code out of `main.zig` into small modules once mechanics are less volatile.
+6. Continue moving input, player, collision, rendering, entities, cutscenes, and effects out of `src/runtime.zig` into small modules once mechanics are less volatile.

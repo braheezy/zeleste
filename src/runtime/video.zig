@@ -1,0 +1,9 @@
+pub const bg_screenblock: u5 = 29;
+pub const parallax_screenblock: u5 = 28;
+pub const parallax_charblock: u2 = 3;
+pub const bg_hardware_width_tiles: usize = 64;
+pub const bg_hardware_height_tiles: usize = 32;
+pub const parallax_hardware_width_tiles: usize = 32;
+pub const parallax_hardware_height_tiles: usize = 32;
+pub const screen_width = 240;
+pub const screen_height = 160;
