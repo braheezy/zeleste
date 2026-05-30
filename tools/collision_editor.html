@@ -18,6 +18,7 @@
                 --spike: rgba(255, 72, 188, 0.68);
                 --spring: rgba(255, 205, 74, 0.72);
                 --strawberry: rgba(255, 64, 96, 0.78);
+                --dash-refill: rgba(100, 245, 255, 0.82);
                 --stone: rgba(150, 160, 172, 0.72);
                 --mech: rgba(92, 255, 220, 0.68);
                 --spawn: rgba(80, 255, 136, 0.88);
@@ -177,6 +178,7 @@
                     <option value="spike">Spike</option>
                     <option value="spring">Spring</option>
                     <option value="strawberry">Strawberry</option>
+                    <option value="dashRefill">Dash Refill</option>
                     <option value="stonePlatform">Stone Platform</option>
                     <option value="mechBlock">Mech Block</option>
                     <option value="spawn">Spawn Point</option>
@@ -258,6 +260,7 @@
                     <div>Spikes: <span id="spikeStats">0</span></div>
                     <div>Springs: <span id="springStats">0</span></div>
                     <div>Strawberries: <span id="strawberryStats">0</span></div>
+                    <div>Dash Refills: <span id="dashRefillStats">0</span></div>
                     <div>Stone Platforms: <span id="stonePlatformStats">0</span></div>
                     <div>Mech Blocks: <span id="mechBlockStats">0</span></div>
                     <div>Spawn: <span id="spawnStats">none</span></div>
@@ -270,7 +273,7 @@
 
                 <div class="hint">
                     Solid, one-way, and spike modes: click or drag to mark tiles. Spring mode: click a pixel position for
-                    a 14px spring. Strawberry mode: click the center point. Stone Platform mode: click or drag 8x8 blocks.
+                    a 14px spring. Strawberry and Dash Refill modes: click the center point. Stone Platform mode: click or drag 8x8 blocks.
                     Mech Block mode: drag an 8px-grid start rectangle, then Shift-click or Shift-drag the target center.
                     Right click or hold Option/Alt to erase. Spawn mode: click to add respawn points. Falling
                     Block mode: drag a rectangle around the block tiles, click a block to select it. Shift-click sets the
@@ -306,6 +309,7 @@
             const spikeStats = document.getElementById("spikeStats");
             const springStats = document.getElementById("springStats");
             const strawberryStats = document.getElementById("strawberryStats");
+            const dashRefillStats = document.getElementById("dashRefillStats");
             const stonePlatformStats = document.getElementById("stonePlatformStats");
             const mechBlockStats = document.getElementById("mechBlockStats");
             const spawnStats = document.getElementById("spawnStats");
@@ -338,6 +342,7 @@
             let spikeTiles = new Map();
             let springs = [];
             let strawberries = [];
+            let dashRefills = [];
             let stonePlatforms = new Set();
             let mechBlocks = new Map();
             let selectedMechBlock = "";
@@ -390,6 +395,7 @@
             const defaultMechBlockHeight = 16;
             const strawberryWidth = 18;
             const strawberryHeight = 16;
+            const dashRefillSize = 12;
             const strawberrySpritePalette = {
                 K: "#0b0c12",
                 R: "#e32235",
@@ -415,6 +421,27 @@
                 "..................",
                 "..................",
                 "..................",
+            ];
+            const dashRefillSpritePalette = {
+                K: "#07141f",
+                C: "#50e9ff",
+                B: "#1ba8e0",
+                W: "#f5ffff",
+                G: "#a8ffd8",
+            };
+            const dashRefillSprite = [
+                ".....KK.....",
+                "....KCCK....",
+                "...KCCCCK...",
+                "..KCCWWCCK..",
+                ".KCCWWWWCCK.",
+                "KCCWWGGWWCCK",
+                "KCCWWGGWWCCK",
+                ".KCCWWWWCCK.",
+                "..KCCWWCCK..",
+                "...KCCCCK...",
+                "....KCCK....",
+                ".....KK.....",
             ];
 
             function normalizeSpikeDirection(value) {
@@ -547,6 +574,7 @@
                 spikeTiles = new Map();
                 springs = [];
                 strawberries = [];
+                dashRefills = [];
                 stonePlatforms = new Set();
                 mechBlocks = new Map();
                 selectedMechBlock = "";
@@ -606,6 +634,14 @@
                                 direction,
                             ),
                         );
+                    } else if (kind === "dashRefill" || kind === "dashCrystal" || kind === "dashRecharge") {
+                        const tileSize = currentTileSize();
+                        dashRefills.push(
+                            clampDashRefillCenter({
+                                x: (Number(tile.x) || 0) * tileSize + tileSize / 2,
+                                y: (Number(tile.y) || 0) * tileSize + tileSize / 2,
+                            }),
+                        );
                     } else if (kind === "stonePlatform" || kind === "stone") {
                         const platform = clampStonePlatformPosition({
                             x: (Number(tile.x) || 0) * currentTileSize(),
@@ -644,6 +680,16 @@
                         ...clampStrawberryCenter({ x: centerX, y: centerY }),
                         type: normalizeStrawberryType(strawberry.type || (strawberry.flying ? "flying" : "normal")),
                     });
+                }
+                const loadedDashRefills = [
+                    ...((result.data && result.data.dashRefills) || []),
+                    ...((result.data && result.data.dashCrystals) || []),
+                    ...((result.data && result.data.dashRecharges) || []),
+                ];
+                for (const refill of loadedDashRefills) {
+                    const centerX = Number(refill.centerX ?? refill.x) || 0;
+                    const centerY = Number(refill.centerY ?? refill.y) || 0;
+                    dashRefills.push(clampDashRefillCenter({ x: centerX, y: centerY }));
                 }
                 for (const platform of (result.data && result.data.stonePlatforms) || []) {
                     const next = clampStonePlatformPosition({
@@ -764,6 +810,10 @@
                     drawStrawberryPreview(strawberry, 0.88);
                 }
 
+                for (const refill of dashRefills) {
+                    drawDashRefillPreview(refill, 0.9);
+                }
+
                 overlayCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--stone");
                 overlayCtx.strokeStyle = "rgba(255,255,255,0.62)";
                 overlayCtx.lineWidth = 1;
@@ -825,6 +875,9 @@
                 if (modeSelect.value === "strawberry" && !eraseMode && hoverPixel) {
                     drawStrawberryPreview(clampStrawberryCenter(hoverPixel), 0.52);
                 }
+                if (modeSelect.value === "dashRefill" && !eraseMode && hoverPixel) {
+                    drawDashRefillPreview(clampDashRefillCenter(hoverPixel), 0.56);
+                }
                 if (modeSelect.value === "spring" && !eraseMode && hoverPixel) {
                     overlayCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--spring");
                     overlayCtx.strokeStyle = "rgba(255,255,255,0.68)";
@@ -881,6 +934,7 @@
                 spikeStats.textContent = String(spikeTiles.size);
                 springStats.textContent = String(springs.length);
                 strawberryStats.textContent = strawberryStatsText();
+                dashRefillStats.textContent = String(dashRefills.length);
                 stonePlatformStats.textContent = String(stonePlatforms.size);
                 mechBlockStats.textContent = mechBlockStatsText();
                 spawnStats.textContent = respawnPoints.length
@@ -1042,6 +1096,31 @@
                 overlayCtx.lineTo(strawberry.x + 3, strawberry.y);
                 overlayCtx.moveTo(strawberry.x, strawberry.y - 3);
                 overlayCtx.lineTo(strawberry.x, strawberry.y + 3);
+                overlayCtx.stroke();
+                overlayCtx.restore();
+            }
+
+            function drawDashRefillPreview(refill, alpha) {
+                const x = refill.x - dashRefillSize / 2;
+                const y = refill.y - dashRefillSize / 2;
+                overlayCtx.save();
+                overlayCtx.globalAlpha = alpha;
+                for (let row = 0; row < dashRefillSprite.length; row += 1) {
+                    const line = dashRefillSprite[row];
+                    for (let col = 0; col < line.length; col += 1) {
+                        const color = dashRefillSpritePalette[line[col]];
+                        if (!color) continue;
+                        overlayCtx.fillStyle = color;
+                        overlayCtx.fillRect(x + col, y + row, 1, 1);
+                    }
+                }
+                overlayCtx.strokeStyle = "rgba(255,255,255,0.76)";
+                overlayCtx.lineWidth = 1;
+                overlayCtx.beginPath();
+                overlayCtx.moveTo(refill.x - 3, refill.y);
+                overlayCtx.lineTo(refill.x + 3, refill.y);
+                overlayCtx.moveTo(refill.x, refill.y - 3);
+                overlayCtx.lineTo(refill.x, refill.y + 3);
                 overlayCtx.stroke();
                 overlayCtx.restore();
             }
@@ -1481,6 +1560,34 @@
                 };
             }
 
+            function clampDashRefillCenter(point) {
+                if (!image) {
+                    return { x: Math.round(point.x), y: Math.round(point.y) };
+                }
+                const halfSize = dashRefillSize / 2;
+                return {
+                    x: Math.round(Math.max(halfSize, Math.min(image.width - halfSize, point.x))),
+                    y: Math.round(Math.max(halfSize, Math.min(image.height - halfSize, point.y))),
+                };
+            }
+
+            function findDashRefillAt(point) {
+                for (let index = dashRefills.length - 1; index >= 0; index -= 1) {
+                    const refill = dashRefills[index];
+                    const left = refill.x - dashRefillSize / 2;
+                    const top = refill.y - dashRefillSize / 2;
+                    if (
+                        point.x >= left &&
+                        point.x < left + dashRefillSize &&
+                        point.y >= top &&
+                        point.y < top + dashRefillSize
+                    ) {
+                        return index;
+                    }
+                }
+                return -1;
+            }
+
             function findStrawberryAt(point) {
                 for (let index = strawberries.length - 1; index >= 0; index -= 1) {
                     const strawberry = strawberries[index];
@@ -1563,6 +1670,20 @@
                         strawberries[existing] = { ...point, type: currentStrawberryType() };
                     } else {
                         strawberries.push({ ...point, type: currentStrawberryType() });
+                    }
+                    redraw();
+                    return;
+                }
+                if (modeSelect.value === "dashRefill") {
+                    if (event.type !== "pointerdown") return;
+                    const point = clampDashRefillCenter(eventToPixel(event));
+                    const existing = findDashRefillAt(point);
+                    if (eraseMode) {
+                        if (existing >= 0) dashRefills.splice(existing, 1);
+                    } else if (existing >= 0) {
+                        dashRefills[existing] = point;
+                    } else {
+                        dashRefills.push(point);
                     }
                     redraw();
                     return;
@@ -1718,6 +1839,7 @@
                 const sortedStrawberries = [...strawberries].sort(
                     (a, b) => a.y - b.y || a.x - b.x || normalizeStrawberryType(a.type).localeCompare(normalizeStrawberryType(b.type)),
                 );
+                const sortedDashRefills = [...dashRefills].sort((a, b) => a.y - b.y || a.x - b.x);
                 const sortedStonePlatforms = [...stonePlatforms].map(splitKey).sort((a, b) => a.y - b.y || a.x - b.x);
                 const sortedMechBlocks = [...mechBlocks.values()].sort((a, b) => a.y - b.y || a.x - b.x);
                 return {
@@ -1751,6 +1873,14 @@
                         w: strawberryWidth,
                         h: strawberryHeight,
                         type: normalizeStrawberryType(strawberry.type),
+                    })),
+                    dashRefills: sortedDashRefills.map((refill) => ({
+                        centerX: refill.x,
+                        centerY: refill.y,
+                        kind: "dashRefill",
+                        material: "dashRefill",
+                        w: dashRefillSize,
+                        h: dashRefillSize,
                     })),
                     springs: sortedSprings.map((spring) => ({
                         x: spring.x,
@@ -1872,6 +2002,9 @@
                 } else if (modeSelect.value === "strawberry") {
                     if (!confirm("Clear all strawberries for this background?")) return;
                     strawberries = [];
+                } else if (modeSelect.value === "dashRefill") {
+                    if (!confirm("Clear all dash refills for this background?")) return;
+                    dashRefills = [];
                 } else if (modeSelect.value === "stonePlatform") {
                     if (!confirm("Clear all stone platforms for this background?")) return;
                     stonePlatforms.clear();

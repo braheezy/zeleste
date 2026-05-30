@@ -1,0 +1,10 @@
+pub const bird_npc = @import("prologue/bird_npc.zig");
+pub const bridge = @import("prologue/bridge.zig");
+pub const chimney_smoke = @import("prologue/chimney_smoke.zig");
+pub const flow = @import("prologue/flow.zig");
+pub const funny_cars = @import("prologue/funny_cars.zig");
+pub const granny_cutscene = @import("prologue/granny_cutscene.zig");
+pub const granny_npc = @import("prologue/granny_npc.zig");
+pub const laugh_text = @import("prologue/laugh_text.zig");
+pub const room_wires = @import("prologue/room_wires.zig");
+pub const tiny_birds = @import("prologue/tiny_birds.zig");

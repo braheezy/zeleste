@@ -1,11 +1,10 @@
 const gba = @import("gba");
+const chapter_systems = @import("chapters/systems.zig");
 const collision = @import("collision.zig");
 const falling_blocks = @import("falling_blocks.zig");
-const funny_cars = @import("funny_cars.zig");
 const level = @import("../generated_rooms.zig");
 const math = @import("math.zig");
 const player_mod = @import("player.zig");
-const prologue_bridge = @import("prologue_bridge.zig");
 const room_data = @import("room_data.zig");
 
 const Player = player_mod.State;
@@ -242,13 +241,13 @@ fn floorContact(player: Player, room_index: usize) bool {
 }
 
 fn floorContactAt(x: i16, y: i16, room_index: usize) bool {
-    return collidesAt(x, y + 1, room_index) or oneWayFloorAt(x, y, room_index) or funny_cars.floorAt(x, y);
+    return collidesAt(x, y + 1, room_index) or oneWayFloorAt(x, y, room_index) or chapter_systems.actorFloorAt(x, y);
 }
 
 fn collidesAt(x: i16, y: i16, room_index: usize) bool {
     return collision.solidRectAt(rooms[room_index], x, y, player_body_width, player_body_height) or
         falling_blocks.solidRectAt(x, y, player_body_width, player_body_height) or
-        prologue_bridge.solidRectAt(x, y, player_body_width, player_body_height);
+        chapter_systems.dynamicSolidRectAt(x, y, player_body_width, player_body_height);
 }
 
 fn roomEntryCollidesAt(x: i16, y: i16, room_index: usize) bool {

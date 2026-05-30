@@ -1,14 +1,15 @@
 const gba = @import("gba");
-const camera_mod = @import("camera.zig");
-const dash_effects = @import("dash_effects.zig");
-const oam = @import("oam.zig");
+const level = @import("../../../generated_rooms.zig");
+const camera_mod = @import("../../camera.zig");
+const dash_effects = @import("../../dash_effects.zig");
+const oam = @import("../../oam.zig");
 
 const Camera = camera_mod.Camera;
 const hideObject = oam.hideObject;
 const objX = oam.objX;
 const objY = oam.objY;
 
-pub const Origin = struct {
+const Origin = struct {
     x: i16,
     y: i16,
 };
@@ -22,6 +23,10 @@ const palette_bank: u4 = 3;
 const soft_color: u4 = 9;
 const cycle_frames: u8 = 96;
 
+const rooms = level.rooms;
+const room_index = level.roomIndexFor(level.chapter_index, "2") orelse rooms.len;
+const origin = Origin{ .x = 194, .y = 49 };
+
 var counter: u8 = 0;
 var tiles: [tile_count]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** tile_count;
 
@@ -34,8 +39,8 @@ pub fn reset(first_object: usize) void {
     hideObjects(first_object);
 }
 
-pub fn update(active: bool, anim_counter: u16, first_object: usize) void {
-    if (!active) {
+pub fn update(active_room_index: usize, anim_counter: u16, first_object: usize) void {
+    if (!active(active_room_index)) {
         hideObjects(first_object);
         return;
     }
@@ -43,8 +48,8 @@ pub fn update(active: bool, anim_counter: u16, first_object: usize) void {
     counter +%= 1;
 }
 
-pub fn draw(camera: Camera, active: bool, first_object: usize, origin: Origin) void {
-    if (!active) {
+pub fn draw(camera: Camera, active_room_index: usize, first_object: usize) void {
+    if (!active(active_room_index)) {
         hideObjects(first_object);
         return;
     }
@@ -76,6 +81,10 @@ pub fn hideObjects(first_object: usize) void {
     while (index < object_count) : (index += 1) {
         hideObject(first_object + index);
     }
+}
+
+fn active(active_room_index: usize) bool {
+    return active_room_index == room_index;
 }
 
 fn age(index: usize) u8 {

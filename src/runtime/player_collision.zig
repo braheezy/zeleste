@@ -1,10 +1,9 @@
 const collision = @import("collision.zig");
+const chapter_systems = @import("chapters/systems.zig");
 const falling_blocks = @import("falling_blocks.zig");
-const funny_cars = @import("funny_cars.zig");
 const level = @import("../generated_rooms.zig");
 const math = @import("math.zig");
 const player_mod = @import("player.zig");
-const prologue_bridge = @import("prologue_bridge.zig");
 
 const Player = player_mod.State;
 const fixedToPixel = math.fixedToPixel;
@@ -44,7 +43,7 @@ pub fn floorContact(player: Player, room_index: usize) bool {
 }
 
 pub fn floorContactAt(x: i16, y: i16, room_index: usize) bool {
-    return collidesAt(x, y + 1, room_index) or oneWayFloorAt(x, y, room_index) or funny_cars.floorAt(x, y);
+    return collidesAt(x, y + 1, room_index) or oneWayFloorAt(x, y, room_index) or chapter_systems.actorFloorAt(x, y);
 }
 
 pub fn moveHorizontal(player: *Player, amount: i32, room_index: usize) void {
@@ -143,7 +142,7 @@ pub fn solidRectAt(x: i16, y: i16, width: i16, height: i16, room_index: usize) b
 
 pub fn dynamicSolidRectAt(x: i16, y: i16, width: i16, height: i16) bool {
     if (falling_blocks.solidRectAt(x, y, width, height)) return true;
-    return prologue_bridge.solidRectAt(x, y, width, height);
+    return chapter_systems.dynamicSolidRectAt(x, y, width, height);
 }
 
 fn tryResolvePlayerEmbeddingAt(player: *Player, room_index: usize, x: i16, y: i16) bool {
@@ -179,7 +178,7 @@ fn oneWayPlatformTopForPlayer(player_x: i16, old_y: i16, next_y: i16, room_index
     if (oneWayPlatformTopAtBottom(player_x + player_body_width - 1, old_bottom, next_bottom, room_index)) |platform_top| {
         return platform_top;
     }
-    return funny_cars.topForPlayer(player_x, old_bottom, next_bottom);
+    return chapter_systems.actorTopForPlayer(player_x, old_bottom, next_bottom);
 }
 
 fn oneWayPlatformTopAtBottom(x: i16, old_bottom: i16, next_bottom: i16, room_index: usize) ?i16 {

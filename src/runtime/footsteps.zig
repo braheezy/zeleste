@@ -2,13 +2,12 @@ const mm = @import("maxmod");
 const assets = @import("assets.zig");
 const sound_ids = assets.sound_ids;
 const background = @import("background.zig");
+const chapter_systems = @import("chapters/systems.zig");
 const collision = @import("collision.zig");
 const falling_blocks = @import("falling_blocks.zig");
-const funny_cars = @import("funny_cars.zig");
 const level = @import("../generated_rooms.zig");
 const math = @import("math.zig");
 const player_mod = @import("player.zig");
-const prologue_bridge = @import("prologue_bridge.zig");
 const room_data = @import("room_data.zig");
 
 const Player = player_mod.State;
@@ -128,8 +127,8 @@ fn surfaceAtPlayerFeet(player: Player, room_index: usize) Surface {
     const player_y = fixedToPixel(player.y);
     const bottom = player_y + player_body_height;
 
-    if (funny_cars.floorAt(player_x, player_y)) return .car;
-    if (prologue_bridge.floorAtPlayer(player)) return .asphalt;
+    if (chapter_systems.actorFloorAt(player_x, player_y)) return .car;
+    if (chapter_systems.asphaltFloorAtPlayer(player)) return .asphalt;
     if (falling_blocks.floorAtPlayer(player)) return .snow;
     if (oneWayFloorAt(player_x, player_y, room_index)) return .wood;
 

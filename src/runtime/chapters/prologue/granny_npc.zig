@@ -1,10 +1,10 @@
 const gba = @import("gba");
-const assets = @import("assets.zig");
+const assets = @import("../../assets.zig");
 const bird_npc = @import("bird_npc.zig");
-const camera_mod = @import("camera.zig");
-const foreground_stamps = @import("foreground_stamps.zig");
-const oam = @import("oam.zig");
-const room_data = @import("room_data.zig");
+const camera_mod = @import("../../camera.zig");
+const foreground_stamps = @import("../../foreground_stamps.zig");
+const oam = @import("../../oam.zig");
+const room_data = @import("../../room_data.zig");
 
 const Camera = camera_mod.Camera;
 const Spawn = room_data.Spawn;

@@ -88,17 +88,17 @@ chapter 1 city stub, and the runtime refactor is underway. Completed splits:
   reusable player sprite rendering, reusable player hair rendering, reusable
   player death/respawn VFX, reusable player death/respawn flow state, dash VFX,
   reusable falling block hazards, reusable footstep SFX/surface classification,
-  reusable foreground stamps, reusable room wire OBJ fallback, reusable room
-  transition helpers, reusable room lifecycle/update hooks, reusable funny car
-  platform actors, reusable dust/snow puff particles, reusable wind/snow
-  environmental particles, reusable procedural chimney smoke, reusable bird
-  NPC/tutorial prompt actors, reusable tiny bird flock actors, reusable Granny
-  NPC sprite rendering, reusable cutscene dialogue box rendering, reusable
-  floating cutscene text VFX, reusable cutscene text helpers, gameplay scene
-  drawing/effect hooks, shared frame sync, the dummy overworld placeholder
-  screen loader, current chapter/end-level flow, the prologue bridge/end-platform
-  room system, and the prologue Granny cutscene script live under
-  `src/runtime/`.
+  reusable foreground stamps, reusable room transition helpers, reusable room
+  lifecycle/update hooks, reusable dust/snow puff particles, reusable wind/snow
+  environmental particles, reusable cutscene dialogue box rendering, reusable
+  cutscene text helpers, gameplay scene drawing/effect hooks, active chapter
+  system dispatch, shared frame sync, and the dummy overworld placeholder screen
+  loader live under `src/runtime/`.
+  Prologue-specific actors, cutscenes, bridge/end-platform logic, session flow,
+  bird prompts, funny cars, room wires, tiny birds, Granny rendering, chimney
+  smoke, and laugh text now live under
+  `src/runtime/chapters/prologue/` behind the `src/runtime/chapters/prologue.zig`
+  facade.
 - `src/runtime.zig` now delegates room lifecycle, room transitions, death flow,
   player movement, player collision, chapter/end-level flow, frame sync, and
   scene drawing to focused runtime modules while retaining only startup,
@@ -112,15 +112,17 @@ Next refactor targets:
 - Use the extracted falling block system as the pattern for
   load/update/draw/collision hooks and side-effect event reporting, and the
   foreground stamp system as the pattern for reusable room decoration/occlusion
-  ownership. Funny cars are now the first actor-backed one-way platform
-  extraction; bird NPCs are now the first tutorial-prompt NPC extraction;
+  ownership. Actor-backed platform probes now route through the active chapter
+  system adapter, with prologue funny cars as the first implementation; bird
+  NPCs are now the first tutorial-prompt NPC extraction;
   footsteps now own terrain surface classification and SFX sample rotation;
-  gameplay scene drawing/effect hooks, frame sync, chapter flow, and the dummy
-  overworld screen loader are now separated from the frame loop; room
+  gameplay scene drawing/effect hooks, frame sync, prologue chapter flow, and
+  the dummy overworld screen loader are now separated from the frame loop; room
   transitions, room-system updates, and death/respawn state now have dedicated
-  owners; Granny sprite rendering, dialogue rendering, floating laugh text, the
-  Granny cutscene script, and the prologue bridge runtime are now separate
-  owners.
+  owners; prologue-specific Granny sprite rendering, floating laugh text, the
+  Granny cutscene script, bird actors, funny cars, room wires, tiny birds,
+  chimney smoke, prologue flow, and bridge runtime are now in the prologue
+  chapter folder.
 - Keep player movement behavior stable. Future chapter mechanics should reuse
   `player_controller`, `player_collision`, and room-system hooks rather than
   reintroducing direct room branches in the frame loop.

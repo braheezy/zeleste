@@ -1,18 +1,18 @@
 const gba = @import("gba");
-const background = @import("background.zig");
-const camera_mod = @import("camera.zig");
-const collision = @import("collision.zig");
-const cutscene_dialogue = @import("cutscene_dialogue.zig");
-const cutscene_laugh_text = @import("cutscene_laugh_text.zig");
-const dash_effects = @import("dash_effects.zig");
-const dust = @import("dust.zig");
-const falling_blocks = @import("falling_blocks.zig");
+const background = @import("../../background.zig");
+const camera_mod = @import("../../camera.zig");
+const collision = @import("../../collision.zig");
+const cutscene_dialogue = @import("../../cutscene_dialogue.zig");
+const laugh_text = @import("laugh_text.zig");
+const dash_effects = @import("../../dash_effects.zig");
+const dust = @import("../../dust.zig");
+const falling_blocks = @import("../../falling_blocks.zig");
 const granny_npc = @import("granny_npc.zig");
-const level = @import("../generated_rooms.zig");
-const math = @import("math.zig");
-const player_mod = @import("player.zig");
-const room_data = @import("room_data.zig");
-const text_mod = @import("text.zig");
+const level = @import("../../../generated_rooms.zig");
+const math = @import("../../math.zig");
+const player_mod = @import("../../player.zig");
+const room_data = @import("../../room_data.zig");
+const text_mod = @import("../../text.zig");
 
 const Camera = camera_mod.Camera;
 const Player = player_mod.State;
@@ -132,19 +132,19 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
 }
 
 pub fn updateEffects(room_index: usize, camera: Camera) void {
-    cutscene_laugh_text.update(room_index, camera);
+    laugh_text.update(room_index, camera);
 }
 
 pub fn handleRoomTransition(from_room: usize, to_room: usize) void {
-    if (!intro_done or !cutscene_laugh_text.active()) return;
+    if (!intro_done or !laugh_text.active()) return;
     if (from_room == granny_scene_room_index and to_room != granny_laugh_carry_room_index) {
-        cutscene_laugh_text.stop();
+        laugh_text.stop();
     }
 }
 
 pub fn handlePlayerDeathStart() void {
-    if (intro_done and cutscene_laugh_text.active()) {
-        cutscene_laugh_text.stop();
+    if (intro_done and laugh_text.active()) {
+        laugh_text.stop();
     }
 }
 
@@ -168,7 +168,7 @@ pub fn drawOverlay(camera: Camera, room_index: usize) void {
         cutscene_dialogue.hideObjects(dialogue_first_object);
     }
 
-    cutscene_laugh_text.draw(camera, room_index);
+    laugh_text.draw(camera, room_index);
 }
 
 pub fn shakeOffset() ?Spawn {
@@ -243,9 +243,9 @@ fn updateDialogue(input: gba.input.BufferedKeysState, cutscene: *const GrannyCut
     }
     if (completed_page == 3) {
         state.phase = .laugh_pause;
-        state.laugh_pause_timer = cutscene_laugh_text.pause_frames;
+        state.laugh_pause_timer = laugh_text.pause_frames;
         cutscene_dialogue.hideObjects(dialogue_first_object);
-        cutscene_laugh_text.startFromCutscene(cutscene, state.room_index, 3, false, false);
+        laugh_text.startFromCutscene(cutscene, state.room_index, 3, false, false);
         return;
     }
     const next_page = completed_page + 1;
@@ -273,7 +273,7 @@ fn finish(cutscene: *const GrannyCutscene) void {
     setDarkened(room_index, false);
     state = .{};
     cutscene_dialogue.hideObjects(dialogue_first_object);
-    cutscene_laugh_text.startFromCutscene(cutscene, room_index, 0, true, true);
+    laugh_text.startFromCutscene(cutscene, room_index, 0, true, true);
 }
 
 fn resetDialogueReveal(cutscene: *const GrannyCutscene) void {
@@ -383,7 +383,7 @@ fn renderDialogueTiles(cutscene: *const GrannyCutscene) void {
 }
 
 fn npcAnimationForRoom(room_index: usize) granny_npc.Animation {
-    if (cutscene_laugh_text.activeInRoom(room_index)) return .laugh;
+    if (laugh_text.activeInRoom(room_index)) return .laugh;
     if (state.active and state.room_index == room_index and state.phase == .laugh_pause) return .laugh;
     if (state.active and state.room_index == room_index and state.phase == .dialogue and state.dialogue_index == 4) return .quotes;
     return .idle;

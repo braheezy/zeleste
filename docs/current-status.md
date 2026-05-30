@@ -11,13 +11,9 @@ changing gameplay, assets, or room tooling.
   and camera-shake composition; shared room-data contracts, fixed-point/math
   helpers, asset embeds, audio init, debug FPS overlay, frame sync, OBJ
   helpers, runtime RNG, camera helpers, collision helpers, player movement,
-  player collision context, chapter/end-level flow, player state/constants,
-  video constants, and BG/parallax streaming have been split into
+  player collision context, player state/constants, video constants, and
+  BG/parallax streaming have been split into
   `src/runtime/`.
-- `src/runtime/chapter_flow.zig` owns current chapter/session flow: gameplay
-  room load/display hiding helpers, bridge-ending hold and dash unlock state,
-  prologue end-level transition timing, dummy overworld handoff, and chapter 1
-  city entry from the placeholder overworld.
 - `src/runtime/frame.zig` owns shared frame sync: maxmod frame hook, VBlank
   wait, and optional debug FPS update.
 - `src/runtime/player_controller.zig` owns the player movement controller:
@@ -55,58 +51,77 @@ changing gameplay, assets, or room tooling.
   classification, cadence, and volume.
 - `src/runtime/foreground_stamps.zig` owns foreground grass stamp loading,
   graphics loading, behind/occluding OBJ drawing, and the object-slot count used
-  by room wires when they share spare slots.
-- `src/runtime/funny_cars.zig` owns the funny car platform actor: generic-stamp
-  loading, bounce state, graphics loading, OBJ drawing, car footstep/floor
-  probes, and one-way platform top queries.
+  by prologue room wires when they share spare slots.
 - `src/runtime/gameplay_scene.zig` owns gameplay scene draw ordering and shared
   scene-effect hooks: per-lifecycle draw order, shared OBJ sprite loading/cache
-  invalidation, wind/snow scene hooks, chimney-smoke scene hooks, player object
-  hiding, and object-slot constants shared by room systems.
-- `src/runtime/bird_npc.zig` owns the prologue bird NPC/tutorial prompt actor:
-  room data loading, state updates, hint tile/palette streaming, OBJ drawing,
-  cache invalidation, and the bridge-ending dash prompt fly-in.
-- `src/runtime/granny_npc.zig` owns Granny NPC sprite rendering: animation
-  frame caches, palette loading, fixed draw offsets, OBJ drawing, and hide
-  behavior.
-- `src/runtime/prologue_granny_cutscene.zig` owns the prologue Granny authored
-  cutscene: trigger/progress state, player cutscene locking, dialogue
+  invalidation, wind/snow scene hooks, prologue chimney-smoke scene hooks,
+  player object hiding, and object-slot constants shared by room systems.
+- `src/runtime/chapters/prologue.zig` is the prologue chapter facade used by
+  root runtime systems when they need prologue-owned actors, cutscenes, bridge
+  state, effects, or session flow.
+- `src/runtime/chapters/systems.zig` is the active chapter system adapter used
+  by shared movement, collision, footstep, and room lifecycle code. It currently
+  routes generated chapter `0` to the prologue systems.
+- `src/runtime/chapters/prologue/systems.zig` owns prologue room-system hooks:
+  prologue actor/cutscene loading, actor updates, funny-car platform probes,
+  bridge dynamic-solid probes, bridge footstep surface probes, and ending-hair
+  state.
+- `src/runtime/chapters/prologue/flow.zig` owns current prologue/session flow:
+  gameplay room load/display hiding helpers, bridge-ending hold and dash unlock
+  state, prologue end-level transition timing, dummy overworld handoff, and
+  chapter 1 city entry from the placeholder overworld.
+- `src/runtime/chapters/prologue/bird_npc.zig` owns the prologue bird
+  NPC/tutorial prompt actor: room data loading, state updates, hint
+  tile/palette streaming, OBJ drawing, cache invalidation, and the
+  bridge-ending dash prompt fly-in.
+- `src/runtime/chapters/prologue/granny_npc.zig` owns Granny NPC sprite
+  rendering: animation frame caches, palette loading, fixed draw offsets, OBJ
+  drawing, and hide behavior.
+- `src/runtime/chapters/prologue/granny_cutscene.zig` owns the prologue Granny
+  authored cutscene: trigger/progress state, player cutscene locking, dialogue
   page/reveal state, dialogue overlay calls, laugh-text lifetime, Granny NPC
   pose/facing selection, room palette mood, cutscene camera shake, and
   death/room-transition cleanup hooks.
-- `src/runtime/prologue_bridge.zig` owns the prologue bridge/end-platform room
-  system: bridge asset loading, chunk collapse state, bridge OBJ drawing,
-  ending-hold trigger state, dynamic bridge solids, bridge floor probes, dark
-  bridge palette writes, collapse camera shake, and bridge snow side effects.
+- `src/runtime/chapters/prologue/bridge.zig` owns the prologue
+  bridge/end-platform room system: bridge asset loading, chunk collapse state,
+  bridge OBJ drawing, ending-hold trigger state, dynamic bridge solids, bridge
+  floor probes, dark bridge palette writes, collapse camera shake, and bridge
+  snow side effects.
+- `src/runtime/chapters/prologue/chimney_smoke.zig` owns the procedural smoke
+  OBJ effect used by the prologue Granny room: generated tiles, palette color,
+  active-room/origin constants, update cadence, drawing, reset, and hide
+  behavior.
+- `src/runtime/chapters/prologue/funny_cars.zig` owns the prologue funny-car
+  platform actor: generic-stamp loading, bounce state, graphics loading, OBJ
+  drawing, car footstep/floor probes, and one-way platform top queries.
+- `src/runtime/chapters/prologue/room_wires.zig` owns the prologue OBJ fallback
+  path for generated room wires. It is only needed when wires cannot be stamped
+  into BG tiles and borrows spare falling-block/behind-stamp object slots.
 - `src/runtime/overworld_placeholder.zig` owns the dummy overworld screen
   loader: placeholder asset embeds, map copy, display cut-to-black, BG scroll
   reset, and placeholder BG0 enable path before entering the chapter 1 city
   stub.
-- `src/runtime/room_systems.zig` owns the room lifecycle/update facade: room
-  system loading, transient effect clearing, cutscene updates, dynamic hazard
-  updates and snow side effects, room actor/effect updates, static room hazard
-  checks, and the shared foreground animation counter.
+- `src/runtime/room_systems.zig` owns the room lifecycle/update facade: shared
+  room-system loading, transient effect clearing, reusable dynamic hazard
+  updates and snow side effects, static room hazard checks, and the shared
+  foreground animation counter. Chapter-specific room hooks route through
+  `src/runtime/chapters/systems.zig`.
 - `src/runtime/room_transition.zig` owns room transition and spawn helpers:
   player spawn construction, left/right/up/down room switching, directional
   respawn selection, room-entry cooldown, cross-room world alignment, side-entry
   floor matching, and room-entry fit/snap logic.
-- `src/runtime/room_wires.zig` owns the OBJ fallback path for room wires,
-  including per-room wire tile uploads and shared object-slot allocation.
 - `src/runtime/wind_snow.zig` owns room wind/snow environmental particles,
   generated snowflake OBJ tiles, drawing, and the fixed OAM/tile budget. The
   runtime passes prologue-specific suppression and particle-limit flags.
-- `src/runtime/chimney_smoke.zig` owns the procedural smoke OBJ effect used by
-  the prologue Granny room: generated tiles, palette color, update cadence,
-  drawing, reset, and hide behavior.
 - `src/runtime/cutscene_dialogue.zig` owns the reusable cutscene dialogue box
   renderer: 6x3 OBJ layout, generated tile buffer, render cache, name-color
   rules, box/text pixel drawing, palette bank, and show/hide behavior.
-- `src/runtime/cutscene_laugh_text.zig` owns the floating `HAHA` cutscene VFX:
-  tile upload/cache, fixed object budget, particle state, update cadence,
-  camera-follow retargeting, OBJ drawing, and hide/stop behavior.
-- `src/runtime/tiny_birds.zig` owns the tiny bird flock actor in room `0b`,
-  including persistent flown state, trigger/update behavior, palette/tile
-  uploads, OBJ drawing, and hide behavior.
+- `src/runtime/chapters/prologue/laugh_text.zig` owns the floating `HAHA`
+  cutscene VFX: tile upload/cache, fixed object budget, particle state, update
+  cadence, camera-follow retargeting, OBJ drawing, and hide/stop behavior.
+- `src/runtime/chapters/prologue/tiny_birds.zig` owns the tiny bird flock actor
+  in room `0b`, including persistent flown state, trigger/update behavior,
+  palette/tile uploads, OBJ drawing, and hide behavior.
 - `src/runtime/text.zig` owns reusable cutscene text helpers: string matching,
   word wrapping, typewriter reveal advancement, and bitmap font drawing through
   a caller-supplied pixel writer.
@@ -179,9 +194,9 @@ those room sources under `assets/chapters/prologue_a/backgrounds/`.
   - respawn points are used only for deaths, not for transitions.
 - Chapter/end-level flow:
   - bridge-ending hold and dash unlock state live in
-    `src/runtime/chapter_flow.zig`;
+    `src/runtime/chapters/prologue/flow.zig`;
   - the prologue end-level walk/camera/black/overworld phases live in
-    `src/runtime/chapter_flow.zig`;
+    `src/runtime/chapters/prologue/flow.zig`;
   - the placeholder overworld can enter the generated chapter 1 city stub.
 - Death:
   - current death zones are pits when a room has no downward exit;
@@ -194,9 +209,11 @@ those room sources under `assets/chapters/prologue_a/backgrounds/`.
   - bird NPC tutorial prompts and bridge-ending dash prompt fly-in;
   - tiny bird flock in room `0b`, with persistent per-system flown state;
   - Granny cutscene/dialogue/laugh text in room `2`, scripted by
-    `src/runtime/prologue_granny_cutscene.zig`;
+    `src/runtime/chapters/prologue/granny_cutscene.zig`;
+  - prologue chimney smoke in room `2`, owned by
+    `src/runtime/chapters/prologue/chimney_smoke.zig`;
   - collapsing prologue bridge and dummy overworld transition from room `3`,
-    with bridge runtime state in `src/runtime/prologue_bridge.zig`;
+    with bridge runtime state in `src/runtime/chapters/prologue/bridge.zig`;
   - loose snow particles when the block starts falling;
   - jump and landing dust puffs;
   - wind snow particles, per-room configurable in `room.json`;
@@ -235,12 +252,12 @@ those room sources under `assets/chapters/prologue_a/backgrounds/`.
   player movement controller, reusable player sprite rendering, reusable hair
   rendering, reusable player death/respawn VFX, dash VFX, reusable falling
   block hazards, reusable footstep SFX/surface classification, reusable
-  foreground stamps, reusable room wire OBJ fallback, reusable room transition
-  helpers, reusable room lifecycle/update hooks, reusable player death/respawn
-  flow state, reusable funny car platform actors, reusable dust/snow puff
-  particles, reusable wind/snow particles, reusable chimney smoke, reusable
-  bird NPC/tutorial prompt actors, reusable tiny bird flock actors, reusable
-  Granny NPC sprite rendering, reusable cutscene dialogue box rendering,
+  foreground stamps, reusable room transition helpers, reusable room
+  lifecycle/update hooks, reusable player death/respawn flow state, reusable
+  dust/snow puff particles, reusable wind/snow particles,
+  reusable bird NPC/tutorial prompt actors, reusable tiny bird flock actors,
+  reusable Granny NPC sprite rendering, prologue funny cars, prologue room
+  wires, prologue chimney smoke, reusable cutscene dialogue box rendering,
   reusable floating cutscene text VFX, reusable cutscene text helpers, gameplay
   scene drawing/effect hooks, frame sync, dummy overworld placeholder screen
   loading, chapter/end-level flow, prologue Granny cutscene scripting, prologue

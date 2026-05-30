@@ -3,7 +3,6 @@ const level = @import("generated_rooms.zig");
 const build_options = @import("build_options");
 const audio = @import("runtime/audio.zig");
 const camera_mod = @import("runtime/camera.zig");
-const chapter_flow = @import("runtime/chapter_flow.zig");
 const debug_fps = @import("runtime/debug_fps.zig");
 const dust = @import("runtime/dust.zig");
 const frame = @import("runtime/frame.zig");
@@ -13,8 +12,7 @@ const room_data = @import("runtime/room_data.zig");
 const player_controller = @import("runtime/player_controller.zig");
 const player_death = @import("runtime/player_death.zig");
 const player_mod = @import("runtime/player.zig");
-const prologue_bridge = @import("runtime/prologue_bridge.zig");
-const prologue_granny_cutscene = @import("runtime/prologue_granny_cutscene.zig");
+const prologue = @import("runtime/chapters/prologue.zig");
 const room_systems = @import("runtime/room_systems.zig");
 const room_transition = @import("runtime/room_transition.zig");
 const text_mod = @import("runtime/text.zig");
@@ -46,7 +44,7 @@ pub fn run() void {
     audio.init();
 
     var room_index: usize = startRoomIndex();
-    chapter_flow.loadGameplayRoom(room_index, .initial);
+    prologue.flow.loadGameplayRoom(room_index, .initial);
     gameplay_scene.loadWindSnowTiles();
     debug_fps.init(dust_palette_bank);
     gba.display.hideAllObjects();
@@ -86,7 +84,7 @@ pub fn run() void {
 
     while (true) {
         input.poll();
-        if (chapter_flow.updateTransitionIfActive(&player, &camera, &room_index, &respawn, input)) {
+        if (prologue.flow.updateTransitionIfActive(&player, &camera, &room_index, &respawn, input)) {
             continue;
         }
         if (respawn_burst_timer > 0) {
@@ -109,10 +107,10 @@ pub fn run() void {
             frame.sync();
             if (death_timer == 0) {
                 player_death.hideObjects();
-                chapter_flow.loadGameplayRoom(room_index, .respawn);
+                prologue.flow.loadGameplayRoom(room_index, .respawn);
                 room_systems.clearTransientEffects();
                 player = room_transition.spawnPlayerAt(respawn);
-                hair.update(&player, chapter_flow.endingHoldActive());
+                hair.update(&player, prologue.flow.endingHoldActive());
                 camera = updateCamera(player, room_index);
                 gameplay_scene.resetWindSnow(room_index, camera);
                 gameplay_scene.resetChimneySmoke(room_index);
@@ -120,7 +118,7 @@ pub fn run() void {
                 player_death.startRespawnBurst(player);
                 respawn_burst_timer = player_death.respawn_burst_frames;
                 frame.sync();
-                chapter_flow.showGameplayDisplay(room_index);
+                prologue.flow.showGameplayDisplay(room_index);
             } else {
                 drawDeathCountdownScene(camera, room_index, death_timer);
             }
@@ -134,10 +132,10 @@ pub fn run() void {
             player.vx = 0;
             player.vy = 0;
             player_controller.updateAnimation(&player);
-        } else if (chapter_flow.endingHoldActive()) {
-            chapter_flow.updateBridgeEndingHold(&player, input, room_index);
+        } else if (prologue.flow.endingHoldActive()) {
+            prologue.flow.updateBridgeEndingHold(&player, input, room_index);
         } else {
-            player_controller.update(&player, input, room_index, chapter_flow.dashUnlocked());
+            player_controller.update(&player, input, room_index, prologue.flow.dashUnlocked());
             if (room_systems.updateDynamicHazards(&player, room_index)) |death_cause| {
                 player_death.begin(player, camera, death_cause);
                 death_timer = player_death.death_frames;
@@ -148,15 +146,15 @@ pub fn run() void {
         room_systems.updatePlayerEffects(&player);
         const next_camera = updateCamera(player, room_index);
         room_systems.updateEffects(room_index, next_camera);
-        if (!cutscene_locked and !chapter_flow.endingHoldActive() and chapter_flow.shouldStartEndLevelTransition(player, room_index)) {
+        if (!cutscene_locked and !prologue.flow.endingHoldActive() and prologue.flow.shouldStartEndLevelTransition(player, room_index)) {
             camera = next_camera;
-            chapter_flow.startEndLevelTransition(&player, camera);
+            prologue.flow.startEndLevelTransition(&player, camera);
             continue;
         }
-        if (!cutscene_locked and !chapter_flow.endingHoldActive() and chapter_flow.shouldStartBridgeEndingHold(player, room_index)) {
-            chapter_flow.startBridgeEndingHold(&player);
+        if (!cutscene_locked and !prologue.flow.endingHoldActive() and prologue.flow.shouldStartBridgeEndingHold(player, room_index)) {
+            prologue.flow.startBridgeEndingHold(&player);
         }
-        if (!cutscene_locked and !chapter_flow.endingHoldActive()) {
+        if (!cutscene_locked and !prologue.flow.endingHoldActive()) {
             if (room_systems.touchHazard(player, room_index)) |death_cause| {
                 player_death.begin(player, next_camera, death_cause);
                 death_timer = player_death.death_frames;
@@ -164,20 +162,20 @@ pub fn run() void {
             }
         }
         const previous_room_index = room_index;
-        if (!cutscene_locked and !chapter_flow.endingHoldActive() and room_transition.trySwitch(&player, input, &room_index, &respawn)) {
-            prologue_granny_cutscene.handleRoomTransition(previous_room_index, room_index);
-            chapter_flow.hideGameplayDisplayForLoad();
+        if (!cutscene_locked and !prologue.flow.endingHoldActive() and room_transition.trySwitch(&player, input, &room_index, &respawn)) {
+            prologue.granny_cutscene.handleRoomTransition(previous_room_index, room_index);
+            prologue.flow.hideGameplayDisplayForLoad();
             frame.sync();
-            chapter_flow.loadGameplayRoom(room_index, .transition);
+            prologue.flow.loadGameplayRoom(room_index, .transition);
             room_systems.clearTransientEffects();
             player.hair_initialized = false;
-            hair.update(&player, chapter_flow.endingHoldActive());
+            hair.update(&player, prologue.flow.endingHoldActive());
             camera = updateCamera(player, room_index);
             gameplay_scene.resetWindSnow(room_index, camera);
             gameplay_scene.resetChimneySmoke(room_index);
             gameplay_scene.drawLoaded(&player, camera, room_index, room_systems.animCounter());
             frame.sync();
-            chapter_flow.showGameplayDisplay(room_index);
+            prologue.flow.showGameplayDisplay(room_index);
             continue;
         }
         camera = next_camera;
@@ -209,8 +207,8 @@ fn updateCamera(player: Player, room_index: usize) Camera {
 }
 
 fn renderCameraWithCutsceneShake(camera: Camera, room_index: usize) Camera {
-    const bridge_shake = prologue_bridge.collapseShakeOffset();
-    const granny_shake = prologue_granny_cutscene.shakeOffset();
+    const bridge_shake = prologue.bridge.collapseShakeOffset();
+    const granny_shake = prologue.granny_cutscene.shakeOffset();
     if (granny_shake == null and bridge_shake == null) return camera;
     const room = rooms[room_index];
     var offset_x: i16 = 0;

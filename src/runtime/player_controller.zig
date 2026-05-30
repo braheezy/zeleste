@@ -1,8 +1,8 @@
 const gba = @import("gba");
+const chapter_systems = @import("chapters/systems.zig");
 const dash_effects = @import("dash_effects.zig");
 const dust = @import("dust.zig");
 const footsteps = @import("footsteps.zig");
-const funny_cars = @import("funny_cars.zig");
 const math = @import("math.zig");
 const player_collision = @import("player_collision.zig");
 const player_mod = @import("player.zig");
@@ -170,7 +170,7 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
 
     if (player.jump_buffer_timer > 0 and player.coyote_timer > 0) {
         if (player.grounded) {
-            funny_cars.releaseAtPlayer(player.*);
+            chapter_systems.releaseActorAtPlayer(player.*);
         }
         dust.spawnJumpAtFeet(player.*);
         player.vy = player_jump_speed;
@@ -245,7 +245,7 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
             dust.spawnLandingAtFeet(player.*);
         }
         if (!was_grounded) {
-            funny_cars.triggerBounceAtPlayer(player.*);
+            chapter_systems.triggerActorBounceAtPlayer(player.*);
         }
         player.var_jump_timer = 0;
         player.wall_slide_timer = player_wall_slide_frames;

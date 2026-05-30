@@ -1,25 +1,26 @@
 const gba = @import("gba");
-const level = @import("../generated_rooms.zig");
-const background = @import("background.zig");
+const level = @import("../../../generated_rooms.zig");
+const background = @import("../../background.zig");
+const camera_mod = @import("../../camera.zig");
+const dash_effects = @import("../../dash_effects.zig");
+const dust = @import("../../dust.zig");
+const foreground_stamps = @import("../../foreground_stamps.zig");
+const frame = @import("../../frame.zig");
+const gameplay_scene = @import("../../gameplay_scene.zig");
+const hair = @import("../../hair.zig");
+const math = @import("../../math.zig");
+const overworld_placeholder = @import("../../overworld_placeholder.zig");
+const player_controller = @import("../../player_controller.zig");
+const player_mod = @import("../../player.zig");
+const room_data = @import("../../room_data.zig");
+const room_systems = @import("../../room_systems.zig");
+const room_transition = @import("../../room_transition.zig");
+const video = @import("../../video.zig");
+
 const bird_npc = @import("bird_npc.zig");
-const camera_mod = @import("camera.zig");
-const dash_effects = @import("dash_effects.zig");
-const dust = @import("dust.zig");
-const foreground_stamps = @import("foreground_stamps.zig");
-const frame = @import("frame.zig");
-const gameplay_scene = @import("gameplay_scene.zig");
-const hair = @import("hair.zig");
-const math = @import("math.zig");
-const overworld_placeholder = @import("overworld_placeholder.zig");
-const player_controller = @import("player_controller.zig");
-const player_mod = @import("player.zig");
-const prologue_bridge = @import("prologue_bridge.zig");
-const prologue_granny_cutscene = @import("prologue_granny_cutscene.zig");
-const room_data = @import("room_data.zig");
-const room_systems = @import("room_systems.zig");
-const room_transition = @import("room_transition.zig");
+const bridge = @import("bridge.zig");
+const granny_cutscene = @import("granny_cutscene.zig");
 const room_wires = @import("room_wires.zig");
-const video = @import("video.zig");
 
 pub const RoomLoadMode = enum {
     initial,
@@ -88,21 +89,21 @@ pub fn dashUnlocked() bool {
 }
 
 pub fn endingHoldActive() bool {
-    return prologue_bridge.endingHoldActive();
+    return bridge.endingHoldActive();
 }
 
 pub fn shouldStartBridgeEndingHold(player: Player, room_index: usize) bool {
-    return prologue_bridge.shouldStartEndingHold(player, isPrologueEndRoom(room_index));
+    return bridge.shouldStartEndingHold(player, isPrologueEndRoom(room_index));
 }
 
 pub fn startBridgeEndingHold(player: *Player) void {
-    prologue_bridge.startEndingHold();
+    bridge.startEndingHold();
     holdPlayerForBridgeEnding(player);
     dust.clear();
 
     const player_x = fixedToPixel(player.x);
     const player_y = fixedToPixel(player.y);
-    const hint = prologue_bridge.endingHintOrDefault(player_x, player_y);
+    const hint = bridge.endingHintOrDefault(player_x, player_y);
     bird_npc.startEndingFlyIn(player_x, player_y, hint.x, hint.y);
 }
 
@@ -110,7 +111,7 @@ pub fn updateBridgeEndingHold(player: *Player, input: gba.input.BufferedKeysStat
     const horizontal: i16 = @intCast(input.getAxisHorizontal());
     const vertical: i16 = @intCast(input.getAxisVertical());
     if (input.isJustPressed(.B) and player_controller.tryStartDash(player, horizontal, vertical, true)) {
-        prologue_bridge.markEndingDashStarted();
+        bridge.markEndingDashStarted();
         dash_unlocked = true;
         bird_npc.dismiss();
         player_controller.updateDashMovement(player, room_index);
@@ -120,7 +121,7 @@ pub fn updateBridgeEndingHold(player: *Player, input: gba.input.BufferedKeysStat
 }
 
 pub fn shouldStartEndLevelTransition(player: Player, room_index: usize) bool {
-    return prologue_bridge.shouldStartEndLevelTransition(player, isPrologueEndRoom(room_index), end_level_transition.phase != .inactive);
+    return bridge.shouldStartEndLevelTransition(player, isPrologueEndRoom(room_index), end_level_transition.phase != .inactive);
 }
 
 pub fn startEndLevelTransition(player: *Player, camera: Camera) void {
@@ -139,7 +140,7 @@ pub fn startEndLevelTransition(player: *Player, camera: Camera) void {
     player.animation_timer = 0;
     dust.clear();
     dash_effects.clear();
-    prologue_bridge.clearCollapseShake();
+    bridge.clearCollapseShake();
     bird_npc.hideObjects();
     end_level_transition = .{
         .phase = .walk,
@@ -160,7 +161,7 @@ fn loadRoomBackground(room_index: usize) void {
     gba.mem.memcpy(gba.display.bg_palette, room.palette.ptr, room.palette.len);
     gba.display.bg_palette.colors[background.static_wire_bg_color_index] = gba.ColorRgb555.rgb(13, 14, 18);
     gba.display.memcpyBackgroundTiles8Bpp(0, @ptrCast(room.tiles));
-    prologue_granny_cutscene.resetPaletteState();
+    granny_cutscene.resetPaletteState();
 }
 
 fn holdPlayerForBridgeEnding(player: *Player) void {
@@ -263,14 +264,14 @@ fn updateEndLevelTransition(player: *Player, camera: *Camera, room_index: *usize
 }
 
 fn loadOverworldScreen() void {
-    prologue_bridge.deactivateForOverworld();
+    bridge.deactivateForOverworld();
     dust.clear();
     dash_effects.clear();
     gameplay_scene.hideWindSnowObjects();
     gameplay_scene.hideChimneySmokeObjects();
-    prologue_bridge.hideObjects();
+    bridge.hideObjects();
     foreground_stamps.hideObjects();
-    room_wires.hideObjects(prologue_bridge.active());
+    room_wires.hideObjects(bridge.active());
     overworld_placeholder.loadScreen();
 }
 

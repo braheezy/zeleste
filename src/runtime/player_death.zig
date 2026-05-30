@@ -5,7 +5,7 @@ const gameplay_scene = @import("gameplay_scene.zig");
 const math = @import("math.zig");
 const player_death_vfx = @import("player_death_vfx.zig");
 const player_mod = @import("player.zig");
-const prologue_granny_cutscene = @import("prologue_granny_cutscene.zig");
+const prologue = @import("chapters/prologue.zig");
 const video = @import("video.zig");
 
 const Camera = camera_mod.Camera;
@@ -47,7 +47,7 @@ var intro_frame_count: u16 = 0;
 var intro_total_frames: u8 = 0;
 
 pub fn begin(player: Player, camera: Camera, cause: Cause) void {
-    prologue_granny_cutscene.handlePlayerDeathStart();
+    prologue.granny_cutscene.handlePlayerDeathStart();
     origin_x = player.x + (player_body_width / 2) * fixed_one;
     origin_y = player.y + (player_body_height / 2) * fixed_one;
     player_x = player.x;
