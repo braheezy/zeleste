@@ -13,6 +13,9 @@ from split_foreground_tileset import Image, read_png_rgba
 
 FRAME_WIDTH = 32
 FRAME_HEIGHT = 32
+PORTRAIT_FRAME_WIDTH = 32
+PORTRAIT_FRAME_HEIGHT = 32
+PORTRAIT_EXPRESSIONS = ("normal", "mock", "laugh")
 HA_SOURCE_FRAME_WIDTH = 14
 HA_FRAME_WIDTH = 16
 HA_FRAME_HEIGHT = 16
@@ -48,20 +51,20 @@ def write_tile_4bpp(output: bytearray, pixels: list[int]) -> None:
             output.append(pixels[y * 8 + x_pair * 2] | (pixels[y * 8 + x_pair * 2 + 1] << 4))
 
 
-def slice_nonempty_grid(path: Path) -> list[Image]:
+def slice_nonempty_grid(path: Path, frame_width: int = FRAME_WIDTH, frame_height: int = FRAME_HEIGHT) -> list[Image]:
     source = read_png_rgba(path)
-    if source.width % FRAME_WIDTH != 0 or source.height % FRAME_HEIGHT != 0:
-        raise ValueError(f"{path} must be a {FRAME_WIDTH}x{FRAME_HEIGHT} grid")
+    if source.width % frame_width != 0 or source.height % frame_height != 0:
+        raise ValueError(f"{path} must be a {frame_width}x{frame_height} grid")
 
     frames: list[Image] = []
-    for frame_y in range(source.height // FRAME_HEIGHT):
-        for frame_x in range(source.width // FRAME_WIDTH):
-            pixels = bytearray(FRAME_WIDTH * FRAME_HEIGHT * 4)
+    for frame_y in range(source.height // frame_height):
+        for frame_x in range(source.width // frame_width):
+            pixels = bytearray(frame_width * frame_height * 4)
             opaque_count = 0
-            for y in range(FRAME_HEIGHT):
-                for x in range(FRAME_WIDTH):
-                    src_offset = ((frame_y * FRAME_HEIGHT + y) * source.width + frame_x * FRAME_WIDTH + x) * 4
-                    dst_offset = (y * FRAME_WIDTH + x) * 4
+            for y in range(frame_height):
+                for x in range(frame_width):
+                    src_offset = ((frame_y * frame_height + y) * source.width + frame_x * frame_width + x) * 4
+                    dst_offset = (y * frame_width + x) * 4
                     color = tuple(source.pixels[src_offset : src_offset + 4])
                     if is_transparent(color):
                         pixels[dst_offset : dst_offset + 4] = b"\x00\x00\x00\x00"
@@ -69,8 +72,50 @@ def slice_nonempty_grid(path: Path) -> list[Image]:
                         pixels[dst_offset : dst_offset + 4] = bytes(color)
                         opaque_count += 1
             if opaque_count != 0:
-                frames.append(Image(FRAME_WIDTH, FRAME_HEIGHT, bytes(pixels)))
+                frames.append(Image(frame_width, frame_height, bytes(pixels)))
     return frames
+
+
+def slice_nonempty_scaled_grid(
+    path: Path,
+    source_frame_width: int,
+    source_frame_height: int,
+    output_width: int,
+    output_height: int,
+) -> list[Image]:
+    source = read_png_rgba(path)
+    if source.width % source_frame_width != 0 or source.height % source_frame_height != 0:
+        raise ValueError(f"{path} must be a {source_frame_width}x{source_frame_height} grid")
+    if source_frame_width % output_width != 0 or source_frame_height % output_height != 0:
+        raise ValueError(f"{path} source frames must scale evenly to {output_width}x{output_height}")
+
+    frames: list[Image] = []
+    for frame_y in range(source.height // source_frame_height):
+        for frame_x in range(source.width // source_frame_width):
+            pixels = bytearray(output_width * output_height * 4)
+            opaque_count = 0
+            for y in range(output_height):
+                src_y = (y * source_frame_height) // output_height
+                for x in range(output_width):
+                    src_x = (x * source_frame_width) // output_width
+                    src_offset = ((frame_y * source_frame_height + src_y) * source.width + frame_x * source_frame_width + src_x) * 4
+                    dst_offset = (y * output_width + x) * 4
+                    color = tuple(source.pixels[src_offset : src_offset + 4])
+                    if is_transparent(color):
+                        pixels[dst_offset : dst_offset + 4] = b"\x00\x00\x00\x00"
+                    else:
+                        pixels[dst_offset : dst_offset + 4] = bytes(color)
+                        opaque_count += 1
+            if opaque_count != 0:
+                frames.append(Image(output_width, output_height, bytes(pixels)))
+    return frames
+
+
+def slice_portrait_grid(path: Path) -> list[Image]:
+    source = read_png_rgba(path)
+    if source.width % 64 == 0 and source.height % 64 == 0:
+        return slice_nonempty_scaled_grid(path, 64, 64, PORTRAIT_FRAME_WIDTH, PORTRAIT_FRAME_HEIGHT)
+    return slice_nonempty_grid(path, PORTRAIT_FRAME_WIDTH, PORTRAIT_FRAME_HEIGHT)
 
 
 def palette_for(frames: list[Image]) -> list[tuple[int, int, int, int]]:
@@ -171,9 +216,71 @@ def pack_frame_with_indices(frame: Image, color_indices: dict[tuple[int, int, in
     return bytes(tiles)
 
 
+def pack_portraits(input_dir: Path, output_dir: Path) -> tuple[int, int]:
+    frames_by_expression: dict[str, list[Image]] = {}
+    all_frames: list[Image] = []
+    for expression in PORTRAIT_EXPRESSIONS:
+        frames = slice_portrait_grid(input_dir / f"{expression}.png")
+        if not frames:
+            raise ValueError(f"{expression}.png produced no portrait frames")
+        frames_by_expression[expression] = frames
+        all_frames.extend(frames)
+
+    palette = palette_for(all_frames)
+    tiles = bytearray()
+    ranges: dict[str, dict[str, int]] = {}
+    frame_offset = 0
+    for expression in PORTRAIT_EXPRESSIONS:
+        frames = frames_by_expression[expression]
+        ranges[expression] = {
+            "firstFrame": frame_offset,
+            "frameCount": len(frames),
+        }
+        for frame in frames:
+            tiles.extend(pack_frame(frame, palette))
+        frame_offset += len(frames)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "granny_portrait_tiles.bin").write_bytes(bytes(tiles))
+    (output_dir / "granny_portrait_palette.bin").write_bytes(
+        b"".join(rgba_to_rgb555(color).to_bytes(2, "little") for color in palette)
+    )
+    (output_dir / "granny_portrait_meta.zig").write_text(
+        "\n".join(
+            [
+                f"pub const frame_width: u8 = {PORTRAIT_FRAME_WIDTH};",
+                f"pub const frame_height: u8 = {PORTRAIT_FRAME_HEIGHT};",
+                f"pub const tiles_per_frame: u16 = {(PORTRAIT_FRAME_WIDTH // 8) * (PORTRAIT_FRAME_HEIGHT // 8)};",
+                f"pub const normal_first_frame: u16 = {ranges['normal']['firstFrame']};",
+                f"pub const normal_frame_count: u16 = {ranges['normal']['frameCount']};",
+                f"pub const mock_first_frame: u16 = {ranges['mock']['firstFrame']};",
+                f"pub const mock_frame_count: u16 = {ranges['mock']['frameCount']};",
+                f"pub const laugh_first_frame: u16 = {ranges['laugh']['firstFrame']};",
+                f"pub const laugh_frame_count: u16 = {ranges['laugh']['frameCount']};",
+                "",
+            ]
+        )
+    )
+    (output_dir / "granny_portrait.json").write_text(
+        json.dumps(
+            {
+                "frameWidth": PORTRAIT_FRAME_WIDTH,
+                "frameHeight": PORTRAIT_FRAME_HEIGHT,
+                "tilesPerFrame": (PORTRAIT_FRAME_WIDTH // 8) * (PORTRAIT_FRAME_HEIGHT // 8),
+                "expressions": ranges,
+                "paletteRgba": [list(color) for color in palette],
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+    return frame_offset, sum(1 for color in palette if color[3] != 0)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input-dir", type=Path, required=True)
+    parser.add_argument("--portrait-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
 
@@ -231,11 +338,15 @@ def main() -> int:
         )
         + "\n"
     )
+    portrait_frame_count, portrait_color_count = pack_portraits(args.portrait_dir, args.output_dir)
     print(
         f"packed granny idle: {len(idle_frames)} frames, "
         f"laugh: {len(laugh_frames)} frames, "
         f"quotes: {len(quote_frames)} frames, "
-        f"haha: {len(haha_frames)} frames, {sum(1 for color in palette if color[3] != 0)} opaque colors"
+        f"haha: {len(haha_frames)} frames, "
+        f"portrait: {portrait_frame_count} frames, "
+        f"{sum(1 for color in palette if color[3] != 0)} sprite opaque colors, "
+        f"{portrait_color_count} portrait opaque colors"
     )
     return 0
 

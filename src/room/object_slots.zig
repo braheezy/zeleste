@@ -1,8 +1,8 @@
 const cutscene_dialogue = @import("../cutscene/dialogue.zig");
-const falling_blocks = @import("falling_blocks.zig");
+const dynamic_object_slots = @import("dynamic_object_slots.zig");
 const foreground_stamps = @import("foreground_stamps.zig");
 
-pub const cutscene_dialogue_first_object = falling_blocks.first_object;
+pub const cutscene_dialogue_first_object = dynamic_object_slots.first_object;
 pub const scene_effect_first_object = cutscene_dialogue_first_object + cutscene_dialogue.object_count;
 
 pub const ambient_npc_first_object = foreground_stamps.behind_first_object + foreground_stamps.max_stamps;

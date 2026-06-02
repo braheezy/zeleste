@@ -1,4 +1,5 @@
 const gba = @import("gba");
+const breakable_walls = @import("../room/breakable_walls.zig");
 const camera = @import("camera.zig");
 const room_data = @import("room_data.zig");
 const video = @import("../core/video.zig");
@@ -122,7 +123,7 @@ fn streamRoomBackgroundFull(room_index: usize, room: room_data.RoomBackground, s
         var dest_x: usize = 0;
         while (dest_x < video.bg_hardware_width_tiles) : (dest_x += 1) {
             const src_x = source_tile_x + @as(i16, @intCast(dest_x));
-            const raw_entry = logicalRoomMapEntry(room, src_x, src_y);
+            const raw_entry = visibleRoomMapEntry(room_index, room, src_x, src_y);
             const hardware_x = wrapTileIndex(src_x, video.bg_hardware_width_tiles);
             const hardware_y = wrapTileIndex(src_y, video.bg_hardware_height_tiles);
             entries[normalBgMapIndex(hardware_x, hardware_y, video.bg_hardware_width_tiles)] = @bitCast(raw_entry);
@@ -143,7 +144,7 @@ fn streamRoomBackgroundColumn(room: room_data.RoomBackground, src_x: i16, source
     while (offset_y < video.bg_hardware_height_tiles) : (offset_y += 1) {
         const src_y = source_tile_y + @as(i16, @intCast(offset_y));
         const hardware_y = wrapTileIndex(src_y, video.bg_hardware_height_tiles);
-        const raw_entry = logicalRoomMapEntry(room, src_x, src_y);
+        const raw_entry = visibleRoomMapEntry(bg_stream_room_index, room, src_x, src_y);
         entries[normalBgMapIndex(hardware_x, hardware_y, video.bg_hardware_width_tiles)] = @bitCast(raw_entry);
     }
 }
@@ -155,7 +156,7 @@ fn streamRoomBackgroundRow(room: room_data.RoomBackground, source_tile_x: i16, s
     while (offset_x < video.bg_hardware_width_tiles) : (offset_x += 1) {
         const src_x = source_tile_x + @as(i16, @intCast(offset_x));
         const hardware_x = wrapTileIndex(src_x, video.bg_hardware_width_tiles);
-        const raw_entry = logicalRoomMapEntry(room, src_x, src_y);
+        const raw_entry = visibleRoomMapEntry(bg_stream_room_index, room, src_x, src_y);
         entries[normalBgMapIndex(hardware_x, hardware_y, video.bg_hardware_width_tiles)] = @bitCast(raw_entry);
     }
 }
@@ -286,6 +287,11 @@ pub fn logicalRoomMapEntry(room: room_data.RoomBackground, x: i16, y: i16) u16 {
     const offset = (uy * room.width_tiles + ux) * 2;
     if (offset + 1 >= room.map.len) return 0;
     return @as(u16, room.map[offset]) | (@as(u16, room.map[offset + 1]) << 8);
+}
+
+fn visibleRoomMapEntry(room_index: usize, room: room_data.RoomBackground, x: i16, y: i16) u16 {
+    if (breakable_walls.bgTileBroken(room_index, x, y)) return 0;
+    return logicalRoomMapEntry(room, x, y);
 }
 
 fn streamParallaxBackground(room_index: usize, parallax: room_data.ParallaxLayer, scroll_x: i16, scroll_y: i16) void {

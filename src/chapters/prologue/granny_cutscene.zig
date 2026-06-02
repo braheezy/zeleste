@@ -6,7 +6,7 @@ const cutscene_dialogue = @import("../../cutscene/dialogue.zig");
 const laugh_text = @import("laugh_text.zig");
 const dash_effects = @import("../../player/dash_effects.zig");
 const dust = @import("../../effects/dust.zig");
-const falling_blocks = @import("../../room/falling_blocks.zig");
+const falling_blocks = @import("falling_blocks.zig");
 const granny_npc = @import("granny_npc.zig");
 const level = @import("../../generated_rooms.zig");
 const math = @import("../../core/math.zig");
@@ -166,11 +166,13 @@ pub fn drawNpc(camera: Camera, room_index: usize, object: usize, anim_counter: u
     granny_npc.draw(camera, object, cutscene.granny, animation, anim_counter, npcFacingLeftForRoom(cutscene, room_index));
 }
 
-pub fn drawOverlay(camera: Camera, room_index: usize) void {
+pub fn drawOverlay(camera: Camera, room_index: usize, anim_counter: u16) void {
     if (state.active and state.room_index == room_index and state.phase == .dialogue) {
         if (rooms[room_index].granny_cutscene) |cutscene| {
             renderDialogueTiles(cutscene);
-            cutscene_dialogue.drawObjects(camera, dialogue_first_object, cutscene.dialogue_box);
+            if (state.dialogue_index < cutscene.dialogue.len) {
+                cutscene_dialogue.drawObjects(camera, dialogue_first_object, cutscene.dialogue_box, cutscene.dialogue[state.dialogue_index], anim_counter);
+            }
         }
     } else {
         cutscene_dialogue.hideObjects(dialogue_first_object);
@@ -229,7 +231,7 @@ fn updateDialogue(input: gba.input.BufferedKeysState, cutscene: *const GrannyCut
     if (!(input.isJustPressed(.A) or input.isJustPressed(.B))) return;
 
     const page = cutscene.dialogue[state.dialogue_index];
-    const page_end = text_mod.wrappedNextOffset(page.text, state.dialogue_offset, cutscene_dialogue.text_max_chars, cutscene_dialogue.text_max_lines);
+    const page_end = cutscene_dialogue.wrappedNextOffset(page, state.dialogue_offset);
     if (dialogueUsesTypewriter(page.text) and state.dialogue_reveal_offset < page_end) {
         revealDialogueTo(page.text, page_end);
         return;
@@ -306,7 +308,7 @@ fn updateDialogueReveal(cutscene: *const GrannyCutscene) void {
         return;
     }
 
-    const target = text_mod.wrappedNextOffset(page.text, state.dialogue_offset, cutscene_dialogue.text_max_chars, cutscene_dialogue.text_max_lines);
+    const target = cutscene_dialogue.wrappedNextOffset(page, state.dialogue_offset);
     if (state.dialogue_reveal_offset < state.dialogue_offset) {
         state.dialogue_reveal_offset = text_mod.skipSpaces(page.text, state.dialogue_offset);
     }

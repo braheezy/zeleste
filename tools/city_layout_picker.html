@@ -1,0 +1,675 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>City Layout Picker</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg: #101317;
+            --panel: #171c22;
+            --panel-2: #202834;
+            --line: #354250;
+            --text: #e8edf2;
+            --muted: #9aa8b7;
+            --accent: #6ed0ff;
+            --warn: #ffc75f;
+            --good: #78d889;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+            background: var(--bg);
+            color: var(--text);
+            font: 13px/1.4 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        body {
+            display: grid;
+            grid-template-columns: 320px minmax(0, 1fr);
+        }
+
+        aside {
+            min-width: 0;
+            height: 100vh;
+            display: grid;
+            grid-template-rows: auto auto minmax(0, 1fr) auto;
+            gap: 10px;
+            padding: 12px;
+            border-right: 1px solid var(--line);
+            background: var(--panel);
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 17px;
+            font-weight: 700;
+        }
+
+        .meta,
+        .status {
+            color: var(--muted);
+            font-size: 12px;
+            min-height: 18px;
+        }
+
+        .toolbar,
+        .position {
+            display: grid;
+            gap: 8px;
+        }
+
+        .row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        button,
+        select,
+        input {
+            min-height: 30px;
+            border: 1px solid var(--line);
+            border-radius: 4px;
+            background: var(--panel-2);
+            color: var(--text);
+            font: inherit;
+        }
+
+        button {
+            padding: 0 10px;
+            cursor: pointer;
+        }
+
+        button.primary {
+            border-color: #3589b7;
+            background: #1d526e;
+        }
+
+        button:disabled {
+            opacity: 0.45;
+            cursor: default;
+        }
+
+        input {
+            width: 86px;
+            padding: 0 8px;
+        }
+
+        select {
+            flex: 1;
+            padding: 0 8px;
+        }
+
+        .preview {
+            display: grid;
+            grid-template-columns: 72px minmax(0, 1fr);
+            gap: 10px;
+            align-items: center;
+            min-height: 82px;
+            padding: 8px;
+            border: 1px solid var(--line);
+            background: #111820;
+        }
+
+        .preview-frame {
+            width: 72px;
+            height: 72px;
+            display: grid;
+            place-items: center;
+            overflow: hidden;
+            background: #05070a;
+            border: 1px solid #273340;
+        }
+
+        .preview img {
+            max-width: 100%;
+            max-height: 100%;
+            image-rendering: pixelated;
+        }
+
+        .preview-title {
+            font-size: 16px;
+            font-weight: 700;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .preview-subtitle {
+            color: var(--muted);
+        }
+
+        .rooms {
+            min-height: 0;
+            overflow: auto;
+            border: 1px solid var(--line);
+            background: #10161d;
+        }
+
+        .room {
+            width: 100%;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 8px;
+            align-items: center;
+            padding: 7px 9px;
+            border: 0;
+            border-bottom: 1px solid #222d38;
+            border-radius: 0;
+            background: transparent;
+            text-align: left;
+        }
+
+        .room:hover {
+            background: #1a2430;
+        }
+
+        .room.selected {
+            background: #213244;
+            color: #ffffff;
+        }
+
+        .room .name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .room .placed {
+            color: var(--good);
+            font-size: 12px;
+        }
+
+        .room .missing {
+            color: var(--warn);
+            font-size: 12px;
+        }
+
+        main {
+            position: relative;
+            min-width: 0;
+            height: 100vh;
+            background: #030405;
+        }
+
+        canvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+        }
+    </style>
+</head>
+<body>
+    <aside>
+        <div>
+            <h1>City Layout</h1>
+            <div id="mapMeta" class="meta">Loading</div>
+        </div>
+
+        <div class="toolbar">
+            <div class="row">
+                <button id="save" class="primary">Save</button>
+                <button id="next">Next</button>
+                <button id="clear">Clear</button>
+                <button id="fit">Fit</button>
+            </div>
+            <div class="row">
+                <select id="anchorMode">
+                    <option value="topLeft">Top-left</option>
+                    <option value="center">Center</option>
+                </select>
+                <label class="row">
+                    <input id="showImages" type="checkbox" checked>
+                    Images
+                </label>
+            </div>
+        </div>
+
+        <div class="preview">
+            <div class="preview-frame"><img id="previewImg" alt=""></div>
+            <div>
+                <div id="previewTitle" class="preview-title">No room</div>
+                <div id="previewSize" class="preview-subtitle"></div>
+                <div class="position">
+                    <div class="row">
+                        <input id="posX" type="number" step="1" placeholder="x">
+                        <input id="posY" type="number" step="1" placeholder="y">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="rooms" class="rooms"></div>
+
+        <div id="status" class="status"></div>
+    </aside>
+
+    <main>
+        <canvas id="canvas"></canvas>
+    </main>
+
+    <script>
+        const canvas = document.getElementById("canvas");
+        const ctx = canvas.getContext("2d");
+        const mapMeta = document.getElementById("mapMeta");
+        const roomList = document.getElementById("rooms");
+        const saveButton = document.getElementById("save");
+        const nextButton = document.getElementById("next");
+        const clearButton = document.getElementById("clear");
+        const fitButton = document.getElementById("fit");
+        const previewImg = document.getElementById("previewImg");
+        const previewTitle = document.getElementById("previewTitle");
+        const previewSize = document.getElementById("previewSize");
+        const posX = document.getElementById("posX");
+        const posY = document.getElementById("posY");
+        const statusEl = document.getElementById("status");
+        const anchorMode = document.getElementById("anchorMode");
+        const showImages = document.getElementById("showImages");
+
+        const state = {
+            map: null,
+            mapImage: null,
+            rooms: [],
+            roomById: new Map(),
+            roomImages: new Map(),
+            placements: new Map(),
+            selectedId: null,
+            scale: 0.25,
+            offsetX: 0,
+            offsetY: 0,
+            hoverX: null,
+            hoverY: null,
+            panning: false,
+            panStartX: 0,
+            panStartY: 0,
+            panOffsetX: 0,
+            panOffsetY: 0,
+            spaceDown: false,
+        };
+
+        function setStatus(text) {
+            statusEl.textContent = text;
+        }
+
+        function loadImage(src) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.onerror = reject;
+                img.src = `/${src}`;
+            });
+        }
+
+        async function init() {
+            const response = await fetch("/api/city-layout");
+            const data = await response.json();
+            state.map = data.map;
+            state.rooms = data.rooms;
+            state.roomById = new Map(state.rooms.map((room) => [room.id, room]));
+            state.mapImage = await loadImage(data.map.image);
+            state.selectedId = state.rooms[0]?.id || null;
+            loadExistingLayout(data.layout);
+            for (const room of state.rooms) {
+                loadImage(room.image).then((img) => {
+                    state.roomImages.set(room.id, img);
+                    draw();
+                });
+            }
+            mapMeta.textContent = `${data.map.image} (${data.map.width} x ${data.map.height})`;
+            renderRoomList();
+            updateSelected();
+            resizeCanvas();
+            fitToMap();
+            setStatus(`${state.placements.size} placed`);
+            requestAnimationFrame(draw);
+        }
+
+        function loadExistingLayout(layout) {
+            const rooms = layout && layout.rooms ? layout.rooms : {};
+            for (const [roomId, placement] of Object.entries(rooms)) {
+                if (!state.roomById.has(roomId)) continue;
+                const x = Number(placement.mapX ?? placement.x);
+                const y = Number(placement.mapY ?? placement.y);
+                if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+                state.placements.set(roomId, { mapX: Math.round(x), mapY: Math.round(y) });
+            }
+        }
+
+        function resizeCanvas() {
+            const rect = canvas.getBoundingClientRect();
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+            canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            draw();
+        }
+
+        function fitToMap() {
+            const rect = canvas.getBoundingClientRect();
+            if (!state.mapImage) return;
+            state.scale = Math.min(rect.width / state.mapImage.width, rect.height / state.mapImage.height) * 0.96;
+            state.offsetX = (rect.width - state.mapImage.width * state.scale) / 2;
+            state.offsetY = (rect.height - state.mapImage.height * state.scale) / 2;
+            draw();
+        }
+
+        function mapToScreen(x, y) {
+            return {
+                x: state.offsetX + x * state.scale,
+                y: state.offsetY + y * state.scale,
+            };
+        }
+
+        function screenToMap(x, y) {
+            return {
+                x: (x - state.offsetX) / state.scale,
+                y: (y - state.offsetY) / state.scale,
+            };
+        }
+
+        function eventPoint(event) {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: event.clientX - rect.left,
+                y: event.clientY - rect.top,
+            };
+        }
+
+        function selectedRoom() {
+            return state.selectedId ? state.roomById.get(state.selectedId) : null;
+        }
+
+        function selectedPlacement() {
+            return state.selectedId ? state.placements.get(state.selectedId) : null;
+        }
+
+        function placementFromMapPoint(room, mapX, mapY) {
+            let x = Math.round(mapX);
+            let y = Math.round(mapY);
+            if (anchorMode.value === "center") {
+                x -= Math.round(room.width / 2);
+                y -= Math.round(room.height / 2);
+            }
+            return { mapX: x, mapY: y };
+        }
+
+        function setSelectedPlacement(placement) {
+            if (!state.selectedId) return;
+            state.placements.set(state.selectedId, placement);
+            updateSelected();
+            renderRoomList();
+            setStatus(`${state.selectedId}: ${placement.mapX}, ${placement.mapY}`);
+            draw();
+        }
+
+        function renderRoomList() {
+            roomList.innerHTML = "";
+            for (const room of state.rooms) {
+                const button = document.createElement("button");
+                button.className = `room${room.id === state.selectedId ? " selected" : ""}`;
+                button.type = "button";
+                const placed = state.placements.has(room.id);
+                button.innerHTML = `<span class="name">${room.id}</span><span class="${placed ? "placed" : "missing"}">${placed ? "set" : "unset"}</span>`;
+                button.addEventListener("click", () => {
+                    state.selectedId = room.id;
+                    renderRoomList();
+                    updateSelected();
+                    draw();
+                });
+                roomList.appendChild(button);
+            }
+        }
+
+        function updateSelected() {
+            const room = selectedRoom();
+            const placement = selectedPlacement();
+            previewTitle.textContent = room ? room.id : "No room";
+            previewSize.textContent = room ? `${room.width} x ${room.height}` : "";
+            previewImg.src = room ? `/${room.image}` : "";
+            posX.value = placement ? placement.mapX : "";
+            posY.value = placement ? placement.mapY : "";
+        }
+
+        function draw() {
+            const rect = canvas.getBoundingClientRect();
+            ctx.clearRect(0, 0, rect.width, rect.height);
+            ctx.fillStyle = "#020304";
+            ctx.fillRect(0, 0, rect.width, rect.height);
+            if (!state.mapImage) return;
+
+            ctx.save();
+            ctx.imageSmoothingEnabled = false;
+            ctx.translate(state.offsetX, state.offsetY);
+            ctx.scale(state.scale, state.scale);
+            ctx.drawImage(state.mapImage, 0, 0);
+
+            if (showImages.checked) {
+                ctx.globalAlpha = 0.42;
+                for (const [roomId, placement] of state.placements) {
+                    if (roomId === state.selectedId) continue;
+                    const img = state.roomImages.get(roomId);
+                    if (img) ctx.drawImage(img, placement.mapX, placement.mapY);
+                }
+                ctx.globalAlpha = 1;
+            }
+
+            for (const room of state.rooms) {
+                const placement = state.placements.get(room.id);
+                if (!placement) continue;
+                const selected = room.id === state.selectedId;
+                ctx.lineWidth = selected ? 3 / state.scale : 2 / state.scale;
+                ctx.strokeStyle = selected ? "#6ed0ff" : "#78d889";
+                ctx.strokeRect(placement.mapX, placement.mapY, room.width, room.height);
+                drawLabel(room.id, placement.mapX + 3, placement.mapY + 13, selected ? "#6ed0ff" : "#78d889");
+            }
+
+            drawGhost();
+            ctx.restore();
+        }
+
+        function drawLabel(text, x, y, color) {
+            const fontSize = Math.max(10 / state.scale, 10);
+            ctx.font = `${fontSize}px monospace`;
+            ctx.textBaseline = "middle";
+            const width = ctx.measureText(text).width;
+            ctx.fillStyle = "rgba(0,0,0,0.75)";
+            ctx.fillRect(x - 2, y - fontSize / 2 - 2, width + 4, fontSize + 4);
+            ctx.fillStyle = color;
+            ctx.fillText(text, x, y);
+        }
+
+        function drawGhost() {
+            const room = selectedRoom();
+            if (!room) return;
+            let placement = null;
+            if (state.hoverX !== null && state.hoverY !== null) {
+                placement = placementFromMapPoint(room, state.hoverX, state.hoverY);
+            } else {
+                placement = selectedPlacement();
+            }
+            if (!placement) return;
+
+            const img = state.roomImages.get(room.id);
+            if (img) {
+                ctx.globalAlpha = 0.7;
+                ctx.drawImage(img, placement.mapX, placement.mapY);
+                ctx.globalAlpha = 1;
+            }
+            ctx.lineWidth = 2 / state.scale;
+            ctx.strokeStyle = "#ffc75f";
+            ctx.strokeRect(placement.mapX, placement.mapY, room.width, room.height);
+        }
+
+        function saveLayout() {
+            const rooms = {};
+            for (const [roomId, placement] of state.placements) {
+                rooms[roomId] = placement;
+            }
+            saveButton.disabled = true;
+            fetch("/api/city-layout/save", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                    mapImage: state.map.image,
+                    anchorRoom: "city_1",
+                    rooms,
+                }),
+            })
+                .then((response) => response.json())
+                .then((result) => {
+                    if (!result.ok) throw new Error(result.error || "save failed");
+                    setStatus(`Saved ${result.placed} rooms to ${result.path}`);
+                })
+                .catch((error) => setStatus(error.message))
+                .finally(() => {
+                    saveButton.disabled = false;
+                });
+        }
+
+        function selectNextUnplaced() {
+            const currentIndex = Math.max(0, state.rooms.findIndex((room) => room.id === state.selectedId));
+            const ordered = state.rooms.slice(currentIndex + 1).concat(state.rooms.slice(0, currentIndex + 1));
+            const next = ordered.find((room) => !state.placements.has(room.id)) || ordered[0];
+            if (!next) return;
+            state.selectedId = next.id;
+            renderRoomList();
+            updateSelected();
+            draw();
+        }
+
+        canvas.addEventListener("wheel", (event) => {
+            event.preventDefault();
+            const point = eventPoint(event);
+            const before = screenToMap(point.x, point.y);
+            const factor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
+            state.scale = Math.max(0.05, Math.min(6, state.scale * factor));
+            state.offsetX = point.x - before.x * state.scale;
+            state.offsetY = point.y - before.y * state.scale;
+            draw();
+        }, { passive: false });
+
+        canvas.addEventListener("pointerdown", (event) => {
+            const point = eventPoint(event);
+            if (event.button === 1 || event.button === 2 || state.spaceDown) {
+                state.panning = true;
+                state.panStartX = point.x;
+                state.panStartY = point.y;
+                state.panOffsetX = state.offsetX;
+                state.panOffsetY = state.offsetY;
+                canvas.setPointerCapture(event.pointerId);
+                return;
+            }
+            const room = selectedRoom();
+            if (!room) return;
+            const mapPoint = screenToMap(point.x, point.y);
+            setSelectedPlacement(placementFromMapPoint(room, mapPoint.x, mapPoint.y));
+            selectNextUnplaced();
+        });
+
+        canvas.addEventListener("pointermove", (event) => {
+            const point = eventPoint(event);
+            if (state.panning) {
+                state.offsetX = state.panOffsetX + point.x - state.panStartX;
+                state.offsetY = state.panOffsetY + point.y - state.panStartY;
+                draw();
+                return;
+            }
+            const mapPoint = screenToMap(point.x, point.y);
+            state.hoverX = mapPoint.x;
+            state.hoverY = mapPoint.y;
+            draw();
+        });
+
+        canvas.addEventListener("pointerup", (event) => {
+            state.panning = false;
+            try {
+                canvas.releasePointerCapture(event.pointerId);
+            } catch {
+            }
+        });
+
+        canvas.addEventListener("pointerleave", () => {
+            state.hoverX = null;
+            state.hoverY = null;
+            draw();
+        });
+
+        canvas.addEventListener("contextmenu", (event) => event.preventDefault());
+
+        saveButton.addEventListener("click", saveLayout);
+        nextButton.addEventListener("click", selectNextUnplaced);
+        clearButton.addEventListener("click", () => {
+            if (!state.selectedId) return;
+            state.placements.delete(state.selectedId);
+            updateSelected();
+            renderRoomList();
+            draw();
+        });
+        fitButton.addEventListener("click", fitToMap);
+        showImages.addEventListener("change", draw);
+        anchorMode.addEventListener("change", draw);
+
+        function updatePositionFromInputs() {
+            if (!state.selectedId) return;
+            const x = Number(posX.value);
+            const y = Number(posY.value);
+            if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+            setSelectedPlacement({ mapX: Math.round(x), mapY: Math.round(y) });
+        }
+
+        posX.addEventListener("change", updatePositionFromInputs);
+        posY.addEventListener("change", updatePositionFromInputs);
+
+        window.addEventListener("keydown", (event) => {
+            if (event.key === " ") {
+                state.spaceDown = true;
+                event.preventDefault();
+                return;
+            }
+            const placement = selectedPlacement();
+            if (!placement) return;
+            const step = event.shiftKey ? 8 : 1;
+            if (event.key === "ArrowLeft") {
+                setSelectedPlacement({ mapX: placement.mapX - step, mapY: placement.mapY });
+                event.preventDefault();
+            } else if (event.key === "ArrowRight") {
+                setSelectedPlacement({ mapX: placement.mapX + step, mapY: placement.mapY });
+                event.preventDefault();
+            } else if (event.key === "ArrowUp") {
+                setSelectedPlacement({ mapX: placement.mapX, mapY: placement.mapY - step });
+                event.preventDefault();
+            } else if (event.key === "ArrowDown") {
+                setSelectedPlacement({ mapX: placement.mapX, mapY: placement.mapY + step });
+                event.preventDefault();
+            } else if (event.key === "Delete" || event.key === "Backspace") {
+                state.placements.delete(state.selectedId);
+                updateSelected();
+                renderRoomList();
+                draw();
+                event.preventDefault();
+            }
+        });
+
+        window.addEventListener("keyup", (event) => {
+            if (event.key === " ") state.spaceDown = false;
+        });
+        window.addEventListener("resize", resizeCanvas);
+
+        init().catch((error) => {
+            setStatus(error.message);
+        });
+    </script>
+</body>
+</html>

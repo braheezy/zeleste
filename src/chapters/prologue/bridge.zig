@@ -3,7 +3,6 @@ const assets = @import("../../core/assets.zig");
 const camera_mod = @import("../../world/camera.zig");
 const collision = @import("../../world/collision.zig");
 const dust = @import("../../effects/dust.zig");
-const falling_blocks = @import("../../room/falling_blocks.zig");
 const foreground_stamps = @import("../../room/foreground_stamps.zig");
 const level = @import("../../generated_rooms.zig");
 const math = @import("../../core/math.zig");
@@ -508,15 +507,7 @@ fn chunkIndexAtX(x: i16) ?usize {
 }
 
 fn spawnSnow(chunk: Chunk) void {
-    const block = falling_blocks.Block{
-        .active = true,
-        .x = chunk.x,
-        .y = chunk.y,
-        .w = chunk_width,
-        .h = visual_height,
-        .max_y = fixedToPixel(chunk.y) + visual_height,
-    };
-    dust.spawnSnowFromBlock(block);
+    dust.spawnSnowFromBlock(chunk.x, chunk.y, chunk_width);
 }
 
 fn floorAt(x: i16, bottom_y: i16) bool {

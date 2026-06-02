@@ -14,6 +14,13 @@ binary blobs for the ROM. Do not hand-edit generated binaries.
 - `task grass-sway -- <path>`: generate grass sway frames and GIF previews.
 - `task grass-edit`: open generated grass frame editor.
 
+`zig build assets` wraps Python asset tools with an input/output content cache
+stored at `src/generated/assets/.asset-cache.json`. A wrapped job is skipped
+when its declared source inputs, tool script, command line, and expected outputs
+are unchanged. Set `ASSET_FORCE=1` when invoking `zig build assets` to force
+wrapped Python jobs to rebuild. The MaxMod soundbank generation is still a Zig
+artifact step and is not covered by this Python cache.
+
 ## Source Asset Layout
 
 Chapter source:
@@ -70,6 +77,10 @@ room output paths and graph metadata under `src/generated/assets/chapters/`.
 `worldX` and `worldY` in `room.json` become room origins used by side
 transitions to preserve world-space player position across visually staggered
 rooms.
+
+Chapter 1 city rooms can also use `assets/chapters/1_city/layout.json`,
+authored with `task city-layout`, to override generated `worldX` and `worldY`
+positions from the full city map.
 
 ## Collision Editor UX
 

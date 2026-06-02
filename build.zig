@@ -15,6 +15,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/main.zig"),
     });
     const build_options = b.addOptions();
+    build_options.addOption(bool, "start_override", start_args.override);
     build_options.addOption(i32, "start_chapter", start_args.chapter);
     build_options.addOption([]const u8, "start_room", start_args.room);
     build_options.addOption(bool, "dev_hud", b.option(bool, "dev-hud", "Show development HUD overlays in release-speed builds.") orelse false);
@@ -39,7 +40,8 @@ pub fn build(b: *std.Build) void {
     const soundbank_header = b.pathFromRoot("src/generated/assets/prologue_soundbank.h");
 
     build_soundbank.addArg(b.pathFromRoot("assets/audio/ost/01_prologue.xm"));
-    for (footstep_sfx_files) |file| {
+    build_soundbank.addArg(b.pathFromRoot("assets/audio/ost/02_first_steps.xm"));
+    for (soundbank_sfx_files) |file| {
         build_soundbank.addArg(b.pathFromRoot(file));
     }
     build_soundbank.addArg(b.fmt("-o{s}", .{soundbank_bin}));
@@ -47,65 +49,261 @@ pub fn build(b: *std.Build) void {
     build_soundbank.step.dependOn(&ensure_generated_assets_dir.step);
     assets_step.dependOn(&build_soundbank.step);
 
-    const build_sound_ids = b.addSystemCommand(&.{
-        "python3",
-        b.pathFromRoot("tools/soundbank_header_to_zig.py"),
-        soundbank_header,
-        b.pathFromRoot("src/generated/assets/prologue_sound_ids.zig"),
-    });
+    const build_sound_ids = beginCachedPythonCommand(b, "sound_ids", "tools/soundbank_header_to_zig.py");
+    addCacheInputPath(build_sound_ids, soundbank_header);
+    addCacheOutput(b, build_sound_ids, "src/generated/assets/prologue_sound_ids.zig");
+    finishCachedPythonCommand(b, build_sound_ids, "tools/soundbank_header_to_zig.py");
+    build_sound_ids.addArg(soundbank_header);
+    build_sound_ids.addArg(b.pathFromRoot("src/generated/assets/prologue_sound_ids.zig"));
     build_sound_ids.step.dependOn(&build_soundbank.step);
     assets_step.dependOn(&build_sound_ids.step);
 
-    const build_level = b.addSystemCommand(&.{
-        "python3",
-        b.pathFromRoot("tools/build_level_assets.py"),
-        b.pathFromRoot("assets/chapters/prologue_a/room.json"),
-        "--generated-root",
-        b.pathFromRoot("src/generated/assets/chapters"),
-        "--zig-output",
-        b.pathFromRoot("src/generated_rooms.zig"),
-        "--rgb-bits",
-        "4",
-        "--chapter-index",
-        "0",
-    });
+    const combined_room_manifest = b.pathFromRoot("src/generated/assets/chapters/room_manifest.json");
+    const build_room_manifest = beginCachedPythonCommand(b, "room_manifest", "tools/build_chapter_manifest.py");
+    addCacheInputDir(b, build_room_manifest, "assets/chapters/prologue_a");
+    addCacheInputDir(b, build_room_manifest, "assets/chapters/1_city");
+    addCacheOutputPath(build_room_manifest, combined_room_manifest);
+    finishCachedPythonCommand(b, build_room_manifest, "tools/build_chapter_manifest.py");
+    build_room_manifest.addArg("--base");
+    build_room_manifest.addArg(b.pathFromRoot("assets/chapters/prologue_a/room.json"));
+    build_room_manifest.addArg("--city-dir");
+    build_room_manifest.addArg(b.pathFromRoot("assets/chapters/1_city"));
+    build_room_manifest.addArg("--output");
+    build_room_manifest.addArg(combined_room_manifest);
+    build_room_manifest.step.dependOn(&ensure_generated_assets_dir.step);
+    assets_step.dependOn(&build_room_manifest.step);
+
+    const build_level = beginCachedPythonCommand(b, "level_assets", "tools/build_level_assets.py");
+    addCacheInput(b, build_level, "tools/build_room_bundle.py");
+    addCacheInput(b, build_level, "tools/convert_room_tilemap_8bpp.py");
+    addCacheInput(b, build_level, "tools/pack_parallax_obj.py");
+    addCacheInputPath(build_level, combined_room_manifest);
+    addCacheInputDir(b, build_level, "assets/chapters/prologue_a");
+    addCacheInputDir(b, build_level, "assets/chapters/1_city");
+    addCacheOutputDir(b, build_level, "src/generated/assets/chapters");
+    addCacheOutput(b, build_level, "src/generated_rooms.zig");
+    finishCachedPythonCommand(b, build_level, "tools/build_level_assets.py");
+    build_level.addArg(combined_room_manifest);
+    build_level.addArg("--generated-root");
+    build_level.addArg(b.pathFromRoot("src/generated/assets/chapters"));
+    build_level.addArg("--zig-output");
+    build_level.addArg(b.pathFromRoot("src/generated_rooms.zig"));
+    build_level.addArg("--rgb-bits");
+    build_level.addArg("4");
+    build_level.addArg("--chapter-index");
+    build_level.addArg("0");
+    build_level.step.dependOn(&build_room_manifest.step);
     assets_step.dependOn(&build_level.step);
 
-    const build_overworld = b.addSystemCommand(&.{
-        "python3",
-        b.pathFromRoot("tools/convert_room_tilemap_8bpp.py"),
-        b.pathFromRoot("assets/overworld.png"),
-        b.pathFromRoot("src/generated/assets/overworld/bg_tiles.bin"),
-        b.pathFromRoot("src/generated/assets/overworld/bg_map.bin"),
-        b.pathFromRoot("src/generated/assets/overworld/bg_palette.bin"),
-        "--rgb-bits",
-        "3",
-        "--metadata-output",
-        b.pathFromRoot("src/generated/assets/overworld/metadata.json"),
-    });
+    const build_overworld = beginCachedPythonCommand(b, "overworld_bg", "tools/convert_room_tilemap_8bpp.py");
+    addCacheInput(b, build_overworld, "assets/overworld.png");
+    addCacheOutput(b, build_overworld, "src/generated/assets/overworld/bg_tiles.bin");
+    addCacheOutput(b, build_overworld, "src/generated/assets/overworld/bg_map.bin");
+    addCacheOutput(b, build_overworld, "src/generated/assets/overworld/bg_palette.bin");
+    addCacheOutput(b, build_overworld, "src/generated/assets/overworld/metadata.json");
+    finishCachedPythonCommand(b, build_overworld, "tools/convert_room_tilemap_8bpp.py");
+    build_overworld.addArg(b.pathFromRoot("assets/overworld.png"));
+    build_overworld.addArg(b.pathFromRoot("src/generated/assets/overworld/bg_tiles.bin"));
+    build_overworld.addArg(b.pathFromRoot("src/generated/assets/overworld/bg_map.bin"));
+    build_overworld.addArg(b.pathFromRoot("src/generated/assets/overworld/bg_palette.bin"));
+    build_overworld.addArg("--rgb-bits");
+    build_overworld.addArg("3");
+    build_overworld.addArg("--metadata-output");
+    build_overworld.addArg(b.pathFromRoot("src/generated/assets/overworld/metadata.json"));
     assets_step.dependOn(&build_overworld.step);
 
-    const pack_player_animations = b.addSystemCommand(&.{
-        "python3",
-        b.pathFromRoot("tools/pack_player_obj_tiles.py"),
-        "--input",
-        b.pathFromRoot("assets/animations/player"),
-        "--output-dir",
-        b.pathFromRoot("src/generated/assets/player"),
-        "--animations",
-        "idleLoop:idleA",
-        "idleLoop:idleB",
-        "idleLoop:idleA",
-        "idleLoop:idleB",
-        "idleLoop:idleC",
-        "runSlow",
-        "jumpSlow",
-        "fallSlow",
-        "wallslide",
-        "climbup",
-        "dangling",
-        "climbPull",
-    });
+    const build_splash1 = beginCachedPythonCommand(b, "splash1", "tools/convert_room_tilemap_8bpp.py");
+    addCacheInput(b, build_splash1, "assets/splash1.png");
+    addCacheOutput(b, build_splash1, "src/generated/assets/ui/splash1_tiles.bin");
+    addCacheOutput(b, build_splash1, "src/generated/assets/ui/splash1_map.bin");
+    addCacheOutput(b, build_splash1, "src/generated/assets/ui/splash1_palette.bin");
+    addCacheOutput(b, build_splash1, "src/generated/assets/ui/splash1_metadata.json");
+    finishCachedPythonCommand(b, build_splash1, "tools/convert_room_tilemap_8bpp.py");
+    build_splash1.addArg(b.pathFromRoot("assets/splash1.png"));
+    build_splash1.addArg(b.pathFromRoot("src/generated/assets/ui/splash1_tiles.bin"));
+    build_splash1.addArg(b.pathFromRoot("src/generated/assets/ui/splash1_map.bin"));
+    build_splash1.addArg(b.pathFromRoot("src/generated/assets/ui/splash1_palette.bin"));
+    build_splash1.addArg("--rgb-bits");
+    build_splash1.addArg("8");
+    build_splash1.addArg("--metadata-output");
+    build_splash1.addArg(b.pathFromRoot("src/generated/assets/ui/splash1_metadata.json"));
+    assets_step.dependOn(&build_splash1.step);
+
+    const build_splash3 = beginCachedPythonCommand(b, "splash3", "tools/convert_room_tilemap_8bpp.py");
+    addCacheInput(b, build_splash3, "assets/splash3.png");
+    addCacheOutput(b, build_splash3, "src/generated/assets/ui/splash3_tiles.bin");
+    addCacheOutput(b, build_splash3, "src/generated/assets/ui/splash3_map.bin");
+    addCacheOutput(b, build_splash3, "src/generated/assets/ui/splash3_palette.bin");
+    addCacheOutput(b, build_splash3, "src/generated/assets/ui/splash3_metadata.json");
+    finishCachedPythonCommand(b, build_splash3, "tools/convert_room_tilemap_8bpp.py");
+    build_splash3.addArg(b.pathFromRoot("assets/splash3.png"));
+    build_splash3.addArg(b.pathFromRoot("src/generated/assets/ui/splash3_tiles.bin"));
+    build_splash3.addArg(b.pathFromRoot("src/generated/assets/ui/splash3_map.bin"));
+    build_splash3.addArg(b.pathFromRoot("src/generated/assets/ui/splash3_palette.bin"));
+    build_splash3.addArg("--rgb-bits");
+    build_splash3.addArg("4");
+    build_splash3.addArg("--metadata-output");
+    build_splash3.addArg(b.pathFromRoot("src/generated/assets/ui/splash3_metadata.json"));
+    assets_step.dependOn(&build_splash3.step);
+
+    const prepare_file_select = beginCachedPythonCommand(b, "file_select_prepare", "tools/pack_file_select_assets.py");
+    addCacheInput(b, prepare_file_select, "assets/bg-file-select.png");
+    addCacheInput(b, prepare_file_select, "assets/scroll.png");
+    addCacheOutput(b, prepare_file_select, "src/generated/assets/ui/file_select_bg.png");
+    addCacheOutput(b, prepare_file_select, "src/generated/assets/ui/file_select_scroll_pixels.bin");
+    addCacheOutput(b, prepare_file_select, "src/generated/assets/ui/file_select_scroll_palette.bin");
+    addCacheOutput(b, prepare_file_select, "src/generated/assets/ui/file_select_scroll_meta.zig");
+    finishCachedPythonCommand(b, prepare_file_select, "tools/pack_file_select_assets.py");
+    prepare_file_select.addArg("--background");
+    prepare_file_select.addArg(b.pathFromRoot("assets/bg-file-select.png"));
+    prepare_file_select.addArg("--scroll");
+    prepare_file_select.addArg(b.pathFromRoot("assets/scroll.png"));
+    prepare_file_select.addArg("--background-output");
+    prepare_file_select.addArg(b.pathFromRoot("src/generated/assets/ui/file_select_bg.png"));
+    prepare_file_select.addArg("--scroll-pixels-output");
+    prepare_file_select.addArg(b.pathFromRoot("src/generated/assets/ui/file_select_scroll_pixels.bin"));
+    prepare_file_select.addArg("--scroll-palette-output");
+    prepare_file_select.addArg(b.pathFromRoot("src/generated/assets/ui/file_select_scroll_palette.bin"));
+    prepare_file_select.addArg("--scroll-meta-output");
+    prepare_file_select.addArg(b.pathFromRoot("src/generated/assets/ui/file_select_scroll_meta.zig"));
+    prepare_file_select.step.dependOn(&ensure_generated_assets_dir.step);
+    assets_step.dependOn(&prepare_file_select.step);
+
+    const build_file_select = beginCachedPythonCommand(b, "file_select_bg", "tools/convert_room_tilemap_8bpp.py");
+    addCacheInput(b, build_file_select, "src/generated/assets/ui/file_select_bg.png");
+    addCacheOutput(b, build_file_select, "src/generated/assets/ui/file_select_tiles.bin");
+    addCacheOutput(b, build_file_select, "src/generated/assets/ui/file_select_map.bin");
+    addCacheOutput(b, build_file_select, "src/generated/assets/ui/file_select_palette.bin");
+    addCacheOutput(b, build_file_select, "src/generated/assets/ui/file_select_metadata.json");
+    finishCachedPythonCommand(b, build_file_select, "tools/convert_room_tilemap_8bpp.py");
+    build_file_select.addArg(b.pathFromRoot("src/generated/assets/ui/file_select_bg.png"));
+    build_file_select.addArg(b.pathFromRoot("src/generated/assets/ui/file_select_tiles.bin"));
+    build_file_select.addArg(b.pathFromRoot("src/generated/assets/ui/file_select_map.bin"));
+    build_file_select.addArg(b.pathFromRoot("src/generated/assets/ui/file_select_palette.bin"));
+    build_file_select.addArg("--rgb-bits");
+    build_file_select.addArg("3");
+    build_file_select.addArg("--metadata-output");
+    build_file_select.addArg(b.pathFromRoot("src/generated/assets/ui/file_select_metadata.json"));
+    build_file_select.step.dependOn(&prepare_file_select.step);
+    assets_step.dependOn(&build_file_select.step);
+
+    const build_title_screen = beginCachedPythonCommand(b, "title_screen", "tools/convert_room_tilemap_8bpp.py");
+    addCacheInput(b, build_title_screen, "assets/title2.png");
+    addCacheOutput(b, build_title_screen, "src/generated/assets/ui/title_screen_tiles.bin");
+    addCacheOutput(b, build_title_screen, "src/generated/assets/ui/title_screen_map.bin");
+    addCacheOutput(b, build_title_screen, "src/generated/assets/ui/title_screen_palette.bin");
+    addCacheOutput(b, build_title_screen, "src/generated/assets/ui/title_screen_metadata.json");
+    finishCachedPythonCommand(b, build_title_screen, "tools/convert_room_tilemap_8bpp.py");
+    build_title_screen.addArg(b.pathFromRoot("assets/title2.png"));
+    build_title_screen.addArg(b.pathFromRoot("src/generated/assets/ui/title_screen_tiles.bin"));
+    build_title_screen.addArg(b.pathFromRoot("src/generated/assets/ui/title_screen_map.bin"));
+    build_title_screen.addArg(b.pathFromRoot("src/generated/assets/ui/title_screen_palette.bin"));
+    build_title_screen.addArg("--rgb-bits");
+    build_title_screen.addArg("3");
+    build_title_screen.addArg("--metadata-output");
+    build_title_screen.addArg(b.pathFromRoot("src/generated/assets/ui/title_screen_metadata.json"));
+    assets_step.dependOn(&build_title_screen.step);
+
+    const pack_bitmap_font = beginCachedPythonCommand(b, "bitmap_font", "tools/pack_bitmap_font.py");
+    addCacheInput(b, pack_bitmap_font, "assets/font.png");
+    addCacheOutput(b, pack_bitmap_font, "src/generated/assets/ui/bitmap_font_masks.bin");
+    addCacheOutput(b, pack_bitmap_font, "src/generated/assets/ui/bitmap_font_meta.zig");
+    finishCachedPythonCommand(b, pack_bitmap_font, "tools/pack_bitmap_font.py");
+    pack_bitmap_font.addArg("--input");
+    pack_bitmap_font.addArg(b.pathFromRoot("assets/font.png"));
+    pack_bitmap_font.addArg("--output");
+    pack_bitmap_font.addArg(b.pathFromRoot("src/generated/assets/ui/bitmap_font_masks.bin"));
+    pack_bitmap_font.addArg("--meta-output");
+    pack_bitmap_font.addArg(b.pathFromRoot("src/generated/assets/ui/bitmap_font_meta.zig"));
+    pack_bitmap_font.step.dependOn(&ensure_generated_assets_dir.step);
+    assets_step.dependOn(&pack_bitmap_font.step);
+
+    const prepare_overworld_icons = beginCachedPythonCommand(b, "overworld_icons_prepare", "tools/prepare_overworld_icons.py");
+    addCacheInputDir(b, prepare_overworld_icons, "assets/icons");
+    addCacheInput(b, prepare_overworld_icons, "assets/overworld.png");
+    addCacheOutputDir(b, prepare_overworld_icons, "assets/generated/overworld/icons");
+    finishCachedPythonCommand(b, prepare_overworld_icons, "tools/prepare_overworld_icons.py");
+    prepare_overworld_icons.addArg("--input-dir");
+    prepare_overworld_icons.addArg(b.pathFromRoot("assets/icons"));
+    prepare_overworld_icons.addArg("--output-dir");
+    prepare_overworld_icons.addArg(b.pathFromRoot("assets/generated/overworld/icons"));
+    prepare_overworld_icons.addArg("--background");
+    prepare_overworld_icons.addArg(b.pathFromRoot("assets/overworld.png"));
+    assets_step.dependOn(&prepare_overworld_icons.step);
+
+    const build_overworld_page0 = beginCachedPythonCommand(b, "overworld_page0", "tools/convert_room_tilemap_8bpp.py");
+    addCacheInput(b, build_overworld_page0, "assets/generated/overworld/icons/pages/page_0_bg.png");
+    addCacheOutput(b, build_overworld_page0, "src/generated/assets/overworld/page0_tiles.bin");
+    addCacheOutput(b, build_overworld_page0, "src/generated/assets/overworld/page0_map.bin");
+    addCacheOutput(b, build_overworld_page0, "src/generated/assets/overworld/page0_palette.bin");
+    addCacheOutput(b, build_overworld_page0, "src/generated/assets/overworld/page0_metadata.json");
+    finishCachedPythonCommand(b, build_overworld_page0, "tools/convert_room_tilemap_8bpp.py");
+    build_overworld_page0.addArg(b.pathFromRoot("assets/generated/overworld/icons/pages/page_0_bg.png"));
+    build_overworld_page0.addArg(b.pathFromRoot("src/generated/assets/overworld/page0_tiles.bin"));
+    build_overworld_page0.addArg(b.pathFromRoot("src/generated/assets/overworld/page0_map.bin"));
+    build_overworld_page0.addArg(b.pathFromRoot("src/generated/assets/overworld/page0_palette.bin"));
+    build_overworld_page0.addArg("--rgb-bits");
+    build_overworld_page0.addArg("3");
+    build_overworld_page0.addArg("--metadata-output");
+    build_overworld_page0.addArg(b.pathFromRoot("src/generated/assets/overworld/page0_metadata.json"));
+    build_overworld_page0.step.dependOn(&prepare_overworld_icons.step);
+    assets_step.dependOn(&build_overworld_page0.step);
+
+    const build_overworld_page1 = beginCachedPythonCommand(b, "overworld_page1", "tools/convert_room_tilemap_8bpp.py");
+    addCacheInput(b, build_overworld_page1, "assets/generated/overworld/icons/pages/page_1_bg.png");
+    addCacheOutput(b, build_overworld_page1, "src/generated/assets/overworld/page1_tiles.bin");
+    addCacheOutput(b, build_overworld_page1, "src/generated/assets/overworld/page1_map.bin");
+    addCacheOutput(b, build_overworld_page1, "src/generated/assets/overworld/page1_palette.bin");
+    addCacheOutput(b, build_overworld_page1, "src/generated/assets/overworld/page1_metadata.json");
+    finishCachedPythonCommand(b, build_overworld_page1, "tools/convert_room_tilemap_8bpp.py");
+    build_overworld_page1.addArg(b.pathFromRoot("assets/generated/overworld/icons/pages/page_1_bg.png"));
+    build_overworld_page1.addArg(b.pathFromRoot("src/generated/assets/overworld/page1_tiles.bin"));
+    build_overworld_page1.addArg(b.pathFromRoot("src/generated/assets/overworld/page1_map.bin"));
+    build_overworld_page1.addArg(b.pathFromRoot("src/generated/assets/overworld/page1_palette.bin"));
+    build_overworld_page1.addArg("--rgb-bits");
+    build_overworld_page1.addArg("3");
+    build_overworld_page1.addArg("--metadata-output");
+    build_overworld_page1.addArg(b.pathFromRoot("src/generated/assets/overworld/page1_metadata.json"));
+    build_overworld_page1.step.dependOn(&prepare_overworld_icons.step);
+    assets_step.dependOn(&build_overworld_page1.step);
+
+    const pack_overworld_icons = beginCachedPythonCommand(b, "overworld_icons_pack", "tools/pack_overworld_icons.py");
+    addCacheInputDir(b, pack_overworld_icons, "assets/generated/overworld/icons");
+    addCacheOutput(b, pack_overworld_icons, "src/generated/assets/overworld/overworld_icon_tiles.bin");
+    addCacheOutput(b, pack_overworld_icons, "src/generated/assets/overworld/overworld_icon_palettes.bin");
+    addCacheOutput(b, pack_overworld_icons, "src/generated/assets/overworld/overworld_icon_meta.zig");
+    finishCachedPythonCommand(b, pack_overworld_icons, "tools/pack_overworld_icons.py");
+    pack_overworld_icons.addArg("--manifest");
+    pack_overworld_icons.addArg(b.pathFromRoot("assets/generated/overworld/icons/manifest.json"));
+    pack_overworld_icons.addArg("--output-dir");
+    pack_overworld_icons.addArg(b.pathFromRoot("src/generated/assets/overworld"));
+    pack_overworld_icons.step.dependOn(&prepare_overworld_icons.step);
+    assets_step.dependOn(&pack_overworld_icons.step);
+
+    const pack_player_animations = beginCachedPythonCommand(b, "player_animations", "tools/pack_player_obj_tiles.py");
+    addCacheInputDir(b, pack_player_animations, "assets/animations/player");
+    addCacheOutput(b, pack_player_animations, "src/generated/assets/player/madeline_tiles.bin");
+    addCacheOutput(b, pack_player_animations, "src/generated/assets/player/madeline_hair_anchors.bin");
+    addCacheOutput(b, pack_player_animations, "src/generated/assets/player/madeline_palette.bin");
+    addCacheOutput(b, pack_player_animations, "src/generated/assets/player/madeline_animations.json");
+    finishCachedPythonCommand(b, pack_player_animations, "tools/pack_player_obj_tiles.py");
+    pack_player_animations.addArg("--input");
+    pack_player_animations.addArg(b.pathFromRoot("assets/animations/player"));
+    pack_player_animations.addArg("--output-dir");
+    pack_player_animations.addArg(b.pathFromRoot("src/generated/assets/player"));
+    pack_player_animations.addArg("--animations");
+    pack_player_animations.addArg("idleLoop:idleA");
+    pack_player_animations.addArg("idleLoop:idleB");
+    pack_player_animations.addArg("idleLoop:idleA");
+    pack_player_animations.addArg("idleLoop:idleB");
+    pack_player_animations.addArg("idleLoop:idleC");
+    pack_player_animations.addArg("runSlow");
+    pack_player_animations.addArg("jumpSlow");
+    pack_player_animations.addArg("fallSlow");
+    pack_player_animations.addArg("wallslide");
+    pack_player_animations.addArg("climbup");
+    pack_player_animations.addArg("dangling");
+    pack_player_animations.addArg("climbPull");
     if (player_death_animations.deadown_frame_count != 0) {
         pack_player_animations.addArg(player_death_animations.deadown_arg);
     }
@@ -117,145 +315,166 @@ pub fn build(b: *std.Build) void {
     }
     assets_step.dependOn(&pack_player_animations.step);
 
-    const pack_player_sweat = b.addSystemCommand(&.{
-        "python3",
-        b.pathFromRoot("tools/pack_player_obj_tiles.py"),
-        "--input",
-        b.pathFromRoot("assets/animations/player_sweat"),
-        "--output-dir",
-        b.pathFromRoot("src/generated/assets/player_sweat"),
-        "--animations",
-        "still",
-        "climbLoop",
-        "jump",
-    });
+    const pack_player_sweat = beginCachedPythonCommand(b, "player_sweat", "tools/pack_player_obj_tiles.py");
+    addCacheInputDir(b, pack_player_sweat, "assets/animations/player_sweat");
+    addCacheOutput(b, pack_player_sweat, "src/generated/assets/player_sweat/madeline_tiles.bin");
+    addCacheOutput(b, pack_player_sweat, "src/generated/assets/player_sweat/madeline_hair_anchors.bin");
+    addCacheOutput(b, pack_player_sweat, "src/generated/assets/player_sweat/madeline_palette.bin");
+    addCacheOutput(b, pack_player_sweat, "src/generated/assets/player_sweat/madeline_animations.json");
+    finishCachedPythonCommand(b, pack_player_sweat, "tools/pack_player_obj_tiles.py");
+    pack_player_sweat.addArg("--input");
+    pack_player_sweat.addArg(b.pathFromRoot("assets/animations/player_sweat"));
+    pack_player_sweat.addArg("--output-dir");
+    pack_player_sweat.addArg(b.pathFromRoot("src/generated/assets/player_sweat"));
+    pack_player_sweat.addArg("--animations");
+    pack_player_sweat.addArg("still");
+    pack_player_sweat.addArg("climbLoop");
+    pack_player_sweat.addArg("jump");
     assets_step.dependOn(&pack_player_sweat.step);
 
-    const pack_falling_block = b.addSystemCommand(&.{
-        "python3",
-        b.pathFromRoot("tools/pack_falling_block_obj.py"),
-        "--input",
-        b.pathFromRoot("assets/chapters/prologue_a/prologue-a-block1.png"),
-        "--output-dir",
-        b.pathFromRoot("src/generated/assets/entities/prologue_a"),
-    });
+    const pack_falling_block = beginCachedPythonCommand(b, "falling_block", "tools/pack_falling_block_obj.py");
+    addCacheInput(b, pack_falling_block, "assets/chapters/prologue_a/prologue-a-block1.png");
+    addCacheOutput(b, pack_falling_block, "src/generated/assets/entities/prologue_a/falling_block_tiles.bin");
+    addCacheOutput(b, pack_falling_block, "src/generated/assets/entities/prologue_a/falling_block_palette.bin");
+    addCacheOutput(b, pack_falling_block, "src/generated/assets/entities/prologue_a/falling_block.json");
+    finishCachedPythonCommand(b, pack_falling_block, "tools/pack_falling_block_obj.py");
+    pack_falling_block.addArg("--input");
+    pack_falling_block.addArg(b.pathFromRoot("assets/chapters/prologue_a/prologue-a-block1.png"));
+    pack_falling_block.addArg("--output-dir");
+    pack_falling_block.addArg(b.pathFromRoot("src/generated/assets/entities/prologue_a"));
     assets_step.dependOn(&pack_falling_block.step);
 
-    const pack_bridge = b.addSystemCommand(&.{
-        "python3",
-        b.pathFromRoot("tools/pack_prologue_bridge.py"),
-        "--input-dir",
-        b.pathFromRoot("assets/source/prologue-bridge/chunks_8px"),
-        "--output-dir",
-        b.pathFromRoot("src/generated/assets/entities/prologue_bridge"),
-    });
+    const pack_bridge = beginCachedPythonCommand(b, "prologue_bridge", "tools/pack_prologue_bridge.py");
+    addCacheInputDir(b, pack_bridge, "assets/source/prologue-bridge/chunks_8px");
+    addCacheOutput(b, pack_bridge, "src/generated/assets/entities/prologue_bridge/bridge_tiles.bin");
+    addCacheOutput(b, pack_bridge, "src/generated/assets/entities/prologue_bridge/bridge_palette.bin");
+    addCacheOutput(b, pack_bridge, "src/generated/assets/entities/prologue_bridge/bridge_layout.bin");
+    addCacheOutput(b, pack_bridge, "src/generated/assets/entities/prologue_bridge/bridge_groups.bin");
+    addCacheOutput(b, pack_bridge, "src/generated/assets/entities/prologue_bridge/bridge.json");
+    finishCachedPythonCommand(b, pack_bridge, "tools/pack_prologue_bridge.py");
+    pack_bridge.addArg("--input-dir");
+    pack_bridge.addArg(b.pathFromRoot("assets/source/prologue-bridge/chunks_8px"));
+    pack_bridge.addArg("--output-dir");
+    pack_bridge.addArg(b.pathFromRoot("src/generated/assets/entities/prologue_bridge"));
     assets_step.dependOn(&pack_bridge.step);
 
-    const pack_funny_car = b.addSystemCommand(&.{
-        "python3",
-        b.pathFromRoot("tools/pack_funny_car_obj.py"),
-        "--input",
-        b.pathFromRoot("assets/chapters/prologue_a/stamps/funny-car.png"),
-        "--output-dir",
-        b.pathFromRoot("src/generated/assets/entities/prologue_a"),
-    });
+    const pack_funny_car = beginCachedPythonCommand(b, "funny_car", "tools/pack_funny_car_obj.py");
+    addCacheInput(b, pack_funny_car, "assets/chapters/prologue_a/stamps/funny-car.png");
+    addCacheOutput(b, pack_funny_car, "src/generated/assets/entities/prologue_a/funny_car_tiles.bin");
+    addCacheOutput(b, pack_funny_car, "src/generated/assets/entities/prologue_a/funny_car_palette.bin");
+    addCacheOutput(b, pack_funny_car, "src/generated/assets/entities/prologue_a/funny_car.json");
+    finishCachedPythonCommand(b, pack_funny_car, "tools/pack_funny_car_obj.py");
+    pack_funny_car.addArg("--input");
+    pack_funny_car.addArg(b.pathFromRoot("assets/chapters/prologue_a/stamps/funny-car.png"));
+    pack_funny_car.addArg("--output-dir");
+    pack_funny_car.addArg(b.pathFromRoot("src/generated/assets/entities/prologue_a"));
     assets_step.dependOn(&pack_funny_car.step);
 
-    const pack_hair = b.addSystemCommand(&.{
-        "python3",
-        b.pathFromRoot("tools/pack_hair_obj.py"),
-        "--input-dir",
-        b.pathFromRoot("assets/animations/hair"),
-        "--output-dir",
-        b.pathFromRoot("src/generated/assets/player"),
-    });
+    const pack_disappearing_platform = beginCachedPythonCommand(b, "disappearing_platform", "tools/pack_disappearing_platform_obj.py");
+    addCacheInput(b, pack_disappearing_platform, "assets/falling-blocks.png");
+    addCacheOutput(b, pack_disappearing_platform, "src/generated/assets/entities/disappearing_platform/disappearing_platform_tiles.bin");
+    addCacheOutput(b, pack_disappearing_platform, "src/generated/assets/entities/disappearing_platform/disappearing_platform_palette.bin");
+    addCacheOutput(b, pack_disappearing_platform, "src/generated/assets/entities/disappearing_platform/disappearing_platform.json");
+    finishCachedPythonCommand(b, pack_disappearing_platform, "tools/pack_disappearing_platform_obj.py");
+    pack_disappearing_platform.addArg("--input");
+    pack_disappearing_platform.addArg(b.pathFromRoot("assets/falling-blocks.png"));
+    pack_disappearing_platform.addArg("--output-dir");
+    pack_disappearing_platform.addArg(b.pathFromRoot("src/generated/assets/entities/disappearing_platform"));
+    assets_step.dependOn(&pack_disappearing_platform.step);
+
+    const pack_strawberry = beginCachedPythonCommand(b, "strawberry", "tools/pack_strawberry_obj.py");
+    addCacheInputDir(b, pack_strawberry, "assets/animations/strawberry");
+    addCacheOutputDir(b, pack_strawberry, "src/generated/assets/entities/strawberry");
+    finishCachedPythonCommand(b, pack_strawberry, "tools/pack_strawberry_obj.py");
+    pack_strawberry.addArg("--input");
+    pack_strawberry.addArg(b.pathFromRoot("assets/animations/strawberry"));
+    pack_strawberry.addArg("--output-dir");
+    pack_strawberry.addArg(b.pathFromRoot("src/generated/assets/entities/strawberry"));
+    assets_step.dependOn(&pack_strawberry.step);
+
+    const pack_spring = beginCachedPythonCommand(b, "spring", "tools/pack_spring_obj.py");
+    addCacheInputDir(b, pack_spring, "assets/animations/spring");
+    addCacheOutput(b, pack_spring, "src/generated/assets/entities/spring/spring_tiles.bin");
+    addCacheOutput(b, pack_spring, "src/generated/assets/entities/spring/spring_palette.bin");
+    addCacheOutput(b, pack_spring, "src/generated/assets/entities/spring/spring.json");
+    finishCachedPythonCommand(b, pack_spring, "tools/pack_spring_obj.py");
+    pack_spring.addArg("--input-dir");
+    pack_spring.addArg(b.pathFromRoot("assets/animations/spring"));
+    pack_spring.addArg("--output-dir");
+    pack_spring.addArg(b.pathFromRoot("src/generated/assets/entities/spring"));
+    assets_step.dependOn(&pack_spring.step);
+
+    const pack_save_icon = beginCachedPythonCommand(b, "save_icon", "tools/pack_save_icon_obj.py");
+    addCacheInput(b, pack_save_icon, "assets/save_icon.png");
+    addCacheOutput(b, pack_save_icon, "src/generated/assets/ui/save_icon_tiles.bin");
+    addCacheOutput(b, pack_save_icon, "src/generated/assets/ui/save_icon_palette.bin");
+    addCacheOutput(b, pack_save_icon, "src/generated/assets/ui/save_icon_meta.zig");
+    addCacheOutput(b, pack_save_icon, "src/generated/assets/ui/save_icon.json");
+    finishCachedPythonCommand(b, pack_save_icon, "tools/pack_save_icon_obj.py");
+    pack_save_icon.addArg("--input");
+    pack_save_icon.addArg(b.pathFromRoot("assets/save_icon.png"));
+    pack_save_icon.addArg("--output-dir");
+    pack_save_icon.addArg(b.pathFromRoot("src/generated/assets/ui"));
+    assets_step.dependOn(&pack_save_icon.step);
+
+    const pack_hair = beginCachedPythonCommand(b, "hair", "tools/pack_hair_obj.py");
+    addCacheInputDir(b, pack_hair, "assets/animations/hair");
+    addCacheOutput(b, pack_hair, "src/generated/assets/player/hair_tiles.bin");
+    addCacheOutput(b, pack_hair, "src/generated/assets/player/hair_palette.bin");
+    addCacheOutput(b, pack_hair, "src/generated/assets/player/hair.json");
+    finishCachedPythonCommand(b, pack_hair, "tools/pack_hair_obj.py");
+    pack_hair.addArg("--input-dir");
+    pack_hair.addArg(b.pathFromRoot("assets/animations/hair"));
+    pack_hair.addArg("--output-dir");
+    pack_hair.addArg(b.pathFromRoot("src/generated/assets/player"));
     assets_step.dependOn(&pack_hair.step);
 
-    const pack_bird = b.addSystemCommand(&.{
-        "python3",
-        b.pathFromRoot("tools/pack_bird_assets.py"),
-        "--intro",
-        b.pathFromRoot("assets/source/bird/intro.png"),
-        "--fly",
-        b.pathFromRoot("assets/source/bird/fly.png"),
-        "--hold-hint",
-        b.pathFromRoot("assets/chapters/prologue_a/hold-hint.png"),
-        "--climb-hint",
-        b.pathFromRoot("assets/chapters/prologue_a/climb-hint.png"),
-        "--dash-hint",
-        b.pathFromRoot("assets/chapters/prologue_a/dash-hint.png"),
-        "--output-dir",
-        b.pathFromRoot("src/generated/assets/bird"),
-    });
+    const pack_bird = beginCachedPythonCommand(b, "bird", "tools/pack_bird_assets.py");
+    addCacheInput(b, pack_bird, "assets/source/bird/intro.png");
+    addCacheInput(b, pack_bird, "assets/source/bird/fly.png");
+    addCacheInput(b, pack_bird, "assets/chapters/prologue_a/hold-hint.png");
+    addCacheInput(b, pack_bird, "assets/chapters/prologue_a/climb-hint.png");
+    addCacheInput(b, pack_bird, "assets/chapters/prologue_a/dash-hint.png");
+    addCacheOutputDir(b, pack_bird, "src/generated/assets/bird");
+    finishCachedPythonCommand(b, pack_bird, "tools/pack_bird_assets.py");
+    pack_bird.addArg("--intro");
+    pack_bird.addArg(b.pathFromRoot("assets/source/bird/intro.png"));
+    pack_bird.addArg("--fly");
+    pack_bird.addArg(b.pathFromRoot("assets/source/bird/fly.png"));
+    pack_bird.addArg("--hold-hint");
+    pack_bird.addArg(b.pathFromRoot("assets/chapters/prologue_a/hold-hint.png"));
+    pack_bird.addArg("--climb-hint");
+    pack_bird.addArg(b.pathFromRoot("assets/chapters/prologue_a/climb-hint.png"));
+    pack_bird.addArg("--dash-hint");
+    pack_bird.addArg(b.pathFromRoot("assets/chapters/prologue_a/dash-hint.png"));
+    pack_bird.addArg("--output-dir");
+    pack_bird.addArg(b.pathFromRoot("src/generated/assets/bird"));
     assets_step.dependOn(&pack_bird.step);
 
-    const pack_tiny_bird = b.addSystemCommand(&.{
-        "python3",
-        b.pathFromRoot("tools/pack_tiny_bird_assets.py"),
-        "--input-dir",
-        b.pathFromRoot("assets/animations/tiny_bird"),
-        "--output-dir",
-        b.pathFromRoot("src/generated/assets/tiny_bird"),
-    });
+    const pack_tiny_bird = beginCachedPythonCommand(b, "tiny_bird", "tools/pack_tiny_bird_assets.py");
+    addCacheInputDir(b, pack_tiny_bird, "assets/animations/tiny_bird");
+    addCacheOutput(b, pack_tiny_bird, "src/generated/assets/tiny_bird/tiny_bird_tiles.bin");
+    addCacheOutput(b, pack_tiny_bird, "src/generated/assets/tiny_bird/tiny_bird_palette.bin");
+    addCacheOutput(b, pack_tiny_bird, "src/generated/assets/tiny_bird/tiny_bird.json");
+    finishCachedPythonCommand(b, pack_tiny_bird, "tools/pack_tiny_bird_assets.py");
+    pack_tiny_bird.addArg("--input-dir");
+    pack_tiny_bird.addArg(b.pathFromRoot("assets/animations/tiny_bird"));
+    pack_tiny_bird.addArg("--output-dir");
+    pack_tiny_bird.addArg(b.pathFromRoot("src/generated/assets/tiny_bird"));
     assets_step.dependOn(&pack_tiny_bird.step);
 
-    const pack_granny = b.addSystemCommand(&.{
-        "python3",
-        b.pathFromRoot("tools/pack_granny_assets.py"),
-        "--input-dir",
-        b.pathFromRoot("assets/animations/granny"),
-        "--output-dir",
-        b.pathFromRoot("src/generated/assets/granny"),
-    });
+    const pack_granny = beginCachedPythonCommand(b, "granny", "tools/pack_granny_assets.py");
+    addCacheInputDir(b, pack_granny, "assets/animations/granny");
+    addCacheInputDir(b, pack_granny, "assets/portraits/granny");
+    addCacheOutputDir(b, pack_granny, "src/generated/assets/granny");
+    finishCachedPythonCommand(b, pack_granny, "tools/pack_granny_assets.py");
+    pack_granny.addArg("--input-dir");
+    pack_granny.addArg(b.pathFromRoot("assets/animations/granny"));
+    pack_granny.addArg("--portrait-dir");
+    pack_granny.addArg(b.pathFromRoot("assets/portraits/granny"));
+    pack_granny.addArg("--output-dir");
+    pack_granny.addArg(b.pathFromRoot("src/generated/assets/granny"));
     assets_step.dependOn(&pack_granny.step);
-
-    const pack_grass1 = b.addSystemCommand(&.{
-        "python3",
-        b.pathFromRoot("tools/pack_foreground_stamp_obj.py"),
-        "--input-dir",
-        b.pathFromRoot("assets/generated/foreground/grass_generated"),
-        "--output-dir",
-        b.pathFromRoot("src/generated/assets/foreground"),
-        "--name",
-        "grass1",
-    });
-    assets_step.dependOn(&pack_grass1.step);
-
-    const pack_grass1_mirror = b.addSystemCommand(&.{
-        "python3",
-        b.pathFromRoot("tools/pack_foreground_stamp_obj.py"),
-        "--input-dir",
-        b.pathFromRoot("assets/generated/foreground/grass_generated_mirror"),
-        "--output-dir",
-        b.pathFromRoot("src/generated/assets/foreground"),
-        "--name",
-        "grass1_mirror",
-    });
-    assets_step.dependOn(&pack_grass1_mirror.step);
-
-    const pack_grass2 = b.addSystemCommand(&.{
-        "python3",
-        b.pathFromRoot("tools/pack_foreground_stamp_obj.py"),
-        "--input-dir",
-        b.pathFromRoot("assets/generated/foreground/grass2_generated"),
-        "--output-dir",
-        b.pathFromRoot("src/generated/assets/foreground"),
-        "--name",
-        "grass2",
-    });
-    assets_step.dependOn(&pack_grass2.step);
-
-    const pack_grass2_mirror = b.addSystemCommand(&.{
-        "python3",
-        b.pathFromRoot("tools/pack_foreground_stamp_obj.py"),
-        "--input-dir",
-        b.pathFromRoot("assets/generated/foreground/grass2_generated_mirror"),
-        "--output-dir",
-        b.pathFromRoot("src/generated/assets/foreground"),
-        "--name",
-        "grass2_mirror",
-    });
-    assets_step.dependOn(&pack_grass2_mirror.step);
 
     const mgba = b.addSystemCommand(&.{"/Applications/mGBA.app/Contents/MacOS/mGBA"});
     mgba.addArg("zig-out/zeleste.gba");
@@ -266,7 +485,62 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&mgba.step);
 }
 
-const footstep_sfx_files = [_][]const u8{
+fn beginCachedPythonCommand(b: *std.Build, job: []const u8, script: []const u8) *std.Build.Step.Run {
+    const run = b.addSystemCommand(&.{
+        "python3",
+        b.pathFromRoot("tools/run_if_changed.py"),
+        "--cache",
+        b.pathFromRoot("src/generated/assets/.asset-cache.json"),
+        "--job",
+        job,
+        "--input",
+        b.pathFromRoot("tools/run_if_changed.py"),
+        "--input",
+        b.pathFromRoot(script),
+    });
+    if (!std.mem.eql(u8, script, "tools/split_foreground_tileset.py")) {
+        addCacheInput(b, run, "tools/split_foreground_tileset.py");
+    }
+    return run;
+}
+
+fn finishCachedPythonCommand(b: *std.Build, run: *std.Build.Step.Run, script: []const u8) void {
+    run.addArg("--");
+    run.addArg("python3");
+    run.addArg(b.pathFromRoot(script));
+}
+
+fn addCacheInput(b: *std.Build, run: *std.Build.Step.Run, path: []const u8) void {
+    run.addArg("--input");
+    run.addArg(b.pathFromRoot(path));
+}
+
+fn addCacheInputPath(run: *std.Build.Step.Run, path: []const u8) void {
+    run.addArg("--input");
+    run.addArg(path);
+}
+
+fn addCacheInputDir(b: *std.Build, run: *std.Build.Step.Run, path: []const u8) void {
+    run.addArg("--input-dir");
+    run.addArg(b.pathFromRoot(path));
+}
+
+fn addCacheOutput(b: *std.Build, run: *std.Build.Step.Run, path: []const u8) void {
+    run.addArg("--output");
+    run.addArg(b.pathFromRoot(path));
+}
+
+fn addCacheOutputPath(run: *std.Build.Step.Run, path: []const u8) void {
+    run.addArg("--output");
+    run.addArg(path);
+}
+
+fn addCacheOutputDir(b: *std.Build, run: *std.Build.Step.Run, path: []const u8) void {
+    run.addArg("--output-dir");
+    run.addArg(b.pathFromRoot(path));
+}
+
+const soundbank_sfx_files = [_][]const u8{
     "assets/audio/raw/sfx/madeline/foot_00_asphalt_01.wav",
     "assets/audio/raw/sfx/madeline/foot_00_asphalt_02.wav",
     "assets/audio/raw/sfx/madeline/foot_00_asphalt_03.wav",
@@ -301,9 +575,63 @@ const footstep_sfx_files = [_][]const u8{
     "assets/audio/raw/sfx/madeline/foot_00_woodwalkway_05.wav",
     "assets/audio/raw/sfx/madeline/foot_00_woodwalkway_06.wav",
     "assets/audio/raw/sfx/madeline/foot_00_woodwalkway_07.wav",
+    "assets/audio/raw/sfx/madeline/jump.wav",
+    "assets/audio/raw/sfx/madeline/jump_wall_left.wav",
+    "assets/audio/raw/sfx/madeline/jump_wall_right.wav",
+    "assets/audio/raw/sfx/madeline/jump_wall_climblayer_left.wav",
+    "assets/audio/raw/sfx/madeline/jump_wall_climblayer_right.wav",
+    "assets/audio/raw/sfx/madeline/dash_red_left.wav",
+    "assets/audio/raw/sfx/madeline/dash_red_right.wav",
+    "assets/audio/raw/sfx/madeline/grab_00_dirt_01.wav",
+    "assets/audio/raw/sfx/madeline/grab_00_dirt_02.wav",
+    "assets/audio/raw/sfx/madeline/grab_00_dirt_03.wav",
+    "assets/audio/raw/sfx/madeline/grab_00_dirt_04.wav",
+    "assets/audio/raw/sfx/madeline/grab_00_dirt_05.wav",
+    "assets/audio/raw/sfx/madeline/grab_00_snowsoft_01.wav",
+    "assets/audio/raw/sfx/madeline/grab_00_snowsoft_02.wav",
+    "assets/audio/raw/sfx/madeline/grab_00_snowsoft_03.wav",
+    "assets/audio/raw/sfx/madeline/grab_00_snowsoft_04.wav",
+    "assets/audio/raw/sfx/madeline/grab_00_snowsoft_05.wav",
+    "assets/audio/raw/sfx/madeline/land_00_asphalt_01.wav",
+    "assets/audio/raw/sfx/madeline/land_00_asphalt_02.wav",
+    "assets/audio/raw/sfx/madeline/land_00_asphalt_03.wav",
+    "assets/audio/raw/sfx/madeline/land_00_asphalt_04.wav",
+    "assets/audio/raw/sfx/madeline/land_00_asphalt_05.wav",
+    "assets/audio/raw/sfx/madeline/land_00_dirt_01.wav",
+    "assets/audio/raw/sfx/madeline/land_00_dirt_02.wav",
+    "assets/audio/raw/sfx/madeline/land_00_dirt_03.wav",
+    "assets/audio/raw/sfx/madeline/land_00_dirt_04.wav",
+    "assets/audio/raw/sfx/madeline/land_00_dirt_05.wav",
+    "assets/audio/raw/sfx/madeline/land_00_snowsoft_01.wav",
+    "assets/audio/raw/sfx/madeline/land_00_snowsoft_02.wav",
+    "assets/audio/raw/sfx/madeline/land_00_snowsoft_03.wav",
+    "assets/audio/raw/sfx/madeline/land_00_snowsoft_04.wav",
+    "assets/audio/raw/sfx/madeline/land_00_snowsoft_05.wav",
+    "assets/audio/raw/sfx/madeline/land_00_woodwalk_01.wav",
+    "assets/audio/raw/sfx/madeline/land_00_woodwalk_02.wav",
+    "assets/audio/raw/sfx/madeline/land_00_woodwalk_03.wav",
+    "assets/audio/raw/sfx/madeline/land_00_woodwalk_04.wav",
+    "assets/audio/raw/sfx/madeline/land_00_woodwalk_05.wav",
+    "assets/audio/raw/sfx/madeline/climb_ledge_01.wav",
+    "assets/audio/raw/sfx/madeline/climb_ledge_02.wav",
+    "assets/audio/raw/sfx/madeline/climb_ledge_03.wav",
+    "assets/audio/raw/sfx/madeline/climb_ledge_04.wav",
+    "assets/audio/raw/sfx/madeline/climb_ledge_05.wav",
+    "assets/audio/raw/sfx/misc/strawberry_touch.wav",
+    "assets/audio/raw/sfx/misc/strawberry_red_get_1000.wav",
+    "assets/audio/raw/sfx/misc/strawberry_red_get_2000.wav",
+    "assets/audio/raw/sfx/misc/strawberry_red_get_3000.wav",
+    "assets/audio/raw/sfx/misc/strawberry_red_get_4000.wav",
+    "assets/audio/raw/sfx/misc/strawberry_red_get_5000.wav",
+    "assets/audio/raw/sfx/misc/strawberry_red_get_1up.wav",
+    "assets/audio/raw/sfx/misc/strawberry_flyaway.wav",
+    "assets/audio/raw/sfx/misc/strawberry_wingflap_01.wav",
+    "assets/audio/raw/sfx/misc/strawberry_wingflap_02.wav",
+    "assets/audio/raw/sfx/misc/strawberry_wingflap_03.wav",
 };
 
 const StartArgs = struct {
+    override: bool = false,
     chapter: i32 = -1,
     room: []const u8 = "",
 };
@@ -397,6 +725,7 @@ fn parseStartArgs(b: *std.Build) StartArgs {
     }
 
     return .{
+        .override = true,
         .chapter = std.fmt.parseInt(i32, args[0], 10) catch |err| {
             std.debug.panic("invalid start chapter '{s}': {}", .{ args[0], err });
         },

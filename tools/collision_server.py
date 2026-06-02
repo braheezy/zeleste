@@ -84,14 +84,6 @@ class AnnotationHandler(SimpleHTTPRequestHandler):
 
     def stamp_folders(self) -> list[dict]:
         folders = [{"id": "generated", "name": "Generated foreground"}]
-        global_foreground = self.repo_root / "assets" / "animations" / "foreground"
-        if global_foreground.exists():
-            folders.append(
-                {
-                    "id": str(global_foreground.relative_to(self.repo_root)),
-                    "name": "Global foreground",
-                }
-            )
         chapters_root = self.repo_root / "assets" / "chapters"
         if chapters_root.exists():
             for path in sorted(chapters_root.glob("*/stamps")):
@@ -113,38 +105,10 @@ class AnnotationHandler(SimpleHTTPRequestHandler):
         if not root.exists():
             root = None
 
-        generated_grass = root / "grass_generated" if root else Path()
-        if generated_grass.exists():
-            frames = sorted(
-                generated_grass.glob("*.png"),
-                key=lambda path: int(path.stem) if path.stem.isdigit() else path.stem,
-            )
-            mirror_frames = sorted(
-                (root / "grass_generated_mirror").glob("*.png"),
-                key=lambda path: int(path.stem) if path.stem.isdigit() else path.stem,
-            )
-            if frames:
-                metadata = self.stamp_metadata(generated_grass)
-                preview = self.stamp_preview_path(metadata, frames[0])
-                preview_width, preview_height = self.png_size(preview)
-                stamps.append(
-                    {
-                        "id": "grass1",
-                        "name": "grass1",
-                        "preview": str(preview.relative_to(self.repo_root)),
-                        "mirrorPreview": None,
-                        "width": preview_width,
-                        "height": preview_height,
-                        "anchorX": metadata.get("anchorX", 8),
-                        "anchorY": metadata.get("anchorY", 8),
-                    }
-                )
-
         if root:
             for directory in sorted(path for path in root.iterdir() if path.is_dir()):
-                if directory.name in {"grass_generated", "grass_generated_mirror"}:
-                    continue
-                if directory.name.endswith("_mirror"):
+                stamp_id = directory.name.removesuffix("_generated")
+                if stamp_id.startswith("grass") or directory.name.endswith("_mirror"):
                     continue
                 metadata = self.stamp_metadata(directory)
                 if not metadata:
@@ -156,7 +120,6 @@ class AnnotationHandler(SimpleHTTPRequestHandler):
                 if not frames:
                     continue
                 relative = frames[0].relative_to(self.repo_root)
-                stamp_id = directory.name.removesuffix("_generated")
                 preview = self.stamp_preview_path(metadata, frames[0])
                 preview_width, preview_height = self.png_size(preview)
                 stamps.append(

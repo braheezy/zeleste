@@ -13,6 +13,7 @@ pub const RoomLoadMode = enum {
 const rooms = level.rooms;
 
 pub fn loadGameplayRoom(room_index: usize, mode: RoomLoadMode) void {
+    gba.display.hideAllObjects();
     loadRoomBackground(room_index);
     room_systems.load(room_index, mode == .transition);
 }

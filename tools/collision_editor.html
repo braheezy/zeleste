@@ -20,12 +20,15 @@
                 --spring: rgba(255, 205, 74, 0.72);
                 --strawberry: rgba(255, 64, 96, 0.78);
                 --dash-refill: rgba(100, 245, 255, 0.82);
+                --cassette: rgba(196, 112, 255, 0.82);
                 --stone: rgba(150, 160, 172, 0.72);
                 --mech: rgba(92, 255, 220, 0.68);
+                --traffic: rgba(255, 224, 92, 0.72);
+                --traffic-blue: rgba(80, 174, 255, 0.76);
+                --traffic-pink: rgba(255, 88, 190, 0.76);
                 --exit-line: rgba(104, 255, 152, 0.95);
                 --death-line: rgba(255, 72, 72, 0.95);
                 --spawn: rgba(80, 255, 136, 0.88);
-                --falling: rgba(255, 205, 74, 0.88);
                 --stamp: rgba(180, 255, 92, 0.88);
                 --bird: rgba(255, 150, 255, 0.9);
             }
@@ -183,12 +186,13 @@
                     <option value="spring">Spring</option>
                     <option value="strawberry">Strawberry</option>
                     <option value="dashRefill">Dash Refill</option>
+                    <option value="cassette">Cassette Tape</option>
                     <option value="stonePlatform">Stone Platform</option>
                     <option value="mechBlock">Mech Block</option>
+                    <option value="trafficBlock">Traffic Block</option>
                     <option value="exitLine">Exit Line</option>
                     <option value="pitDeathLine">Pit Death Line</option>
                     <option value="spawn">Spawn Point</option>
-                    <option value="fallingBlock">Falling Block</option>
                     <option value="foregroundStamp">Foreground Stamp</option>
                     <option value="birdNpc">Bird NPC</option>
                 </select>
@@ -208,6 +212,14 @@
                         <input id="strawberryFlying" type="checkbox" style="width: auto; margin-right: 6px" />
                         Flying strawberry
                     </label>
+                </div>
+
+                <div id="trafficBlockPanel">
+                    <label for="trafficBlockColor">Traffic Block Color</label>
+                    <select id="trafficBlockColor">
+                        <option value="blue">Blue</option>
+                        <option value="pink">Pink</option>
+                    </select>
                 </div>
 
                 <div id="exitPanel">
@@ -257,7 +269,6 @@
                 </div>
 
                 <button id="saveButton" type="button">Save</button>
-                <button id="deleteBlockButton" type="button">Delete Selected Block</button>
                 <button id="clearButton" type="button">Clear</button>
                 <button id="reloadButton" type="button">Reload</button>
 
@@ -273,28 +284,19 @@
                     <div>Springs: <span id="springStats">0</span></div>
                     <div>Strawberries: <span id="strawberryStats">0</span></div>
                     <div>Dash Refills: <span id="dashRefillStats">0</span></div>
+                    <div>Cassettes: <span id="cassetteStats">0</span></div>
                     <div>Stone Platforms: <span id="stonePlatformStats">0</span></div>
                     <div>Mech Blocks: <span id="mechBlockStats">0</span></div>
+                    <div>Traffic Blocks: <span id="trafficBlockStats">0</span></div>
                     <div>Exits: <span id="exitLineStats">0</span></div>
                     <div>Pit Deaths: <span id="pitDeathLineStats">0</span></div>
                     <div>Spawn: <span id="spawnStats">none</span></div>
-                    <div>Falling Blocks: <span id="fallingBlockStats">0</span></div>
                     <div>Bridge Poles: <span id="bridgePoleStats">0</span></div>
                     <div>Foreground Stamps: <span id="foregroundStampStats">0</span></div>
                     <div>Bird NPC: <span id="birdStats">none</span></div>
                     <div>JSON: <span id="annotationStats">none</span></div>
                 </div>
 
-                <div class="hint">
-                    Solid, Breakable Wall, one-way, and spike modes: click or drag to mark tiles. Spring mode: click a pixel position for
-                    a 14px spring. Strawberry and Dash Refill modes: click the center point. Stone Platform mode: click or drag 8x8 blocks.
-                    Mech Block mode: drag an 8px-grid start rectangle, then Shift-click or Shift-drag the target center.
-                    Exit and Pit Death modes: drag a one-pixel line. Right click or hold Option/Alt to erase. Spawn mode: click to add respawn points. Falling
-                    Block mode: drag a rectangle around the block tiles, click a block to select it. Shift-click sets the
-                    selected block's landing row. Foreground Stamp mode: choose a stamp, click to place, right click or
-                    Option-click to erase. Bridge poles are placed as foreground stamps. Bird NPC mode: click for bird
-                    origin, Shift-click for hint bubble origin, right click or Option-click to clear.
-                </div>
             </aside>
 
             <main>
@@ -312,7 +314,6 @@
             const tileSizeInput = document.getElementById("tileSize");
             const zoomInput = document.getElementById("zoom");
             const saveButton = document.getElementById("saveButton");
-            const deleteBlockButton = document.getElementById("deleteBlockButton");
             const clearButton = document.getElementById("clearButton");
             const reloadButton = document.getElementById("reloadButton");
             const status = document.getElementById("status");
@@ -325,12 +326,13 @@
             const springStats = document.getElementById("springStats");
             const strawberryStats = document.getElementById("strawberryStats");
             const dashRefillStats = document.getElementById("dashRefillStats");
+            const cassetteStats = document.getElementById("cassetteStats");
             const stonePlatformStats = document.getElementById("stonePlatformStats");
             const mechBlockStats = document.getElementById("mechBlockStats");
+            const trafficBlockStats = document.getElementById("trafficBlockStats");
             const exitLineStats = document.getElementById("exitLineStats");
             const pitDeathLineStats = document.getElementById("pitDeathLineStats");
             const spawnStats = document.getElementById("spawnStats");
-            const fallingBlockStats = document.getElementById("fallingBlockStats");
             const bridgePoleStats = document.getElementById("bridgePoleStats");
             const foregroundStampStats = document.getElementById("foregroundStampStats");
             const birdStats = document.getElementById("birdStats");
@@ -343,6 +345,7 @@
             const stampAnchorXInput = document.getElementById("stampAnchorX");
             const stampAnchorYInput = document.getElementById("stampAnchorY");
             const strawberryFlyingInput = document.getElementById("strawberryFlying");
+            const trafficBlockColorSelect = document.getElementById("trafficBlockColor");
             const exitTargetRoomInput = document.getElementById("exitTargetRoom");
             const stage = document.getElementById("stage");
             const base = document.getElementById("base");
@@ -363,24 +366,24 @@
             let springs = [];
             let strawberries = [];
             let dashRefills = [];
+            let cassettes = [];
             let stonePlatforms = new Set();
             let mechBlocks = new Map();
             let selectedMechBlock = "";
+            let trafficBlocks = new Map();
+            let selectedTrafficBlock = "";
             let exitLines = [];
             let pitDeathLines = [];
             let respawnPoints = [];
-            let fallingBlocks = [];
+            let prologueFallingBlocks = [];
             let stampFolders = [];
             let foregroundStampDefs = [];
             let foregroundStamps = [];
             let birdNpc = null;
             let selectedStampId = null;
-            let selectedFallingBlock = -1;
             let isPointerDown = false;
             let eraseMode = false;
             let lastKey = "";
-            let dragStartTile = null;
-            let dragExistingBlock = -1;
             let dragStartPixel = null;
             let dragLineStart = null;
             let drawingBirdPath = false;
@@ -410,15 +413,24 @@
                 return Math.max(1, Number(zoomInput.value) || 1);
             }
 
+            function isPrologueBackgroundPath(path) {
+                return String(path || "").includes("prologue_a/");
+            }
+
             const validSpikeDirections = new Set(["up", "down", "left", "right"]);
+            const validTrafficBlockColors = new Set(["blue", "pink"]);
             const springLongSize = 14;
             const springThickness = 4;
             const stonePlatformSize = 8;
             const defaultMechBlockWidth = 24;
             const defaultMechBlockHeight = 16;
+            const defaultTrafficBlockWidth = 24;
+            const defaultTrafficBlockHeight = 16;
             const strawberryWidth = 18;
             const strawberryHeight = 16;
             const dashRefillSize = 12;
+            const cassetteWidth = 16;
+            const cassetteHeight = 16;
             const strawberrySpritePalette = {
                 K: "#0b0c12",
                 R: "#e32235",
@@ -482,6 +494,29 @@
 
             function currentStrawberryType() {
                 return strawberryFlyingInput.checked ? "flying" : "normal";
+            }
+
+            function normalizeTrafficBlockColor(value) {
+                const color = String(value || "blue").toLowerCase();
+                return validTrafficBlockColors.has(color) ? color : "blue";
+            }
+
+            function trafficBlockColorFromSource(source) {
+                if (!source) return "blue";
+                if (source.pink === true) return "pink";
+                if (source.blue === true) return "blue";
+                return normalizeTrafficBlockColor(
+                    source.color || source.variant || source.blockColor || source.trafficBlockColor || source.theme,
+                );
+            }
+
+            function currentTrafficBlockColor() {
+                return normalizeTrafficBlockColor(trafficBlockColorSelect.value);
+            }
+
+            function trafficBlockColorValue(block) {
+                const variable = normalizeTrafficBlockColor(block && block.color) === "pink" ? "--traffic-pink" : "--traffic-blue";
+                return getComputedStyle(document.documentElement).getPropertyValue(variable);
             }
 
             function setStatus(message) {
@@ -634,18 +669,29 @@
                 springs = [];
                 strawberries = [];
                 dashRefills = [];
+                cassettes = [];
                 stonePlatforms = new Set();
                 mechBlocks = new Map();
                 selectedMechBlock = "";
+                trafficBlocks = new Map();
+                selectedTrafficBlock = "";
                 exitLines = [];
                 pitDeathLines = [];
                 respawnPoints = [];
-                fallingBlocks = [];
+                prologueFallingBlocks = [];
                 foregroundStamps = [];
                 birdNpc = null;
-                selectedFallingBlock = -1;
                 const result = await apiJson(`/api/annotation?image=${encodeURIComponent(imagePath)}`);
                 annotationStats.textContent = result.path;
+                if (isPrologueBackgroundPath(imagePath)) {
+                    prologueFallingBlocks = ((result.data && result.data.fallingBlocks) || []).map((block) => ({
+                        x: Number(block.x) || 0,
+                        y: Number(block.y) || 0,
+                        w: Math.max(8, Number(block.w) || 8),
+                        h: Math.max(8, Number(block.h) || 8),
+                        maxY: Number(block.maxY ?? block.y) || 0,
+                    }));
+                }
                 if (result.data && result.data.tileSize) {
                     tileSizeInput.value = result.data.tileSize;
                 }
@@ -705,6 +751,14 @@
                                 y: (Number(tile.y) || 0) * tileSize + tileSize / 2,
                             }),
                         );
+                    } else if (kind === "cassette" || kind === "cassetteTape") {
+                        const tileSize = currentTileSize();
+                        cassettes.push(
+                            clampCassetteCenter({
+                                x: (Number(tile.x) || 0) * tileSize + tileSize / 2,
+                                y: (Number(tile.y) || 0) * tileSize + tileSize / 2,
+                            }),
+                        );
                     } else if (kind === "exit" || kind === "exitLine") {
                         exitLines.push(
                             clampAnnotationLine({
@@ -740,6 +794,18 @@
                             y: (Number(tile.y) || 0) * currentTileSize(),
                         });
                         mechBlocks.set(key(block.x, block.y), block);
+                    } else if (
+                        kind === "trafficBlock" ||
+                        kind === "trafficLightBlock" ||
+                        kind === "zipper" ||
+                        kind === "zipperBlock"
+                    ) {
+                        const block = makeTrafficBlock({
+                            x: (Number(tile.x) || 0) * currentTileSize(),
+                            y: (Number(tile.y) || 0) * currentTileSize(),
+                            color: trafficBlockColorFromSource(tile),
+                        });
+                        trafficBlocks.set(key(block.x, block.y), block);
                     }
                 }
                 for (const spring of (result.data && result.data.springs) || []) {
@@ -772,6 +838,15 @@
                     const centerX = Number(refill.centerX ?? refill.x) || 0;
                     const centerY = Number(refill.centerY ?? refill.y) || 0;
                     dashRefills.push(clampDashRefillCenter({ x: centerX, y: centerY }));
+                }
+                const loadedCassettes = [
+                    ...((result.data && result.data.cassettes) || []),
+                    ...((result.data && result.data.cassetteTapes) || []),
+                ];
+                for (const cassette of loadedCassettes) {
+                    const centerX = Number(cassette.centerX ?? cassette.x) || 0;
+                    const centerY = Number(cassette.centerY ?? cassette.y) || 0;
+                    cassettes.push(clampCassetteCenter({ x: centerX, y: centerY }));
                 }
                 const loadedExitLines = [
                     ...((result.data && result.data.exits) || []),
@@ -828,14 +903,25 @@
                     });
                     mechBlocks.set(key(next.x, next.y), next);
                 }
-                for (const block of (result.data && result.data.fallingBlocks) || []) {
-                    fallingBlocks.push({
-                        x: Number(block.x) || 0,
-                        y: Number(block.y) || 0,
-                        w: Math.max(8, Number(block.w) || 8),
-                        h: Math.max(8, Number(block.h) || 8),
-                        maxY: Number(block.maxY ?? block.y) || 0,
+                const loadedTrafficBlocks = [
+                    ...((result.data && result.data.trafficBlocks) || []),
+                    ...((result.data && result.data.trafficLightBlocks) || []),
+                    ...((result.data && result.data.zipperBlocks) || []),
+                    ...((result.data && result.data.conveyorBeltPlatforms) || []),
+                ];
+                for (const block of loadedTrafficBlocks) {
+                    const width = normalizedMechBlockSize(block.w, defaultTrafficBlockWidth);
+                    const height = normalizedMechBlockSize(block.h, defaultTrafficBlockHeight);
+                    const next = makeTrafficBlock({
+                        x: numberOr(block.x, numberOr(block.startCenterX, numberOr(block.centerX, width / 2)) - width / 2),
+                        y: numberOr(block.y, numberOr(block.startCenterY, numberOr(block.centerY, height / 2)) - height / 2),
+                        w: width,
+                        h: height,
+                        targetX: numberOr(block.targetCenterX, numberOr(block.targetX, numberOr(block.endCenterX, NaN))),
+                        targetY: numberOr(block.targetCenterY, numberOr(block.targetY, numberOr(block.endCenterY, NaN))),
+                        color: trafficBlockColorFromSource(block),
                     });
+                    trafficBlocks.set(key(next.x, next.y), next);
                 }
                 for (const stamp of (result.data && result.data.foregroundStamps) || []) {
                     foregroundStamps.push({
@@ -942,6 +1028,10 @@
                     drawDashRefillPreview(refill, 0.9);
                 }
 
+                for (const cassette of cassettes) {
+                    drawCassettePreview(cassette, 0.9);
+                }
+
                 overlayCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--stone");
                 overlayCtx.strokeStyle = "rgba(255,255,255,0.62)";
                 overlayCtx.lineWidth = 1;
@@ -960,24 +1050,14 @@
                     drawMechBlock(block, 0.86, blockKey === selectedMechBlock);
                 }
 
-                for (let index = 0; index < fallingBlocks.length; index += 1) {
-                    const block = fallingBlocks[index];
-                    const selected = index === selectedFallingBlock;
-                    overlayCtx.fillStyle = selected ? "rgba(255,205,74,0.34)" : "rgba(255,205,74,0.18)";
-                    overlayCtx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--falling");
-                    overlayCtx.lineWidth = selected ? 3 : 2;
-                    overlayCtx.fillRect(block.x, block.y, block.w, block.h);
-                    overlayCtx.strokeRect(block.x + 0.5, block.y + 0.5, block.w - 1, block.h - 1);
-                    overlayCtx.strokeStyle = selected ? "rgba(255,255,255,0.9)" : "rgba(255,205,74,0.72)";
-                    overlayCtx.lineWidth = 1;
-                    overlayCtx.beginPath();
-                    overlayCtx.moveTo(block.x, block.maxY + 0.5);
-                    overlayCtx.lineTo(block.x + block.w, block.maxY + 0.5);
-                    overlayCtx.stroke();
-                    overlayCtx.beginPath();
-                    overlayCtx.moveTo(block.x + block.w / 2, block.y + block.h);
-                    overlayCtx.lineTo(block.x + block.w / 2, block.maxY);
-                    overlayCtx.stroke();
+                for (const [blockKey, block] of trafficBlocks) {
+                    drawTrafficTrack(block, blockKey === selectedTrafficBlock);
+                }
+                overlayCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--traffic");
+                overlayCtx.strokeStyle = "rgba(255,255,255,0.68)";
+                overlayCtx.lineWidth = 1;
+                for (const [blockKey, block] of trafficBlocks) {
+                    drawTrafficBlock(block, 0.86, blockKey === selectedTrafficBlock);
                 }
 
                 for (const stamp of foregroundStamps) {
@@ -1005,6 +1085,9 @@
                 }
                 if (modeSelect.value === "dashRefill" && !eraseMode && hoverPixel) {
                     drawDashRefillPreview(clampDashRefillCenter(hoverPixel), 0.56);
+                }
+                if (modeSelect.value === "cassette" && !eraseMode && hoverPixel) {
+                    drawCassettePreview(clampCassetteCenter(hoverPixel), 0.56);
                 }
                 if (modeSelect.value === "spring" && !eraseMode && hoverPixel) {
                     overlayCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--spring");
@@ -1039,6 +1122,28 @@
                         overlayCtx.strokeStyle = "rgba(255,255,255,0.68)";
                         overlayCtx.lineWidth = 1;
                         drawMechBlock(block, 0.48, false);
+                    }
+                }
+                if (modeSelect.value === "trafficBlock" && !eraseMode && hoverPixel) {
+                    if (hoverShift && trafficBlocks.size > 0) {
+                        const selectedKey = validSelectedTrafficBlockKey() || findNearestTrafficBlockKey(hoverPixel);
+                        const block = trafficBlocks.get(selectedKey);
+                        if (block) {
+                            drawTrafficTrack({ ...block, ...clampTrafficBlockTarget(hoverPixel, block) }, true);
+                        }
+                    } else if (dragStartPixel && isPointerDown) {
+                        const block = trafficBlockRectFromPoints(dragStartPixel, hoverPixel);
+                        overlayCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--traffic");
+                        overlayCtx.strokeStyle = "rgba(255,255,255,0.68)";
+                        overlayCtx.lineWidth = 1;
+                        drawTrafficBlock(block, 0.48, false);
+                    } else {
+                        const position = clampTrafficBlockPosition(hoverPixel, stonePlatformSize, stonePlatformSize);
+                        const block = makeTrafficBlock({ ...position, w: stonePlatformSize, h: stonePlatformSize, color: currentTrafficBlockColor() });
+                        overlayCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--traffic");
+                        overlayCtx.strokeStyle = "rgba(255,255,255,0.68)";
+                        overlayCtx.lineWidth = 1;
+                        drawTrafficBlock(block, 0.48, false);
                     }
                 }
 
@@ -1084,14 +1189,15 @@
                 springStats.textContent = String(springs.length);
                 strawberryStats.textContent = strawberryStatsText();
                 dashRefillStats.textContent = String(dashRefills.length);
+                cassetteStats.textContent = String(cassettes.length);
                 stonePlatformStats.textContent = String(stonePlatforms.size);
                 mechBlockStats.textContent = mechBlockStatsText();
+                trafficBlockStats.textContent = trafficBlockStatsText();
                 exitLineStats.textContent = String(exitLines.length);
                 pitDeathLineStats.textContent = String(pitDeathLines.length);
                 spawnStats.textContent = respawnPoints.length
                     ? respawnPoints.map((point, index) => `${index + 1}:${point.x},${point.y}`).join(" ")
                     : "none";
-                fallingBlockStats.textContent = `${fallingBlocks.length}${selectedFallingBlock >= 0 ? ` (${selectedFallingBlock + 1} selected)` : ""}`;
                 bridgePoleStats.textContent = String(foregroundStamps.filter((stamp) => stamp.id === "bridge_pole").length);
                 foregroundStampStats.textContent = String(foregroundStamps.length);
                 birdStats.textContent = birdNpc ? `${birdNpc.x},${birdNpc.y} hint ${birdNpc.hintX},${birdNpc.hintY}` : "none";
@@ -1263,10 +1369,19 @@
                 return tracks > 0 ? `${mechBlocks.size} (${tracks} tracks)` : String(mechBlocks.size);
             }
 
+            function trafficBlockStatsText() {
+                const blocks = [...trafficBlocks.values()];
+                const tracks = blocks.filter(trafficBlockHasTrack).length;
+                const pink = blocks.filter((block) => normalizeTrafficBlockColor(block.color) === "pink").length;
+                const details = [];
+                if (tracks > 0) details.push(`${tracks} tracks`);
+                if (pink > 0) details.push(`${blocks.length - pink} blue/${pink} pink`);
+                return details.length > 0 ? `${blocks.length} (${details.join(", ")})` : String(blocks.length);
+            }
+
             function drawSpikeTile(x, y, tileSize, directionValue) {
                 const direction = normalizeSpikeDirection(directionValue);
                 const hitbox = spikeHitbox(x, y, tileSize, direction);
-                overlayCtx.fillRect(hitbox.x, hitbox.y, hitbox.w, hitbox.h);
                 overlayCtx.beginPath();
                 if (direction === "down") {
                     overlayCtx.moveTo(hitbox.x + 1, hitbox.y + 1);
@@ -1285,6 +1400,8 @@
                     overlayCtx.lineTo(hitbox.x + hitbox.w / 2, hitbox.y + 1);
                     overlayCtx.lineTo(hitbox.x + hitbox.w - 1, hitbox.y + hitbox.h - 1);
                 }
+                overlayCtx.closePath();
+                overlayCtx.fill();
                 overlayCtx.stroke();
             }
 
@@ -1372,6 +1489,34 @@
                 overlayCtx.restore();
             }
 
+            function drawCassettePreview(cassette, alpha) {
+                const x = cassette.x - cassetteWidth / 2;
+                const y = cassette.y - cassetteHeight / 2;
+                overlayCtx.save();
+                overlayCtx.globalAlpha = alpha;
+                overlayCtx.fillStyle = "#0b0c12";
+                overlayCtx.fillRect(x + 1, y + 3, 14, 10);
+                overlayCtx.fillStyle = "#9158d6";
+                overlayCtx.fillRect(x + 2, y + 4, 12, 8);
+                overlayCtx.fillStyle = "#f4d35e";
+                overlayCtx.fillRect(x + 4, y + 5, 8, 2);
+                overlayCtx.fillStyle = "#201525";
+                overlayCtx.fillRect(x + 4, y + 8, 3, 3);
+                overlayCtx.fillRect(x + 9, y + 8, 3, 3);
+                overlayCtx.fillStyle = "#fff4c4";
+                overlayCtx.fillRect(x + 5, y + 9, 1, 1);
+                overlayCtx.fillRect(x + 10, y + 9, 1, 1);
+                overlayCtx.strokeStyle = "rgba(255,255,255,0.76)";
+                overlayCtx.lineWidth = 1;
+                overlayCtx.beginPath();
+                overlayCtx.moveTo(cassette.x - 3, cassette.y);
+                overlayCtx.lineTo(cassette.x + 3, cassette.y);
+                overlayCtx.moveTo(cassette.x, cassette.y - 3);
+                overlayCtx.lineTo(cassette.x, cassette.y + 3);
+                overlayCtx.stroke();
+                overlayCtx.restore();
+            }
+
             function drawStonePlatform(x, y, alpha) {
                 overlayCtx.save();
                 overlayCtx.globalAlpha = alpha;
@@ -1438,6 +1583,80 @@
                 overlayCtx.moveTo(x + width - 3, y + 3);
                 overlayCtx.lineTo(x + 3, y + height - 3);
                 overlayCtx.stroke();
+                if (selected) {
+                    overlayCtx.globalAlpha = 1;
+                    overlayCtx.strokeStyle = "rgba(255,255,255,0.96)";
+                    overlayCtx.lineWidth = 2;
+                    overlayCtx.strokeRect(x + 1, y + 1, width - 2, height - 2);
+                }
+                overlayCtx.restore();
+            }
+
+            function drawTrafficTrack(block, selected) {
+                const center = trafficBlockCenter(block);
+                const target = trafficBlockTarget(block);
+                const width = trafficBlockWidth(block);
+                const height = trafficBlockHeight(block);
+                const endX = target.x - width / 2;
+                const endY = target.y - height / 2;
+                const color = trafficBlockColorValue(block);
+                overlayCtx.save();
+                overlayCtx.globalAlpha = selected ? 0.95 : 0.62;
+                overlayCtx.strokeStyle = selected ? "rgba(255,255,255,0.92)" : color;
+                overlayCtx.fillStyle = color;
+                overlayCtx.lineWidth = selected ? 2 : 1;
+                if (trafficBlockHasTrack(block)) {
+                    overlayCtx.beginPath();
+                    overlayCtx.moveTo(center.x + 0.5, center.y + 0.5);
+                    overlayCtx.lineTo(target.x + 0.5, target.y + 0.5);
+                    overlayCtx.stroke();
+                    overlayCtx.globalAlpha = selected ? 0.28 : 0.18;
+                    overlayCtx.strokeRect(endX + 0.5, endY + 0.5, width - 1, height - 1);
+                }
+                overlayCtx.globalAlpha = selected ? 1 : 0.78;
+                overlayCtx.beginPath();
+                overlayCtx.moveTo(target.x - 3, target.y + 0.5);
+                overlayCtx.lineTo(target.x + 3, target.y + 0.5);
+                overlayCtx.moveTo(target.x + 0.5, target.y - 3);
+                overlayCtx.lineTo(target.x + 0.5, target.y + 3);
+                overlayCtx.stroke();
+                overlayCtx.restore();
+            }
+
+            function drawTrafficBlock(block, alpha, selected) {
+                const { x, y } = block;
+                const width = trafficBlockWidth(block);
+                const height = trafficBlockHeight(block);
+                overlayCtx.save();
+                overlayCtx.globalAlpha = alpha;
+                overlayCtx.fillStyle = trafficBlockColorValue(block);
+                overlayCtx.strokeStyle = "rgba(255,255,255,0.68)";
+                overlayCtx.lineWidth = 1;
+                overlayCtx.fillRect(x, y, width, height);
+                overlayCtx.strokeRect(x + 0.5, y + 0.5, width - 1, height - 1);
+                overlayCtx.beginPath();
+                for (let gridX = x + stonePlatformSize; gridX < x + width; gridX += stonePlatformSize) {
+                    overlayCtx.moveTo(gridX + 0.5, y + 1);
+                    overlayCtx.lineTo(gridX + 0.5, y + height - 1);
+                }
+                for (let gridY = y + stonePlatformSize; gridY < y + height; gridY += stonePlatformSize) {
+                    overlayCtx.moveTo(x + 1, gridY + 0.5);
+                    overlayCtx.lineTo(x + width - 1, gridY + 0.5);
+                }
+                overlayCtx.stroke();
+
+                const lightY = y + Math.max(2, Math.min(height - 4, Math.floor(height / 2) - 1));
+                overlayCtx.fillStyle = "#111317";
+                overlayCtx.fillRect(x + 2, lightY - 1, Math.max(4, Math.min(width - 4, 14)), 4);
+                overlayCtx.fillStyle = "#ff3f3f";
+                overlayCtx.fillRect(x + 4, lightY, 2, 2);
+                if (width >= 16) {
+                    overlayCtx.fillStyle = "#5a4216";
+                    overlayCtx.fillRect(x + 8, lightY, 2, 2);
+                    overlayCtx.fillStyle = "#174826";
+                    overlayCtx.fillRect(x + 12, lightY, 2, 2);
+                }
+
                 if (selected) {
                     overlayCtx.globalAlpha = 1;
                     overlayCtx.strokeStyle = "rgba(255,255,255,0.96)";
@@ -1569,33 +1788,6 @@
                     x: Math.round((event.clientX - rect.left) * scaleX),
                     y: Math.round((event.clientY - rect.top) * scaleY),
                 };
-            }
-
-            function tileToPixelRect(a, b) {
-                const tileSize = currentTileSize();
-                const minX = Math.max(0, Math.min(a.x, b.x));
-                const minY = Math.max(0, Math.min(a.y, b.y));
-                const maxX = Math.min(gridW - 1, Math.max(a.x, b.x));
-                const maxY = Math.min(gridH - 1, Math.max(a.y, b.y));
-                return {
-                    x: minX * tileSize,
-                    y: minY * tileSize,
-                    w: (maxX - minX + 1) * tileSize,
-                    h: (maxY - minY + 1) * tileSize,
-                };
-            }
-
-            function findFallingBlockAt(tile) {
-                const tileSize = currentTileSize();
-                const x = tile.x * tileSize;
-                const y = tile.y * tileSize;
-                for (let index = fallingBlocks.length - 1; index >= 0; index -= 1) {
-                    const block = fallingBlocks[index];
-                    if (x >= block.x && x < block.x + block.w && y >= block.y && y < block.y + block.h) {
-                        return index;
-                    }
-                }
-                return -1;
             }
 
             function findForegroundStampAt(tile) {
@@ -1804,6 +1996,147 @@
                 selectedMechBlock = blockKey;
             }
 
+            function trafficBlockWidth(block) {
+                return normalizedMechBlockSize(block && block.w, defaultTrafficBlockWidth);
+            }
+
+            function trafficBlockHeight(block) {
+                return normalizedMechBlockSize(block && block.h, defaultTrafficBlockHeight);
+            }
+
+            function clampTrafficBlockPosition(point, widthValue, heightValue) {
+                const width = normalizedMechBlockSize(widthValue, defaultTrafficBlockWidth);
+                const height = normalizedMechBlockSize(heightValue, defaultTrafficBlockHeight);
+                if (!image) {
+                    return { x: Math.round(point.x), y: Math.round(point.y) };
+                }
+                const snappedX = Math.floor(point.x / stonePlatformSize) * stonePlatformSize;
+                const snappedY = Math.floor(point.y / stonePlatformSize) * stonePlatformSize;
+                return {
+                    x: Math.round(Math.max(0, Math.min(image.width - width, snappedX))),
+                    y: Math.round(Math.max(0, Math.min(image.height - height, snappedY))),
+                };
+            }
+
+            function clampTrafficBlockTarget(point, block) {
+                const halfWidth = trafficBlockWidth(block) / 2;
+                const halfHeight = trafficBlockHeight(block) / 2;
+                if (!image) {
+                    return { targetX: Math.round(point.x), targetY: Math.round(point.y) };
+                }
+                return {
+                    targetX: Math.round(Math.max(halfWidth, Math.min(image.width - halfWidth, point.x))),
+                    targetY: Math.round(Math.max(halfHeight, Math.min(image.height - halfHeight, point.y))),
+                };
+            }
+
+            function trafficBlockCenter(block) {
+                return {
+                    x: block.x + trafficBlockWidth(block) / 2,
+                    y: block.y + trafficBlockHeight(block) / 2,
+                };
+            }
+
+            function trafficBlockTarget(block) {
+                const center = trafficBlockCenter(block);
+                return {
+                    x: Number.isFinite(block.targetX) ? block.targetX : center.x,
+                    y: Number.isFinite(block.targetY) ? block.targetY : center.y,
+                };
+            }
+
+            function trafficBlockHasTrack(block) {
+                const center = trafficBlockCenter(block);
+                const target = trafficBlockTarget(block);
+                return center.x !== target.x || center.y !== target.y;
+            }
+
+            function makeTrafficBlock(point) {
+                const width = normalizedMechBlockSize(point.w, defaultTrafficBlockWidth);
+                const height = normalizedMechBlockSize(point.h, defaultTrafficBlockHeight);
+                const position = clampTrafficBlockPosition(point, width, height);
+                const block = { x: position.x, y: position.y, w: width, h: height, color: normalizeTrafficBlockColor(point.color) };
+                const center = trafficBlockCenter(block);
+                const target = clampTrafficBlockTarget(
+                    {
+                        x: Number.isFinite(point.targetX) ? point.targetX : center.x,
+                        y: Number.isFinite(point.targetY) ? point.targetY : center.y,
+                    },
+                    block,
+                );
+                return {
+                    ...block,
+                    targetX: target.targetX,
+                    targetY: target.targetY,
+                };
+            }
+
+            function trafficBlockRectFromPoints(a, b) {
+                const start = clampMechGridPoint(a);
+                const end = clampMechGridPoint(b);
+                const x = Math.min(start.x, end.x);
+                const y = Math.min(start.y, end.y);
+                const maxX = Math.max(start.x, end.x);
+                const maxY = Math.max(start.y, end.y);
+                return makeTrafficBlock({
+                    x,
+                    y,
+                    w: maxX - x + stonePlatformSize,
+                    h: maxY - y + stonePlatformSize,
+                    color: currentTrafficBlockColor(),
+                });
+            }
+
+            function validSelectedTrafficBlockKey() {
+                return selectedTrafficBlock && trafficBlocks.has(selectedTrafficBlock) ? selectedTrafficBlock : "";
+            }
+
+            function selectTrafficBlock(blockKey) {
+                selectedTrafficBlock = blockKey && trafficBlocks.has(blockKey) ? blockKey : "";
+                const block = selectedTrafficBlock ? trafficBlocks.get(selectedTrafficBlock) : null;
+                if (block) trafficBlockColorSelect.value = normalizeTrafficBlockColor(block.color);
+            }
+
+            function findNearestTrafficBlockKey(point) {
+                let bestKey = "";
+                let bestDistance = Infinity;
+                for (const [blockKey, block] of trafficBlocks) {
+                    const center = trafficBlockCenter(block);
+                    const dx = point.x - center.x;
+                    const dy = point.y - center.y;
+                    const distance = dx * dx + dy * dy;
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        bestKey = blockKey;
+                    }
+                }
+                return bestKey;
+            }
+
+            function findTrafficBlockAt(point) {
+                for (const [blockKey, block] of trafficBlocks) {
+                    if (
+                        point.x >= block.x &&
+                        point.x < block.x + trafficBlockWidth(block) &&
+                        point.y >= block.y &&
+                        point.y < block.y + trafficBlockHeight(block)
+                    ) {
+                        return blockKey;
+                    }
+                }
+                return "";
+            }
+
+            function upsertTrafficBlock(block) {
+                const blockKey = key(block.x, block.y);
+                const existing = trafficBlocks.get(blockKey);
+                const target = existing ? clampTrafficBlockTarget(trafficBlockTarget(existing), block) : trafficBlockTarget(block);
+                const color = normalizeTrafficBlockColor(block.color || (existing && existing.color) || currentTrafficBlockColor());
+                const next = { ...block, targetX: target.targetX ?? target.x, targetY: target.targetY ?? target.y, color };
+                trafficBlocks.set(blockKey, next);
+                selectTrafficBlock(blockKey);
+            }
+
             function clampStrawberryCenter(point) {
                 if (!image) {
                     return { x: Math.round(point.x), y: Math.round(point.y) };
@@ -1827,6 +2160,18 @@
                 };
             }
 
+            function clampCassetteCenter(point) {
+                if (!image) {
+                    return { x: Math.round(point.x), y: Math.round(point.y) };
+                }
+                const halfWidth = cassetteWidth / 2;
+                const halfHeight = cassetteHeight / 2;
+                return {
+                    x: Math.round(Math.max(halfWidth, Math.min(image.width - halfWidth, point.x))),
+                    y: Math.round(Math.max(halfHeight, Math.min(image.height - halfHeight, point.y))),
+                };
+            }
+
             function findDashRefillAt(point) {
                 for (let index = dashRefills.length - 1; index >= 0; index -= 1) {
                     const refill = dashRefills[index];
@@ -1837,6 +2182,23 @@
                         point.x < left + dashRefillSize &&
                         point.y >= top &&
                         point.y < top + dashRefillSize
+                    ) {
+                        return index;
+                    }
+                }
+                return -1;
+            }
+
+            function findCassetteAt(point) {
+                for (let index = cassettes.length - 1; index >= 0; index -= 1) {
+                    const cassette = cassettes[index];
+                    const left = cassette.x - cassetteWidth / 2;
+                    const top = cassette.y - cassetteHeight / 2;
+                    if (
+                        point.x >= left &&
+                        point.x < left + cassetteWidth &&
+                        point.y >= top &&
+                        point.y < top + cassetteHeight
                     ) {
                         return index;
                     }
@@ -1886,25 +2248,6 @@
                         }
                     }
                     redraw();
-                    return;
-                }
-                if (modeSelect.value === "fallingBlock") {
-                    if (event.shiftKey && selectedFallingBlock >= 0) {
-                        const tileSize = currentTileSize();
-                        const block = fallingBlocks[selectedFallingBlock];
-                        block.maxY = Math.max(block.y + block.h, Math.min(image.height, tile.y * tileSize));
-                        redraw();
-                        return;
-                    }
-                    const index = findFallingBlockAt(tile);
-                    if (index >= 0) {
-                        selectedFallingBlock = index;
-                        if (eraseMode) {
-                            fallingBlocks.splice(index, 1);
-                            selectedFallingBlock = -1;
-                        }
-                        redraw();
-                    }
                     return;
                 }
                 if (modeSelect.value === "foregroundStamp") {
@@ -1958,6 +2301,20 @@
                     redraw();
                     return;
                 }
+                if (modeSelect.value === "cassette") {
+                    if (event.type !== "pointerdown") return;
+                    const point = clampCassetteCenter(eventToPixel(event));
+                    const existing = findCassetteAt(point);
+                    if (eraseMode) {
+                        if (existing >= 0) cassettes.splice(existing, 1);
+                    } else if (existing >= 0) {
+                        cassettes[existing] = point;
+                    } else {
+                        cassettes.push(point);
+                    }
+                    redraw();
+                    return;
+                }
                 if (modeSelect.value === "stonePlatform") {
                     const platform = clampStonePlatformPosition(eventToPixel(event));
                     const platformKey = key(platform.x, platform.y);
@@ -1989,6 +2346,28 @@
                         }
                     } else if (existingKey && event.type === "pointerdown") {
                         selectedMechBlock = existingKey;
+                    }
+                    redraw();
+                    return;
+                }
+                if (modeSelect.value === "trafficBlock") {
+                    const point = eventToPixel(event);
+                    const existingKey = findTrafficBlockAt(point);
+                    if (eraseMode) {
+                        if (existingKey) {
+                            trafficBlocks.delete(existingKey);
+                            if (selectedTrafficBlock === existingKey) selectTrafficBlock("");
+                        }
+                    } else if (event.shiftKey) {
+                        const selectedKey = validSelectedTrafficBlockKey() || findNearestTrafficBlockKey(point);
+                        const block = trafficBlocks.get(selectedKey);
+                        if (block) {
+                            const target = clampTrafficBlockTarget(point, block);
+                            trafficBlocks.set(selectedKey, { ...block, targetX: target.targetX, targetY: target.targetY });
+                            selectTrafficBlock(selectedKey);
+                        }
+                    } else if (existingKey && event.type === "pointerdown") {
+                        selectTrafficBlock(existingKey);
                     }
                     redraw();
                     return;
@@ -2113,11 +2492,13 @@
                     (a, b) => a.y - b.y || a.x - b.x || normalizeStrawberryType(a.type).localeCompare(normalizeStrawberryType(b.type)),
                 );
                 const sortedDashRefills = [...dashRefills].sort((a, b) => a.y - b.y || a.x - b.x);
+                const sortedCassettes = [...cassettes].sort((a, b) => a.y - b.y || a.x - b.x);
                 const sortedStonePlatforms = [...stonePlatforms].map(splitKey).sort((a, b) => a.y - b.y || a.x - b.x);
                 const sortedMechBlocks = [...mechBlocks.values()].sort((a, b) => a.y - b.y || a.x - b.x);
+                const sortedTrafficBlocks = [...trafficBlocks.values()].sort((a, b) => a.y - b.y || a.x - b.x);
                 const sortedExitLines = [...exitLines].sort(annotationLineSort);
                 const sortedPitDeathLines = [...pitDeathLines].sort(annotationLineSort);
-                return {
+                const annotation = {
                     image: currentBackground.image.split("/").pop(),
                     tileSize: currentTileSize(),
                     width: image.width,
@@ -2125,13 +2506,6 @@
                     exitTargetRoom: currentExitTargetRoom(),
                     spawn: respawnPoints[0] || { x: 24, y: 128 },
                     respawnPoints: respawnPoints,
-                    fallingBlocks: fallingBlocks.map((block) => ({
-                        x: block.x,
-                        y: block.y,
-                        w: block.w,
-                        h: block.h,
-                        maxY: block.maxY,
-                    })),
                     foregroundStamps: foregroundStamps.map((stamp) => ({
                         id: stamp.id,
                         x: stamp.x,
@@ -2157,6 +2531,14 @@
                         material: "dashRefill",
                         w: dashRefillSize,
                         h: dashRefillSize,
+                    })),
+                    cassettes: sortedCassettes.map((cassette) => ({
+                        centerX: cassette.x,
+                        centerY: cassette.y,
+                        kind: "cassette",
+                        material: "cassette",
+                        w: cassetteWidth,
+                        h: cassetteHeight,
                     })),
                     exits: sortedExitLines.map((line) => ({
                         kind: "exit",
@@ -2205,6 +2587,23 @@
                             targetCenterY: target.y,
                         };
                     }),
+                    trafficBlocks: sortedTrafficBlocks.map((block) => {
+                        const center = trafficBlockCenter(block);
+                        const target = trafficBlockTarget(block);
+                        return {
+                            x: block.x,
+                            y: block.y,
+                            kind: "trafficLightBlock",
+                            material: "trafficLight",
+                            w: trafficBlockWidth(block),
+                            h: trafficBlockHeight(block),
+                            color: normalizeTrafficBlockColor(block.color),
+                            startCenterX: center.x,
+                            startCenterY: center.y,
+                            targetCenterX: target.x,
+                            targetCenterY: target.y,
+                        };
+                    }),
                     birdNpc: birdNpc,
                     tiles: [
                         ...sorted.map((tile) => ({
@@ -2234,6 +2633,16 @@
                         })),
                     ],
                 };
+                if (isPrologueBackgroundPath(currentBackground.image)) {
+                    annotation.fallingBlocks = prologueFallingBlocks.map((block) => ({
+                        x: block.x,
+                        y: block.y,
+                        w: block.w,
+                        h: block.h,
+                        maxY: block.maxY,
+                    }));
+                }
+                return annotation;
             }
 
             function stampWidth(stamp) {
@@ -2275,11 +2684,7 @@
             });
 
             clearButton.addEventListener("click", () => {
-                if (modeSelect.value === "fallingBlock") {
-                    if (!confirm("Clear all falling blocks for this background?")) return;
-                    fallingBlocks = [];
-                    selectedFallingBlock = -1;
-                } else if (modeSelect.value === "foregroundStamp") {
+                if (modeSelect.value === "foregroundStamp") {
                     if (!confirm("Clear all foreground stamps for this background?")) return;
                     foregroundStamps = [];
                 } else if (modeSelect.value === "spawn") {
@@ -2305,6 +2710,9 @@
                 } else if (modeSelect.value === "dashRefill") {
                     if (!confirm("Clear all dash refills for this background?")) return;
                     dashRefills = [];
+                } else if (modeSelect.value === "cassette") {
+                    if (!confirm("Clear all cassettes for this background?")) return;
+                    cassettes = [];
                 } else if (modeSelect.value === "stonePlatform") {
                     if (!confirm("Clear all stone platforms for this background?")) return;
                     stonePlatforms.clear();
@@ -2312,6 +2720,10 @@
                     if (!confirm("Clear all mech blocks for this background?")) return;
                     mechBlocks.clear();
                     selectedMechBlock = "";
+                } else if (modeSelect.value === "trafficBlock") {
+                    if (!confirm("Clear all traffic blocks for this background?")) return;
+                    trafficBlocks.clear();
+                    selectedTrafficBlock = "";
                 } else if (modeSelect.value === "exitLine") {
                     if (!confirm("Clear all exit lines for this background?")) return;
                     exitLines = [];
@@ -2322,13 +2734,6 @@
                     if (!confirm("Clear all solid tiles for this background?")) return;
                     tiles.clear();
                 }
-                redraw();
-            });
-
-            deleteBlockButton.addEventListener("click", () => {
-                if (selectedFallingBlock < 0) return;
-                fallingBlocks.splice(selectedFallingBlock, 1);
-                selectedFallingBlock = -1;
                 redraw();
             });
 
@@ -2346,6 +2751,14 @@
             modeSelect.addEventListener("change", resetPaintAndRedraw);
             spikeDirectionSelect.addEventListener("change", resetPaintAndRedraw);
             strawberryFlyingInput.addEventListener("change", resetPaintAndRedraw);
+            trafficBlockColorSelect.addEventListener("change", () => {
+                const selectedKey = validSelectedTrafficBlockKey();
+                if (selectedKey) {
+                    const block = trafficBlocks.get(selectedKey);
+                    trafficBlocks.set(selectedKey, { ...block, color: currentTrafficBlockColor() });
+                }
+                resetPaintAndRedraw();
+            });
             exitTargetRoomInput.addEventListener("input", () => {
                 rememberCurrentExitTargetRoom();
                 resetPaintAndRedraw();
@@ -2364,16 +2777,13 @@
                 isPointerDown = true;
                 eraseMode = event.button === 2 || event.altKey;
                 lastKey = "";
-                dragStartTile = null;
                 dragStartPixel = null;
                 dragLineStart = null;
-                dragExistingBlock = -1;
                 drawingBirdPath = modeSelect.value === "birdNpc" && event.metaKey && !eraseMode;
                 overlay.setPointerCapture(event.pointerId);
-                if (modeSelect.value === "fallingBlock") {
-                    dragStartTile = eventToTile(event);
-                    dragExistingBlock = findFallingBlockAt(dragStartTile);
-                } else if (modeSelect.value === "mechBlock" && !eraseMode && !event.shiftKey && !findMechBlockAt(hoverPixel)) {
+                if (modeSelect.value === "mechBlock" && !eraseMode && !event.shiftKey && !findMechBlockAt(hoverPixel)) {
+                    dragStartPixel = hoverPixel;
+                } else if (modeSelect.value === "trafficBlock" && !eraseMode && !event.shiftKey && !findTrafficBlockAt(hoverPixel)) {
                     dragStartPixel = hoverPixel;
                 } else if ((modeSelect.value === "exitLine" || modeSelect.value === "pitDeathLine") && !eraseMode) {
                     dragLineStart = hoverPixel;
@@ -2394,16 +2804,11 @@
                 }
             });
             overlay.addEventListener("pointerup", (event) => {
-                if (modeSelect.value === "fallingBlock" && dragStartTile && dragExistingBlock < 0 && !eraseMode) {
-                    const endTile = eventToTile(event);
-                    const rect = tileToPixelRect(dragStartTile, endTile);
-                    if (rect.w >= currentTileSize() && rect.h >= currentTileSize()) {
-                        fallingBlocks.push({ ...rect, maxY: rect.y + rect.h });
-                        selectedFallingBlock = fallingBlocks.length - 1;
-                    }
-                    redraw();
-                } else if (modeSelect.value === "mechBlock" && dragStartPixel && !eraseMode) {
+                if (modeSelect.value === "mechBlock" && dragStartPixel && !eraseMode) {
                     upsertMechBlock(mechBlockRectFromPoints(dragStartPixel, eventToPixel(event)));
+                    redraw();
+                } else if (modeSelect.value === "trafficBlock" && dragStartPixel && !eraseMode) {
+                    upsertTrafficBlock(trafficBlockRectFromPoints(dragStartPixel, eventToPixel(event)));
                     redraw();
                 } else if ((modeSelect.value === "exitLine" || modeSelect.value === "pitDeathLine") && dragLineStart && !eraseMode) {
                     const line = annotationLineFromPoints(dragLineStart, eventToPixel(event), exitTargetRoomInput.value);
@@ -2420,10 +2825,8 @@
                 eraseMode = false;
                 drawingBirdPath = false;
                 lastKey = "";
-                dragStartTile = null;
                 dragStartPixel = null;
                 dragLineStart = null;
-                dragExistingBlock = -1;
                 redraw();
             });
             overlay.addEventListener("pointercancel", () => {
@@ -2433,10 +2836,8 @@
                 hoverPixel = null;
                 hoverShift = false;
                 lastKey = "";
-                dragStartTile = null;
                 dragStartPixel = null;
                 dragLineStart = null;
-                dragExistingBlock = -1;
                 redraw();
             });
             overlay.addEventListener("pointerleave", () => {

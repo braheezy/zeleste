@@ -10,17 +10,14 @@ For bespoke cutscene authoring tools, read `../docs/cutscene-tooling.md`.
 
 - `task collision`: opens the chapter collision/entity/foreground stamp editor.
 - `task hair`: opens the player hair anchor editor.
-- `task grass-edit`: opens the generated grass frame editor for manual cleanup
-  of generated foreground sway frames in `assets/generated/foreground/`.
 - `task scene`: opens the scene animation editor for scripted NPC placement,
   trigger rectangles, hint placement, and flight paths.
 - `task granny-cutscene`: opens the room 2 Granny intro cutscene editor. This
   is a bespoke editor for trigger, actor, player target, camera, dialogue box,
   dialogue, and laugh-text source data.
-- `task grass-sway -- <path> [--preset auto|tiny|small|medium|large] [--no-mirror]`:
-  generates sway frames for a foreground grass PNG. The generated stamp name is
-  derived from the input file or directory and is written to
-  `assets/generated/foreground/` by default.
+- `task city-layout`: opens the chapter 1 room layout picker. It saves
+  `assets/chapters/1_city/layout.json`, which the manifest builder uses for
+  city room world positions.
 - `zig build assets`: rebuilds generated ROM assets under `src/generated`.
 - `zig build`: compiles the ROM without regenerating assets.
 
@@ -56,10 +53,9 @@ For bespoke cutscene authoring tools, read `../docs/cutscene-tooling.md`.
   The runtime draws the root tile plus procedural trailing hair from these
   anchors.
 
-- `grass_frame_server.py` and `grass_frame_editor.html`: generated grass frame
-  editor. Use this after `task grass-sway` for frame-by-frame cleanup when the
-  procedural sway is close but visually wrong. It edits generated PNG frames
-  directly.
+- `city_layout_server.py` and `city_layout_picker.html`: chapter 1 room layout
+  picker. Use this to place each captured room PNG over the full city map and
+  save `assets/chapters/1_city/layout.json`.
 
 - `build_level_assets.py`: top-level level asset builder. It reads a chapter
   manifest such as `assets/chapters/prologue_a/room.json`, runs room conversion,
@@ -68,20 +64,12 @@ For bespoke cutscene authoring tools, read `../docs/cutscene-tooling.md`.
 
 - `build_room_bundle.py`: builds one room bundle from a room PNG plus its
   annotation JSON. Outputs tilemap data, collision, respawns, falling block
-  data, foreground stamp data, and summary JSON.
+  data, bridge/generic stamp data, and summary JSON. Grass foreground stamps
+  are currently discarded to keep the ROM under budget.
 
 - `convert_room_tilemap_8bpp.py`: converts a source room/background PNG into
   GBA background tiles, map data, and palette data. It includes deduplication
   and validation that reconstructed tiles match the source indices.
-
-- `generate_grass_sway.py`: generates foreground grass sway animations from a
-  small source PNG. It writes generated frame folders plus GIF previews.
-  Supports 8x8, 8x16, 16x8, and 16x16 inputs. The `auto` preset infers
-  tiny/small/medium/large sway from opaque height while keeping 42 frames; small
-  grass gets fewer distinct sway positions held longer.
-
-- `pack_foreground_stamp_obj.py`: packs generated foreground stamp frames into
-  4bpp OBJ tile/palette data. Supports 8x8, 8x16, 16x8, and 16x16 frames.
 
 - `pack_player_animations.py`: packs Madeline animation PNG frames and hair
   anchor data into runtime player assets.

@@ -3,7 +3,7 @@
 
 This intentionally uses only the Python standard library so it can run before
 we settle the rest of the asset-tool dependencies. It supports non-interlaced
-8-bit RGBA and indexed-color PNGs.
+8-bit RGB, RGBA, and indexed-color PNGs.
 """
 
 from __future__ import annotations
@@ -78,9 +78,9 @@ def read_png_rgba(path: Path) -> Image:
             width, height, bit_depth, color_type, compression, filter_method, interlace = struct.unpack(
                 ">IIBBBBB", payload
             )
-            if bit_depth != 8 or color_type not in (3, 6) or compression != 0 or filter_method != 0 or interlace != 0:
+            if bit_depth != 8 or color_type not in (2, 3, 6) or compression != 0 or filter_method != 0 or interlace != 0:
                 raise ValueError(
-                    f"{path} must be non-interlaced 8-bit RGBA or indexed-color PNG; "
+                    f"{path} must be non-interlaced 8-bit RGB, RGBA, or indexed-color PNG; "
                     f"got bit_depth={bit_depth}, color_type={color_type}, interlace={interlace}"
                 )
         elif kind == b"PLTE":
@@ -105,7 +105,7 @@ def read_png_rgba(path: Path) -> Image:
         ]
 
     raw = zlib.decompress(bytes(compressed))
-    source_bpp = 4 if color_type == 6 else 1
+    source_bpp = 4 if color_type == 6 else (3 if color_type == 2 else 1)
     source_stride = width * source_bpp
     recon_rows = bytearray(height * source_stride)
     src = 0
@@ -139,6 +139,14 @@ def read_png_rgba(path: Path) -> Image:
 
     if color_type == 6:
         return Image(width, height, bytes(recon_rows))
+    if color_type == 2:
+        out = bytearray(width * height * 4)
+        for index in range(width * height):
+            source = index * 3
+            out[index * 4 : index * 4 + 4] = bytes(
+                (recon_rows[source], recon_rows[source + 1], recon_rows[source + 2], 255)
+            )
+        return Image(width, height, bytes(out))
 
     out = bytearray(width * height * 4)
     for index, palette_index in enumerate(recon_rows):

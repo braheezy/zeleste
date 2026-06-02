@@ -15,6 +15,7 @@ const ActiveChapter = enum {
 
 const Camera = camera_mod.Camera;
 const Player = player_mod.State;
+const PlayerDeathCause = player_mod.DeathCause;
 const Spawn = room_data.Spawn;
 
 pub fn resetPaletteState(room_index: usize) void {
@@ -73,6 +74,20 @@ pub fn updateActors(player: *Player, room_index: usize, camera: Camera, anim_cou
     }
 }
 
+pub fn updateDynamicHazards(player: *Player, room_index: usize) ?PlayerDeathCause {
+    return switch (activeChapterForRoom(room_index)) {
+        .prologue => prologue.updateDynamicHazards(player, room_index),
+        .city => city.systems.updateDynamicHazards(player, room_index),
+    };
+}
+
+pub fn updateDynamicHazardsDuringDeath(room_index: usize) void {
+    switch (activeChapterForRoom(room_index)) {
+        .prologue => prologue.updateDynamicHazardsDuringDeath(room_index),
+        .city => city.systems.updateDynamicHazardsDuringDeath(room_index),
+    }
+}
+
 pub fn actorFloorAt(room_index: usize, player_x: i16, player_y: i16) bool {
     return switch (activeChapterForRoom(room_index)) {
         .prologue => prologue.actorFloorAt(room_index, player_x, player_y),
@@ -105,6 +120,13 @@ pub fn asphaltFloorAtPlayer(room_index: usize, player: Player) bool {
     return switch (activeChapterForRoom(room_index)) {
         .prologue => prologue.asphaltFloorAtPlayer(room_index, player),
         .city => city.systems.asphaltFloorAtPlayer(room_index, player),
+    };
+}
+
+pub fn snowFloorAtPlayer(room_index: usize, player: Player) bool {
+    return switch (activeChapterForRoom(room_index)) {
+        .prologue => prologue.snowFloorAtPlayer(room_index, player),
+        .city => city.systems.snowFloorAtPlayer(room_index, player),
     };
 }
 
@@ -225,10 +247,10 @@ pub fn drawAmbientNpcs(camera: Camera, room_index: usize, anim_counter: u16) voi
     }
 }
 
-pub fn drawCutsceneOverlay(camera: Camera, room_index: usize) void {
+pub fn drawCutsceneOverlay(camera: Camera, room_index: usize, anim_counter: u16) void {
     switch (activeChapterForRoom(room_index)) {
-        .prologue => prologue.drawCutsceneOverlay(camera, room_index),
-        .city => city.systems.drawCutsceneOverlay(camera, room_index),
+        .prologue => prologue.drawCutsceneOverlay(camera, room_index, anim_counter),
+        .city => city.systems.drawCutsceneOverlay(camera, room_index, anim_counter),
     }
 }
 

@@ -18,15 +18,46 @@ pub const SceneRect = struct {
     }
 };
 
+pub const ExitDirection = enum(u8) {
+    left,
+    right,
+    up,
+    down,
+};
+
+pub const ExitLine = struct {
+    direction: ExitDirection,
+    x1: i16,
+    y1: i16,
+    x2: i16,
+    y2: i16,
+    target: usize,
+};
+
+pub const DeathLine = struct {
+    x1: i16,
+    y1: i16,
+    x2: i16,
+    y2: i16,
+};
+
 pub const CutsceneAnimCue = struct {
     actor: []const u8 = "",
     animation: []const u8 = "",
     mode: []const u8 = "",
 };
 
+pub const DialoguePortrait = enum(u8) {
+    none,
+    granny_normal,
+    granny_mock,
+    granny_laugh,
+};
+
 pub const CutsceneDialoguePage = struct {
     speaker: []const u8,
     text: []const u8,
+    portrait: DialoguePortrait = .none,
     cue: CutsceneAnimCue = .{},
     after_cue: CutsceneAnimCue = .{},
 };
@@ -78,12 +109,23 @@ pub const RoomBackground = struct {
     spawn_top: Spawn,
     spawn_bottom: Spawn,
     falling_blocks: []align(4) const u8,
+    breakable_walls: []align(4) const u8,
+    disappearing_platforms: []align(4) const u8,
+    mech_blocks: []align(4) const u8,
+    traffic_blocks: []align(4) const u8,
+    traffic_block_tiles: []align(4) const u8,
+    traffic_block_palette: []align(4) const u8,
+    rhythm_blocks: []align(4) const u8,
+    springs: []align(4) const u8,
+    strawberries: []align(4) const u8,
     foreground_stamps: []align(4) const u8,
     generic_stamps: []align(4) const u8,
     bird_npcs: []align(4) const u8,
     wires: []align(4) const u8,
     wire_tiles: []align(4) const u8,
     bridge_ending: []align(4) const u8,
+    exit_lines: []const ExitLine = &.{},
+    death_lines: []const DeathLine = &.{},
     granny_cutscene: ?*const GrannyCutscene = null,
     parallax: ?ParallaxLayer = null,
     wind_snow_strength: u8 = 0,

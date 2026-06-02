@@ -6,12 +6,6 @@ All numerical values of speed given are in pixels per second.
 
 Note: Some higher-level and more obscure tech may be missing, improperly named, or poorly described, so do not expect 100% accuracy or comprehensiveness. If you notice any issues, inaccuracies, or typos, please let us know by reporting them on the talk page or fixing them yourself. This way, you get to improve Celeste Wiki for future readers, and we appreciate your help in making the wiki more complete!
 
-Some other (possibly more extensive) sources of tech:
-
-    Celeste TAS wiki
-    Strawberry Jam Collab gyms and library
-    The Celeste Dictionary, pages 9-26
-
 Last revision: 2026-05-28. Update?
 Contents
 
@@ -614,7 +608,7 @@ Madeline can also neutral jump within 2 frames of a wallboost. This does not con
 The 100% TAS uses this tech when obtaining the heart in 6A.
 Kermit Dash
 
-Kermit Dashing is a very rarely forced tech. Dashing through a vertical screen transition cancels your dash, but does not remove the 'dashattack' timer which allows Madeline to do dash actions like wallbounces, breaking blocks, and entering dream blocks, sometimes called kermit wallbounces and so on. The dash direction of a cancelled dash is also maintained. For example, this lets you activate a Kevin from angles not usually possible or for preserving your dash. This is used in the "True ending" in Ivory from Strawberry Jam Collab.
+Kermit Dashing is a very rarely forced tech. Dashing through a vertical screen transition cancels your dash, but does not remove the 'dashattack' timer which allows Madeline to do dash actions like wallbounces, breaking blocks, and entering dream blocks, sometimes called kermit wallbounces and so on. The dash direction of a cancelled dash is also maintained. For example, this lets you activate a Kevin from angles not usually possible or for preserving your dash.
 
 The name of a Kermit Dash is a recursive acronym for "Kermit Executes Restricted Movement In Transition", coined by Linj.
 

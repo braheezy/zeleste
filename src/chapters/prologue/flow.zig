@@ -1,6 +1,7 @@
 const gba = @import("gba");
 const level = @import("../../generated_rooms.zig");
 const camera_mod = @import("../../world/camera.zig");
+const audio = @import("../../core/audio.zig");
 const dash_effects = @import("../../player/dash_effects.zig");
 const dust = @import("../../effects/dust.zig");
 const foreground_stamps = @import("../../room/foreground_stamps.zig");
@@ -15,6 +16,7 @@ const room_data = @import("../../world/room_data.zig");
 const room_loader = @import("../../world/room_loader.zig");
 const room_systems = @import("../../world/room_systems.zig");
 const room_transition = @import("../../world/room_transition.zig");
+const save = @import("../../core/save.zig");
 const video = @import("../../core/video.zig");
 
 const bird_npc = @import("bird_npc.zig");
@@ -218,9 +220,17 @@ fn updateEndLevelTransition(player: *Player, camera: *Camera, room_index: *usize
             }
         },
         .overworld => {
-            if (input.isJustPressed(.A)) {
-                startLevelOneFromOverworld(player, camera, room_index, respawn);
-                return;
+            switch (overworld_placeholder.update(input)) {
+                .none => {},
+                .prologue => {
+                    startGameplayFromOverworld(level.start_room_index, player, camera, room_index, respawn);
+                    return;
+                },
+                .city => {
+                    const target_room = city.flow.firstRoomIndex() orelse level.start_room_index;
+                    startGameplayFromOverworld(target_room, player, camera, room_index, respawn);
+                    return;
+                },
             }
             frame.sync();
         },
@@ -228,6 +238,8 @@ fn updateEndLevelTransition(player: *Player, camera: *Camera, room_index: *usize
 }
 
 fn loadOverworldScreen() void {
+    audio.stopMusic();
+    save.finishChapter(0);
     bridge.deactivateForOverworld();
     dust.clear();
     dash_effects.clear();
@@ -239,14 +251,18 @@ fn loadOverworldScreen() void {
     overworld_placeholder.loadScreen();
 }
 
-fn startLevelOneFromOverworld(player: *Player, camera: *Camera, room_index: *usize, respawn: *Spawn) void {
-    const target_room = city.flow.firstRoomIndex() orelse return;
-
+fn startGameplayFromOverworld(target_room: usize, player: *Player, camera: *Camera, room_index: *usize, respawn: *Spawn) void {
     room_loader.hideGameplayDisplayForLoad();
     frame.sync();
 
     room_index.* = target_room;
+    if (city.flow.ownsGeneratedRoomIndex(target_room)) {
+        audio.playCityMusic();
+    } else {
+        audio.playPrologueMusic();
+    }
     respawn.* = rooms[target_room].spawn;
+    _ = save.commitSessionCheckpoint(target_room, respawn.*);
     room_loader.loadGameplayRoom(target_room, .transition);
     room_systems.clearTransientEffects();
     player.* = room_transition.spawnPlayer(target_room);

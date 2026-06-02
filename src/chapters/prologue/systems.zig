@@ -8,6 +8,8 @@ const room_data = @import("../../world/room_data.zig");
 const bird_npc = @import("bird_npc.zig");
 const bridge = @import("bridge.zig");
 const chimney_smoke = @import("chimney_smoke.zig");
+const dust = @import("../../effects/dust.zig");
+const falling_blocks = @import("falling_blocks.zig");
 const funny_cars = @import("funny_cars.zig");
 const granny_cutscene = @import("granny_cutscene.zig");
 const granny_npc = @import("granny_npc.zig");
@@ -28,10 +30,12 @@ pub fn resetPaletteState() void {
 }
 
 pub fn loadBeforeObjectSprites(room_index: usize, slots: SceneSlots) void {
+    falling_blocks.load(room_index);
     funny_cars.load(room_index, slots.actor_platform_first_object);
 }
 
 pub fn loadObjectGraphics() void {
+    falling_blocks.loadGraphics();
     chimney_smoke.loadPalette();
     granny_npc.loadPalette();
     funny_cars.loadGraphics();
@@ -69,6 +73,18 @@ pub fn updateActors(player: *Player, room_index: usize, camera: Camera, anim_cou
     tiny_birds.update(player.*, room_index, anim_counter);
 }
 
+pub fn updateDynamicHazards(player: *Player, room_index: usize) ?player_mod.DeathCause {
+    const result = falling_blocks.update(room_index, player);
+    spawnFallingBlockSnowEvents(result);
+    if (result.killed_player) return .normal;
+    return null;
+}
+
+pub fn updateDynamicHazardsDuringDeath(room_index: usize) void {
+    const result = falling_blocks.updateDuringDeath(room_index);
+    spawnFallingBlockSnowEvents(result);
+}
+
 pub fn actorFloorAt(room_index: usize, player_x: i16, player_y: i16) bool {
     _ = room_index;
     return funny_cars.floorAt(player_x, player_y);
@@ -94,9 +110,14 @@ pub fn asphaltFloorAtPlayer(room_index: usize, player: Player) bool {
     return bridge.floorAtPlayer(player);
 }
 
+pub fn snowFloorAtPlayer(room_index: usize, player: Player) bool {
+    _ = room_index;
+    return falling_blocks.floorAtPlayer(player);
+}
+
 pub fn dynamicSolidRectAt(room_index: usize, x: i16, y: i16, width: i16, height: i16) bool {
     _ = room_index;
-    return bridge.solidRectAt(x, y, width, height);
+    return falling_blocks.solidRectAt(x, y, width, height) or bridge.solidRectAt(x, y, width, height);
 }
 
 pub fn endingHairOverrideActive(room_index: usize) bool {
@@ -159,6 +180,7 @@ pub fn drawPlatformActors(camera: Camera, room_index: usize, slots: SceneSlots) 
 
 pub fn drawDynamicSolids(camera: Camera, room_index: usize) void {
     _ = room_index;
+    falling_blocks.draw(camera);
     bridge.draw(camera);
 }
 
@@ -185,10 +207,18 @@ pub fn drawAmbientNpcs(camera: Camera, room_index: usize, anim_counter: u16) voi
     _ = room_index;
 }
 
-pub fn drawCutsceneOverlay(camera: Camera, room_index: usize) void {
-    granny_cutscene.drawOverlay(camera, room_index);
+pub fn drawCutsceneOverlay(camera: Camera, room_index: usize, anim_counter: u16) void {
+    granny_cutscene.drawOverlay(camera, room_index, anim_counter);
 }
 
 fn isPrologueEndRoom(room_index: usize) bool {
     return room_index == prologue_end_room_index;
+}
+
+fn spawnFallingBlockSnowEvents(result: falling_blocks.UpdateResult) void {
+    var index: usize = 0;
+    while (index < result.snow_count) : (index += 1) {
+        const block = result.snow_blocks[index];
+        dust.spawnSnowFromBlock(block.x, block.y, block.w);
+    }
 }

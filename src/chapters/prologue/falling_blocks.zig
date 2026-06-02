@@ -1,13 +1,13 @@
 const gba = @import("gba");
-const assets = @import("../core/assets.zig");
-const camera_mod = @import("../world/camera.zig");
-const collision = @import("../world/collision.zig");
-const level = @import("../generated_rooms.zig");
-const math = @import("../core/math.zig");
-const oam = @import("../core/oam.zig");
-const player_mod = @import("../player/state.zig");
-const player_render = @import("../player/render.zig");
-const room_data = @import("../world/room_data.zig");
+const assets = @import("../../core/assets.zig");
+const camera_mod = @import("../../world/camera.zig");
+const collision = @import("../../world/collision.zig");
+const dynamic_object_slots = @import("../../room/dynamic_object_slots.zig");
+const level = @import("../../generated_rooms.zig");
+const math = @import("../../core/math.zig");
+const oam = @import("../../core/oam.zig");
+const player_mod = @import("../../player/state.zig");
+const room_data = @import("../../world/room_data.zig");
 
 const Camera = camera_mod.Camera;
 const Player = player_mod.State;
@@ -25,10 +25,10 @@ const readU16Le = room_data.readU16Le;
 const tiles_data align(4) = assets.falling_block_tiles_data;
 const palette_data align(4) = assets.falling_block_palette_data;
 
-pub const max_blocks = 8;
-pub const first_object = player_render.sweat_object + 1;
-pub const objects_per_block = 3;
-pub const object_capacity = max_blocks * objects_per_block;
+pub const max_blocks = dynamic_object_slots.max_falling_blocks;
+pub const first_object = dynamic_object_slots.first_object;
+pub const objects_per_block = dynamic_object_slots.falling_objects_per_block;
+pub const object_capacity = dynamic_object_slots.object_capacity;
 
 const shake_frames = 18;
 const gravity: i32 = 0x58;

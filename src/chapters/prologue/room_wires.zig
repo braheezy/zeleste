@@ -1,10 +1,13 @@
 const gba = @import("gba");
 const background = @import("../../world/background.zig");
 const camera_mod = @import("../../world/camera.zig");
-const falling_blocks = @import("../../room/falling_blocks.zig");
+const disappearing_platforms = @import("../../room/disappearing_platforms.zig");
+const falling_blocks = @import("falling_blocks.zig");
 const foreground_stamps = @import("../../room/foreground_stamps.zig");
 const level = @import("../../generated_rooms.zig");
+const mech_blocks = @import("../../room/mech_blocks.zig");
 const oam = @import("../../core/oam.zig");
+const rhythm_blocks = @import("../../room/rhythm_blocks.zig");
 const room_data = @import("../../world/room_data.zig");
 
 const Camera = camera_mod.Camera;
@@ -92,7 +95,7 @@ pub fn draw(camera: Camera, bridge_active: bool) void {
 }
 
 pub fn hideObjects(bridge_active: bool) void {
-    const used_falling_objects = falling_blocks.usedObjectCount();
+    const used_falling_objects = falling_blocks.usedObjectCount() + mech_blocks.usedObjectCount() + rhythm_blocks.usedObjectCount() + disappearing_platforms.usedObjectCount();
     var index: usize = used_falling_objects;
     while (index < falling_blocks.object_capacity) : (index += 1) {
         hideObject(falling_blocks.first_object + index);
@@ -106,8 +109,9 @@ pub fn hideObjects(bridge_active: bool) void {
 }
 
 fn objectIndex(index: usize, bridge_active: bool) ?usize {
-    const used_falling_objects = falling_blocks.usedObjectCount();
+    const used_falling_objects = falling_blocks.usedObjectCount() + mech_blocks.usedObjectCount() + rhythm_blocks.usedObjectCount() + disappearing_platforms.usedObjectCount();
     const falling_object_capacity = falling_blocks.object_capacity;
+    if (used_falling_objects >= falling_object_capacity) return null;
     const free_falling_objects = falling_object_capacity - used_falling_objects;
     if (index < free_falling_objects) return falling_blocks.first_object + used_falling_objects + index;
 

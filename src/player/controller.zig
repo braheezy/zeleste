@@ -1,11 +1,13 @@
 const gba = @import("gba");
 const chapter_systems = @import("../chapters/systems.zig");
+const breakable_walls = @import("../room/breakable_walls.zig");
 const dash_effects = @import("dash_effects.zig");
 const dust = @import("../effects/dust.zig");
 const footsteps = @import("footsteps.zig");
 const math = @import("../core/math.zig");
 const player_collision = @import("collision.zig");
 const player_mod = @import("state.zig");
+const player_sfx = @import("sfx.zig");
 const rng = @import("../core/rng.zig");
 
 const Player = player_mod.State;
@@ -119,6 +121,13 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
     if (player.dust_suppress_timer > 0) {
         player.dust_suppress_timer -= 1;
     }
+    if (player.lift_boost_timer > 0) {
+        player.lift_boost_timer -= 1;
+        if (player.lift_boost_timer == 0) {
+            player.lift_boost_x = 0;
+            player.lift_boost_y = 0;
+        }
+    }
 
     if (player.grounded and player.dash_timer == 0 and player.dash_refill_cooldown_timer == 0) {
         refillPlayerDash(player);
@@ -173,7 +182,9 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
             chapter_systems.releaseActorAtPlayer(room_index, player.*);
         }
         dust.spawnJumpAtFeet(player.*);
+        player_sfx.playJump();
         player.vy = player_jump_speed;
+        applyLiftBoostToJump(player);
         player.var_jump_speed = player.vy;
         player.var_jump_timer = player_var_jump_frames;
         player.jump_buffer_timer = 0;
@@ -187,9 +198,11 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
         }
     } else if (player.jump_buffer_timer > 0 and player.climbing and climb_wall_dir != 0 and horizontal != -climb_wall_dir and player.stamina > 0) {
         dust.spawnJumpAtFeet(player.*);
+        player_sfx.playClimbJump(climb_wall_dir);
         player.stamina = @max(0, player.stamina - player_climb_jump_cost);
         player.vx = @as(i32, -climb_wall_dir) * (player_wall_jump_h_speed / 2);
         player.vy = player_wall_jump_speed;
+        applyLiftBoostToJump(player);
         player.force_move_x = -climb_wall_dir;
         player.force_move_x_timer = player_wall_jump_force_frames / 2;
         player.apex_hang_disabled_timer = player_var_jump_frames + 8;
@@ -205,8 +218,10 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
         jumped_this_frame = true;
     } else if (player.jump_buffer_timer > 0 and wall_jump_dir != 0) {
         dust.spawnJumpAtFeet(player.*);
+        player_sfx.playWallJump(-wall_jump_dir);
         player.vx = @as(i32, wall_jump_dir) * player_wall_jump_h_speed;
         player.vy = player_wall_jump_speed;
+        applyLiftBoostToJump(player);
         player.force_move_x = wall_jump_dir;
         player.force_move_x_timer = player_wall_jump_force_frames;
         player.apex_hang_disabled_timer = player_var_jump_frames + 8;
@@ -229,6 +244,8 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
         updateVerticalSpeed(player, jump_held, input.isPressed(.down), effective_horizontal, room_index);
     }
 
+    const previous_x = player.x;
+    const vertical_speed_before_move = player.vy;
     moveHorizontal(player, player.vx, room_index);
     player.grounded = false;
     moveVertical(player, player.vy, room_index);
@@ -245,6 +262,7 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
             dust.spawnLandingAtFeet(player.*);
         }
         if (!was_grounded) {
+            player_sfx.playLand(player, room_index, vertical_speed_before_move);
             chapter_systems.triggerActorBounceAtPlayer(room_index, player.*);
         }
         player.var_jump_timer = 0;
@@ -257,7 +275,7 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
     }
 
     updateAnimation(player);
-    footsteps.update(player, room_index);
+    footsteps.update(player, room_index, previous_x);
 }
 
 pub fn tryStartDash(player: *Player, horizontal: i16, vertical: i16, allow_dash: bool) bool {
@@ -296,23 +314,31 @@ pub fn tryStartDash(player: *Player, horizontal: i16, vertical: i16, allow_dash:
     }
     player.vx = @as(i32, dash_x) * speed;
     player.vy = @as(i32, dash_y) * speed;
+    applyLiftBoostToDash(player);
     dash_effects.spawnAfterimage(player.*);
     dash_effects.spawnBurst(player.*);
+    player_sfx.playDash(player.*);
     return true;
 }
 
 pub fn updateDashMovement(player: *Player, room_index: usize) void {
+    const was_grounded = player.grounded;
+    const vertical_speed_before_move = player.vy;
     if (player.dash_trail_timer == 0) {
         dash_effects.spawnAfterimage(player.*);
         player.dash_trail_timer = player_dash_trail_interval;
     }
 
+    _ = breakable_walls.tryBreakDashCollision(player, room_index);
     moveHorizontal(player, player.vx, room_index);
     player.grounded = false;
     moveVertical(player, player.vy, room_index);
     player_collision.resolvePlayerEmbedding(player, room_index);
     if (!player.grounded and player.vy >= 0 and player_collision.floorContact(player.*, room_index)) {
         player.grounded = true;
+    }
+    if (!was_grounded and player.grounded) {
+        player_sfx.playLand(player, room_index, vertical_speed_before_move);
     }
 
     if (player.dash_timer > 0) {
@@ -412,6 +438,17 @@ fn endDash(player: *Player) void {
     player.dash_dir_y = 0;
 }
 
+fn applyLiftBoostToJump(player: *Player) void {
+    if (player.lift_boost_timer == 0) return;
+    player.vx += player.lift_boost_x;
+    player.vy += player.lift_boost_y;
+}
+
+fn applyLiftBoostToDash(player: *Player) void {
+    if (player.lift_boost_timer == 0) return;
+    player.vx += player.lift_boost_x;
+}
+
 fn updateHorizontalSpeed(player: *Player, horizontal: i16) void {
     const mult = if (player.grounded) fixed_one else player_air_mult;
     const target = @as(i32, horizontal) * player_max_run;
@@ -487,6 +524,7 @@ fn updateClimb(player: *Player, grab_held: bool, vertical: i16, room_index: usiz
     }
 
     if (!player.climbing) {
+        player_sfx.playGrab(player, room_index);
         player.vy = fixedMul(player.vy, player_climb_grab_y_mult);
     }
 
@@ -545,6 +583,7 @@ fn tryClimbLedge(player: *Player, dir: i16, room_index: usize) bool {
             const candidate_x = start_x + dir * over;
             const candidate_y = start_y + y_offset;
             if (!player_collision.collidesAt(candidate_x, candidate_y, room_index) and player_collision.floorContactAt(candidate_x, candidate_y, room_index)) {
+                player_sfx.playClimbLedge(player);
                 startClimbLedgeMotion(player, candidate_x, candidate_y);
                 return true;
             }

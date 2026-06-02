@@ -30,6 +30,12 @@ pub const dash_effect_frames = 16;
 pub const dash_trail_interval = 4;
 pub const dash_diagonal_mult: i32 = 0xB5;
 pub const dash_end_up_mult: i32 = 0xC0;
+pub const bounce_speed: i32 = -0x3C0;
+pub const super_bounce_speed: i32 = -0x4A0;
+pub const side_bounce_speed: i32 = 0x400;
+pub const spring_momentum_bonus_divisor = 2;
+pub const spring_momentum_bonus_cap: i32 = 0x180;
+pub const side_bounce_force_move_frames = 18;
 pub const wall_slide_start_max: i32 = 0x55;
 pub const wall_slide_frames = 72;
 pub const room_transition_cooldown_frames = 18;
@@ -53,6 +59,7 @@ pub const var_jump_frames = 11;
 pub const wall_jump_var_jump_frames = 10;
 pub const coyote_frames = 6;
 pub const jump_buffer_frames = 5;
+pub const lift_boost_frames = 10;
 pub const tiles_per_frame = 16;
 pub const animation_speed = 6;
 pub const idle_first_frame = 0;
@@ -110,6 +117,10 @@ pub const DeathIntro = struct {
 pub const DeathCause = enum(u8) {
     normal,
     fall_down,
+    spike_up,
+    spike_down,
+    spike_left,
+    spike_right,
 };
 
 pub const HairNode = struct {
@@ -142,6 +153,9 @@ pub const State = struct {
     dash_effect_timer: u8 = 0,
     dash_trail_timer: u8 = 0,
     force_move_x: i16 = 0,
+    lift_boost_x: i32 = 0,
+    lift_boost_y: i32 = 0,
+    lift_boost_timer: u8 = 0,
     dashes: u8 = 1,
     dash_dir_x: i16 = 0,
     dash_dir_y: i16 = 0,
@@ -171,5 +185,6 @@ pub const State = struct {
     footstep_cooldown: u8 = 0,
     footstep_variant: u8 = 0,
     footstep_handle: mm.Sfxhand = 0,
+    sfx_variant: u8 = 0,
     hair_nodes: [hair_node_count]HairNode = [_]HairNode{.{}} ** hair_node_count,
 };

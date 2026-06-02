@@ -44,6 +44,16 @@ pub fn updateActors(player: *Player, room_index: usize, camera: Camera, anim_cou
     _ = anim_counter;
 }
 
+pub fn updateDynamicHazards(player: *Player, room_index: usize) ?player_mod.DeathCause {
+    _ = player;
+    _ = room_index;
+    return null;
+}
+
+pub fn updateDynamicHazardsDuringDeath(room_index: usize) void {
+    _ = room_index;
+}
+
 pub fn actorFloorAt(room_index: usize, player_x: i16, player_y: i16) bool {
     _ = room_index;
     _ = player_x;
@@ -70,6 +80,12 @@ pub fn triggerActorBounceAtPlayer(room_index: usize, player: Player) void {
 }
 
 pub fn asphaltFloorAtPlayer(room_index: usize, player: Player) bool {
+    _ = room_index;
+    _ = player;
+    return false;
+}
+
+pub fn snowFloorAtPlayer(room_index: usize, player: Player) bool {
     _ = room_index;
     _ = player;
     return false;
@@ -168,7 +184,8 @@ pub fn drawAmbientNpcs(camera: Camera, room_index: usize, anim_counter: u16) voi
     _ = anim_counter;
 }
 
-pub fn drawCutsceneOverlay(camera: Camera, room_index: usize) void {
+pub fn drawCutsceneOverlay(camera: Camera, room_index: usize, anim_counter: u16) void {
     _ = camera;
     _ = room_index;
+    _ = anim_counter;
 }

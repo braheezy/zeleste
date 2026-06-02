@@ -67,7 +67,7 @@ The target is closer to full Celeste than PICO-8 Celeste Classic:
 Start with Chapter 1-style gameplay, then expand:
 
 1. Prologue/Chapter 1 movement playground.
-2. Chapter 1 with strawberries, springs, spikes, crumble blocks, traffic blocks only if needed.
+2. Chapter 1 with strawberries, springs, spikes, crumble blocks/disappearing platforms, and zip-mover mech blocks; static traffic blocks only if needed.
 3. Chapter 2 visual and mechanical slice: dream blocks, Badeline/chaser concepts, space effects.
 4. Broader chapters only after the first chapter feels complete.
 

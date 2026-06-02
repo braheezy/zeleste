@@ -1,13 +1,15 @@
-const mm = @import("maxmod");
 const assets = @import("../core/assets.zig");
+const audio = @import("../core/audio.zig");
 const sound_ids = assets.sound_ids;
 const background = @import("../world/background.zig");
 const chapter_systems = @import("../chapters/systems.zig");
 const collision = @import("../world/collision.zig");
-const falling_blocks = @import("../room/falling_blocks.zig");
+const disappearing_platforms = @import("../room/disappearing_platforms.zig");
 const level = @import("../generated_rooms.zig");
 const math = @import("../core/math.zig");
+const mech_blocks = @import("../room/mech_blocks.zig");
 const player_mod = @import("state.zig");
+const rhythm_blocks = @import("../room/rhythm_blocks.zig");
 const room_data = @import("../world/room_data.zig");
 
 const Player = player_mod.State;
@@ -25,7 +27,7 @@ const min_speed = player_mod.footstep_min_speed;
 const volume = player_mod.footstep_volume;
 const cadence_frames = player_mod.footstep_cadence_frames;
 
-const Surface = enum(u8) {
+pub const Surface = enum(u8) {
     snow,
     dirt,
     wood,
@@ -84,7 +86,7 @@ const wood_sfx = [_]u16{
     sound_ids.sfx_foot_00_woodwalkway_07,
 };
 
-pub fn update(player: *Player, room_index: usize) void {
+pub fn update(player: *Player, room_index: usize, previous_x: i32) void {
     if (!player.grounded or player.animation != .run or absI32(player.vx) < min_speed) {
         player.footstep_cooldown = 0;
         return;
@@ -95,6 +97,8 @@ pub fn update(player: *Player, room_index: usize) void {
         return;
     }
 
+    if (fixedToPixel(player.x) == fixedToPixel(previous_x)) return;
+
     play(surfaceAtPlayerFeet(player.*, room_index), player);
     player.footstep_cooldown = cadence_frames;
 }
@@ -104,11 +108,11 @@ fn play(surface: Surface, player: *Player) void {
     const index: usize = @intCast(player.footstep_variant % @as(u8, @intCast(samples.len)));
     player.footstep_variant +%= 1;
     if (player.footstep_handle != 0) {
-        _ = mm.sfx.effectCancel(player.footstep_handle);
+        _ = audio.cancelSoundEffect(player.footstep_handle);
     }
-    player.footstep_handle = mm.sfx.effect(samples[index]);
+    player.footstep_handle = audio.playSoundEffect(samples[index]);
     if (player.footstep_handle != 0) {
-        mm.sfx.effectVolume(player.footstep_handle, volume);
+        audio.setSoundEffectVolume(player.footstep_handle, volume);
     }
 }
 
@@ -122,17 +126,45 @@ fn samplesFor(surface: Surface) []const u16 {
     };
 }
 
-fn surfaceAtPlayerFeet(player: Player, room_index: usize) Surface {
+pub fn surfaceAtPlayerFeet(player: Player, room_index: usize) Surface {
     const player_x = fixedToPixel(player.x);
     const player_y = fixedToPixel(player.y);
     const bottom = player_y + player_body_height;
 
     if (chapter_systems.actorFloorAt(room_index, player_x, player_y)) return .car;
     if (chapter_systems.asphaltFloorAtPlayer(room_index, player)) return .asphalt;
-    if (falling_blocks.floorAtPlayer(player)) return .snow;
+    if (chapter_systems.snowFloorAtPlayer(room_index, player)) return .snow;
+    if (mech_blocks.floorAtPlayer(player)) return .asphalt;
+    if (rhythm_blocks.floorAtPlayer(player)) return .asphalt;
+    if (disappearing_platforms.floorAtPlayer(player)) return .dirt;
     if (oneWayFloorAt(player_x, player_y, room_index)) return .wood;
 
     return backgroundSurfaceAt(room_index, player_x, bottom);
+}
+
+pub fn surfaceAtPlayerWall(player: Player, room_index: usize) Surface {
+    const player_x = fixedToPixel(player.x);
+    const player_y = fixedToPixel(player.y);
+    const side_x = if (player.facing_left) player_x - 1 else player_x + player_body_width;
+
+    var snow_score: u8 = 0;
+    var dirt_score: u8 = 0;
+    var asphalt_score: u8 = 0;
+    const offsets = [_]i16{ 3, 7, player_body_height - 4 };
+    for (offsets) |offset| {
+        if (backgroundPixelSurface(room_index, side_x, player_y + offset)) |surface| {
+            switch (surface) {
+                .snow => snow_score += 1,
+                .dirt => dirt_score += 1,
+                .asphalt => asphalt_score += 1,
+                else => {},
+            }
+        }
+    }
+
+    if (snow_score != 0) return .snow;
+    if (asphalt_score > dirt_score) return .asphalt;
+    return .dirt;
 }
 
 fn oneWayFloorAt(x: i16, player_y: i16, room_index: usize) bool {

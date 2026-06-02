@@ -191,6 +191,15 @@ pub fn drawSmallLine(comptime setPixel: fn (i16, i16, u8) void, box_width: i16, 
     }
 }
 
+pub fn drawSmallLineTight(comptime setPixel: fn (i16, i16, u8) void, box_width: i16, source: []const u8, x: i16, y: i16, color: u8) void {
+    var cursor = x;
+    for (source) |ch| {
+        if (cursor > box_width - 4) break;
+        drawSmallGlyph(setPixel, ch, cursor, y, color);
+        cursor += 3;
+    }
+}
+
 fn drawSmallGlyph(comptime setPixel: fn (i16, i16, u8) void, input: u8, x: i16, y: i16, color: u8) void {
     const ch = if (input >= 'a' and input <= 'z') input - 32 else input;
     const rows = smallFontRows(ch);

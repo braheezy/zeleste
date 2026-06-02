@@ -54,6 +54,110 @@ def rect_literal(rect: dict | None) -> str:
     )
 
 
+def annotation_path_for_image(image: Path) -> Path:
+    return image.with_name(f"{image.stem}_annotations.json")
+
+
+def load_annotation(image: Path) -> dict:
+    path = annotation_path_for_image(image)
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text())
+
+
+def exit_direction(exit_line: dict, width: int, height: int) -> str:
+    x1 = int(exit_line.get("x1", 0))
+    x2 = int(exit_line.get("x2", x1))
+    y1 = int(exit_line.get("y1", 0))
+    y2 = int(exit_line.get("y2", y1))
+    min_x = min(x1, x2)
+    max_x = max(x1, x2)
+    min_y = min(y1, y2)
+    max_y = max(y1, y2)
+    tolerance = 2
+    if max_x <= tolerance:
+        return "left"
+    if min_x >= width - 1 - tolerance:
+        return "right"
+    if max_y <= tolerance:
+        return "up"
+    if min_y >= height - 1 - tolerance:
+        return "down"
+    distances = {
+        "left": min_x,
+        "right": width - 1 - max_x,
+        "up": min_y,
+        "down": height - 1 - max_y,
+    }
+    return min(distances.items(), key=lambda item: item[1])[0]
+
+
+def canonical_target_room_id(current_id: str, raw_target: str, fallback: str, indices: dict[str, int]) -> str | None:
+    target = str(raw_target or "").strip()
+    fallback = str(fallback or "").strip()
+    local_current = current_id[5:] if current_id.startswith("city_") else current_id
+    if (not target or target == current_id or target == local_current) and fallback and fallback != current_id and fallback != local_current:
+        target = fallback
+    if not target:
+        return None
+    if current_id.startswith("city_") and not target.startswith("city_"):
+        candidates = [f"city_{target}", target]
+    else:
+        candidates = [target]
+    for candidate in candidates:
+        if candidate in indices:
+            return candidate
+    return None
+
+
+def emit_room_lines(
+    lines: list[str],
+    room_name: str,
+    room: dict,
+    image: Path,
+    size: dict,
+    indices: dict[str, int],
+) -> None:
+    data = load_annotation(image)
+    current_id = str(room["id"])
+    fallback = str(data.get("exitTargetRoom") or "")
+    width = int(data.get("width", size["width"]))
+    height = int(data.get("height", size["height"]))
+    source_exit_lines = room.get("exitLines")
+    if source_exit_lines is None:
+        source_exit_lines = data.get("exits") or data.get("exitLines") or []
+
+    lines.append(f"const {room_name}_exit_lines = [_]root.ExitLine{{")
+    for exit_line in source_exit_lines:
+        target_id = canonical_target_room_id(current_id, str(exit_line.get("targetRoom") or ""), fallback, indices)
+        if target_id is None:
+            continue
+        lines.append(
+            "    .{"
+            f" .direction = .{exit_direction(exit_line, width, height)},"
+            f" .x1 = {int(exit_line.get('x1', 0))},"
+            f" .y1 = {int(exit_line.get('y1', 0))},"
+            f" .x2 = {int(exit_line.get('x2', exit_line.get('x1', 0)))},"
+            f" .y2 = {int(exit_line.get('y2', exit_line.get('y1', 0)))},"
+            f" .target = {indices[target_id]},"
+            " },"
+        )
+    lines.append("};")
+
+    lines.append(f"const {room_name}_death_lines = [_]root.DeathLine{{")
+    for death_line in (data.get("pitDeathLines") or data.get("deathLines") or data.get("pitLines") or []):
+        lines.append(
+            "    .{"
+            f" .x1 = {int(death_line.get('x1', death_line.get('startX', 0)))},"
+            f" .y1 = {int(death_line.get('y1', death_line.get('startY', 0)))},"
+            f" .x2 = {int(death_line.get('x2', death_line.get('endX', death_line.get('x1', 0))))},"
+            f" .y2 = {int(death_line.get('y2', death_line.get('endY', death_line.get('y1', 0))))},"
+            " },"
+        )
+    lines.append("};")
+    lines.append("")
+
+
 def cue_literal(cue: dict | None) -> str:
     cue = cue or {}
     return (
@@ -63,6 +167,23 @@ def cue_literal(cue: dict | None) -> str:
         f" .mode = {zig_string(str(cue.get('mode', '')))},"
         " }"
     )
+
+
+def portrait_literal(page: dict) -> str:
+    portrait = str(page.get("portrait", page.get("face", ""))).strip().lower().replace("-", "_")
+    mapping = {
+        "": ".none",
+        "none": ".none",
+        "normal": ".granny_normal",
+        "granny_normal": ".granny_normal",
+        "mock": ".granny_mock",
+        "granny_mock": ".granny_mock",
+        "laugh": ".granny_laugh",
+        "granny_laugh": ".granny_laugh",
+    }
+    if portrait not in mapping:
+        raise ValueError(f"unknown dialogue portrait {portrait!r}")
+    return mapping[portrait]
 
 
 def emit_granny_cutscene(lines: list[str], room_name: str, cutscene: dict) -> None:
@@ -78,6 +199,7 @@ def emit_granny_cutscene(lines: list[str], room_name: str, cutscene: dict) -> No
             "    .{"
             f" .speaker = {zig_string(str(page.get('speaker', '')))},"
             f" .text = {zig_string(str(page.get('text', '')))},"
+            f" .portrait = {portrait_literal(page)},"
             f" .cue = {cue_literal(page.get('cue'))},"
             f" .after_cue = {cue_literal(page.get('afterCue'))},"
             " },"
@@ -184,7 +306,7 @@ def emit_generated_zig(
         ]
     )
 
-    for room_name, room in zip(room_names, rooms):
+    for room_name, room, size in zip(room_names, rooms, room_sizes):
         room_dir = generated_root / room_name
         rel = str(room_dir.relative_to(path.parent))
         for suffix, filename in [
@@ -194,6 +316,15 @@ def emit_generated_zig(
             ("spawn", "spawn.bin"),
             ("collision", "collision.bin"),
             ("falling_blocks", "falling_blocks.bin"),
+            ("breakable_walls", "breakable_walls.bin"),
+            ("disappearing_platforms", "disappearing_platforms.bin"),
+            ("mech_blocks", "mech_blocks.bin"),
+            ("traffic_blocks", "traffic_blocks.bin"),
+            ("traffic_block_tiles", "traffic_block_tiles.bin"),
+            ("traffic_block_palette", "traffic_block_palette.bin"),
+            ("rhythm_blocks", "rhythm_blocks.bin"),
+            ("springs", "springs.bin"),
+            ("strawberries", "strawberries.bin"),
             ("foreground_stamps", "foreground_stamps.bin"),
             ("generic_stamps", "generic_stamps.bin"),
             ("bird_npcs", "bird_npcs.bin"),
@@ -202,6 +333,7 @@ def emit_generated_zig(
             ("bridge_ending", "bridge_ending.bin"),
         ]:
             lines.append(f"const {room_name}_{suffix} align(4) = @embedFile({zig_string(rel + '/' + filename)}).*;")
+        emit_room_lines(lines, room_name, room, manifest_dir / str(room["image"]), size, indices)
         if "parallax" in room:
             name = str(room["parallax"].get("name", "parallax_fg"))
             lines.append(f"const {room_name}_{name}_tiles align(4) = @embedFile({zig_string(rel + '/' + name + '_tiles.bin')}).*;")
@@ -235,12 +367,23 @@ def emit_generated_zig(
                 f"        .spawn_top = root.spawnFromBytesAt(&{room_name}_spawn, 12),",
                 f"        .spawn_bottom = root.spawnFromBytesAt(&{room_name}_spawn, 16),",
                 f"        .falling_blocks = &{room_name}_falling_blocks,",
+                f"        .breakable_walls = &{room_name}_breakable_walls,",
+                f"        .disappearing_platforms = &{room_name}_disappearing_platforms,",
+                f"        .mech_blocks = &{room_name}_mech_blocks,",
+                f"        .traffic_blocks = &{room_name}_traffic_blocks,",
+                f"        .traffic_block_tiles = &{room_name}_traffic_block_tiles,",
+                f"        .traffic_block_palette = &{room_name}_traffic_block_palette,",
+                f"        .rhythm_blocks = &{room_name}_rhythm_blocks,",
+                f"        .springs = &{room_name}_springs,",
+                f"        .strawberries = &{room_name}_strawberries,",
                 f"        .foreground_stamps = &{room_name}_foreground_stamps,",
                 f"        .generic_stamps = &{room_name}_generic_stamps,",
                 f"        .bird_npcs = &{room_name}_bird_npcs,",
                 f"        .wires = &{room_name}_wires,",
                 f"        .wire_tiles = &{room_name}_wire_tiles,",
                 f"        .bridge_ending = &{room_name}_bridge_ending,",
+                f"        .exit_lines = &{room_name}_exit_lines,",
+                f"        .death_lines = &{room_name}_death_lines,",
                 f"        .granny_cutscene = {'&' + room_name + '_granny_cutscene' if cutscene_path_for_image(manifest_dir / str(room['image'])).exists() else 'null'},",
                 f"        .wind_snow_strength = {int(room.get('windSnowStrength', 0))},",
                 f"        .wind_snow_dir_x = {int(room.get('windSnowDirX', -1))},",

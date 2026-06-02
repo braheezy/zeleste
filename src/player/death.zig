@@ -31,9 +31,15 @@ const deathup_frame_count = player_mod.deathup_frame_count;
 const death_intro_frame_hold = player_mod.death_intro_frame_hold;
 const death_intro_max_frames = player_mod.death_intro_max_frames;
 const death_intro_travel_pixels = player_mod.death_intro_travel_pixels;
+const spike_death_intro_travel_pixels: i16 = 18;
 
 pub const death_frames = player_mod.death_anim_frames;
 pub const respawn_burst_frames = player_mod.respawn_burst_frames;
+
+const IntroMotion = struct {
+    x: i16,
+    y: i16,
+};
 
 var origin_x: i32 = 0;
 var origin_y: i32 = 0;
@@ -60,12 +66,13 @@ pub fn begin(player: Player, camera: Camera, cause: Cause, room_index: usize) vo
         intro_frame_count = 0;
         intro_total_frames = 0;
     } else {
-        const intro = selectIntro(player, cause);
+        const preferred_motion = spikeIntroMotion(player, cause);
+        const intro = selectIntro(player, cause, preferred_motion);
         intro_first_frame = intro.first_frame;
         intro_frame_count = intro.frame_count;
         intro_total_frames = introTotalFrames(intro.frame_count);
         if (intro.frame_count != 0) {
-            const offset = introScreenCenterOffset(player, camera);
+            const offset = if (preferred_motion) |motion| motion else introScreenCenterOffset(player, camera);
             intro_offset_x = @as(i32, offset.x) << fixed_shift;
             intro_offset_y = @as(i32, offset.y) << fixed_shift;
             origin_x += intro_offset_x;
@@ -105,7 +112,7 @@ pub fn hideObjects() void {
     player_death_vfx.hideObjects();
 }
 
-fn introScreenCenterOffset(player: Player, camera: Camera) struct { x: i16, y: i16 } {
+fn introScreenCenterOffset(player: Player, camera: Camera) IntroMotion {
     const player_center_x = fixedToPixel(player.x) + player_body_width / 2 - camera.x;
     const player_center_y = fixedToPixel(player.y) + player_body_height / 2 - camera.y;
     const to_center_x: i16 = video.screen_width / 2 - player_center_x;
@@ -120,9 +127,12 @@ fn introScreenCenterOffset(player: Player, camera: Camera) struct { x: i16, y: i
     };
 }
 
-fn selectIntro(player: Player, cause: Cause) Intro {
+fn selectIntro(player: Player, cause: Cause, preferred_motion: ?IntroMotion) Intro {
     if (cause == .fall_down and deadown_frame_count != 0) {
         return .{ .first_frame = deadown_first_frame, .frame_count = deadown_frame_count };
+    }
+    if (selectSpikeIntro(cause, preferred_motion)) |intro| {
+        return intro;
     }
     if (player.vy < -fixed_one and deathup_frame_count != 0) {
         return .{ .first_frame = deathup_first_frame, .frame_count = deathup_frame_count };
@@ -141,6 +151,80 @@ fn selectIntro(player: Player, cause: Cause) Intro {
         return .{ .first_frame = deathup_first_frame, .frame_count = deathup_frame_count };
     }
     return .{ .first_frame = 0, .frame_count = 0 };
+}
+
+fn selectSpikeIntro(cause: Cause, preferred_motion: ?IntroMotion) ?Intro {
+    switch (cause) {
+        .spike_up => {
+            if (deathup_frame_count != 0) return .{ .first_frame = deathup_first_frame, .frame_count = deathup_frame_count };
+        },
+        .spike_down => {
+            if (deadown_frame_count != 0) return .{ .first_frame = deadown_first_frame, .frame_count = deadown_frame_count };
+        },
+        .spike_left, .spike_right => {
+            if (deathside_frame_count != 0) {
+                player_facing_left = if (preferred_motion) |motion| motion.x < 0 else cause == .spike_left;
+                return .{ .first_frame = deathside_first_frame, .frame_count = deathside_frame_count };
+            }
+        },
+        else => return null,
+    }
+
+    if (preferred_motion) |motion| {
+        if (motion.y < 0 and deathup_frame_count != 0) return .{ .first_frame = deathup_first_frame, .frame_count = deathup_frame_count };
+        if (motion.y > 0 and deadown_frame_count != 0) return .{ .first_frame = deadown_first_frame, .frame_count = deadown_frame_count };
+        if (motion.x != 0 and deathside_frame_count != 0) {
+            player_facing_left = motion.x < 0;
+            return .{ .first_frame = deathside_first_frame, .frame_count = deathside_frame_count };
+        }
+    }
+    return null;
+}
+
+fn spikeIntroMotion(player: Player, cause: Cause) ?IntroMotion {
+    const normal = spikeNormal(cause) orelse return null;
+    var away_x = -player.vx;
+    var away_y = -player.vy;
+    if (away_x == 0 and away_y == 0) {
+        away_x = @as(i32, normal.x) * fixed_one;
+        away_y = @as(i32, normal.y) * fixed_one;
+    }
+
+    if (normal.x != 0) {
+        const required = @max(@divTrunc(absI32(away_y), 2), fixed_one);
+        if (away_x * @as(i32, normal.x) < required) {
+            away_x = @as(i32, normal.x) * required;
+        }
+    }
+    if (normal.y != 0) {
+        const required = @max(@divTrunc(absI32(away_x), 2), fixed_one);
+        if (away_y * @as(i32, normal.y) < required) {
+            away_y = @as(i32, normal.y) * required;
+        }
+    }
+
+    const max_component = @max(absI32(away_x), absI32(away_y));
+    if (max_component == 0) {
+        return .{
+            .x = normal.x * spike_death_intro_travel_pixels,
+            .y = normal.y * spike_death_intro_travel_pixels,
+        };
+    }
+
+    return .{
+        .x = @intCast(@divTrunc(away_x * spike_death_intro_travel_pixels, max_component)),
+        .y = @intCast(@divTrunc(away_y * spike_death_intro_travel_pixels, max_component)),
+    };
+}
+
+fn spikeNormal(cause: Cause) ?IntroMotion {
+    return switch (cause) {
+        .spike_up => .{ .x = 0, .y = -1 },
+        .spike_down => .{ .x = 0, .y = 1 },
+        .spike_left => .{ .x = -1, .y = 0 },
+        .spike_right => .{ .x = 1, .y = 0 },
+        else => null,
+    };
 }
 
 fn introTotalFrames(frame_count: u16) u8 {

@@ -10,13 +10,16 @@ const Player = player_mod.State;
 const Spawn = room_data.Spawn;
 
 pub fn updateTransitionIfActive(player: *Player, camera: *Camera, room_index: *usize, respawn: *Spawn, input: gba.input.BufferedKeysState) bool {
-    return prologue.flow.updateTransitionIfActive(player, camera, room_index, respawn, input);
+    return switch (activeChapterForRoom(room_index.*)) {
+        .prologue => prologue.flow.updateTransitionIfActive(player, camera, room_index, respawn, input),
+        .city => false,
+    };
 }
 
 pub fn dashUnlocked(room_index: usize) bool {
     return switch (activeChapterForRoom(room_index)) {
         .prologue => prologue.flow.dashUnlocked(),
-        .city => false,
+        .city => true,
     };
 }
 

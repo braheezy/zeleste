@@ -9,6 +9,7 @@ const city = @import("chapters/city.zig");
 const debug_fps = @import("core/debug_fps.zig");
 const dust = @import("effects/dust.zig");
 const frame = @import("core/frame.zig");
+const frontend = @import("core/frontend.zig");
 const gameplay_scene = @import("room/gameplay_scene.zig");
 const hair = @import("player/hair.zig");
 const room_data = @import("world/room_data.zig");
@@ -18,13 +19,20 @@ const player_mod = @import("player/state.zig");
 const room_loader = @import("world/room_loader.zig");
 const room_systems = @import("world/room_systems.zig");
 const room_transition = @import("world/room_transition.zig");
+const save = @import("core/save.zig");
+const save_indicator = @import("core/save_indicator.zig");
+const splash = @import("core/splash.zig");
 const video = @import("core/video.zig");
 
 pub const RoomBackground = room_data.RoomBackground;
 pub const ParallaxLayer = room_data.ParallaxLayer;
 pub const Spawn = room_data.Spawn;
 pub const SceneRect = room_data.SceneRect;
+pub const ExitDirection = room_data.ExitDirection;
+pub const ExitLine = room_data.ExitLine;
+pub const DeathLine = room_data.DeathLine;
 pub const CutsceneAnimCue = room_data.CutsceneAnimCue;
+pub const DialoguePortrait = room_data.DialoguePortrait;
 pub const CutsceneDialoguePage = room_data.CutsceneDialoguePage;
 pub const GrannyCutscene = room_data.GrannyCutscene;
 pub const spawnFromBytes = room_data.spawnFromBytes;
@@ -42,9 +50,24 @@ const rooms = level.rooms;
 
 pub fn run() void {
     gba.mem.wait_ctrl.* = .default;
+    const dev_start = developmentStartOverride();
+    save.initForBoot(!dev_start);
     audio.init();
+    if (!dev_start) {
+        splash.show();
+    }
 
-    var room_index: usize = startRoomIndex();
+    var room_index: usize = undefined;
+    var respawn: Spawn = undefined;
+    if (dev_start) {
+        room_index = startRoomIndex();
+        respawn = rooms[room_index].spawn;
+    } else {
+        const selection = frontend.run();
+        room_index = selection.room_index;
+        respawn = selection.respawn;
+    }
+    playMusicForRoom(room_index);
     room_loader.loadGameplayRoom(room_index, .initial);
     gameplay_scene.loadWindSnowTiles();
     debug_fps.init(dust_palette_bank);
@@ -74,19 +97,26 @@ pub fn run() void {
     });
 
     var input: gba.input.BufferedKeysState = .{};
-    var player = room_transition.spawnPlayer(room_index);
-    var respawn = rooms[room_index].spawn;
+    var player = room_transition.spawnPlayerAt(respawn);
     var camera = updateCamera(player, room_index);
     var death_timer: u8 = 0;
     var respawn_burst_timer: u8 = 0;
     gameplay_scene.resetWindSnow(room_index, camera);
     gameplay_scene.resetChimneySmoke(room_index);
     gameplay_scene.drawInitial(&player, camera, room_index, room_systems.animCounter());
+    _ = save.commitSessionCheckpoint(room_index, respawn);
+    save_indicator.reset();
 
     while (true) {
         input.poll();
+        save.tickPlaytime();
+        save_indicator.update();
         if (chapter_flow.updateTransitionIfActive(&player, &camera, &room_index, &respawn, input)) {
             continue;
+        }
+        if (input.isJustPressed(.start)) {
+            save.commitProgress();
+            save_indicator.update();
         }
         if (respawn_burst_timer > 0) {
             respawn_burst_timer -= 1;
@@ -137,7 +167,11 @@ pub fn run() void {
             chapter_flow.updateBridgeEndingHold(&player, input, room_index);
         } else {
             player_controller.update(&player, input, room_index, chapter_flow.dashUnlocked(room_index));
+            room_systems.updatePlayerEntities(&player, room_index);
             if (room_systems.updateDynamicHazards(&player, room_index)) |death_cause| {
+                room_systems.handlePlayerDeathStart(room_index);
+                respawn = room_transition.respawnForDeath(room_index, player);
+                save.noteDeath();
                 player_death.begin(player, camera, death_cause, room_index);
                 death_timer = player_death.death_frames;
                 continue;
@@ -145,7 +179,7 @@ pub fn run() void {
         }
         room_systems.updateActors(&player, room_index, camera);
         room_systems.updatePlayerEffects(&player, room_index);
-        const next_camera = updateCamera(player, room_index);
+        const next_camera = followCamera(player, room_index, camera);
         room_systems.updateEffects(room_index, next_camera);
         if (!cutscene_locked and !chapter_flow.endingHoldActive(room_index) and chapter_flow.shouldStartEndLevelTransition(player, room_index)) {
             camera = next_camera;
@@ -157,14 +191,22 @@ pub fn run() void {
         }
         if (!cutscene_locked and !chapter_flow.endingHoldActive(room_index)) {
             if (room_systems.touchHazard(player, room_index)) |death_cause| {
+                room_systems.handlePlayerDeathStart(room_index);
+                respawn = room_transition.respawnForDeath(room_index, player);
+                save.noteDeath();
                 player_death.begin(player, next_camera, death_cause, room_index);
                 death_timer = player_death.death_frames;
                 continue;
             }
         }
         const previous_room_index = room_index;
-        if (!cutscene_locked and !chapter_flow.endingHoldActive(room_index) and room_transition.trySwitch(&player, input, &room_index, &respawn)) {
+        if (!cutscene_locked and !chapter_flow.endingHoldActive(room_index) and room_transition.trySwitch(&player, input, &room_index)) {
             chapter_systems.handleRoomTransition(previous_room_index, room_index);
+            playMusicForRoom(room_index);
+            respawn = rooms[room_index].spawn;
+            if (save.commitSessionCheckpoint(room_index, respawn)) {
+                save_indicator.update();
+            }
             room_loader.hideGameplayDisplayForLoad();
             frame.sync();
             room_loader.loadGameplayRoom(room_index, .transition);
@@ -188,13 +230,17 @@ pub fn run() void {
 
 fn startRoomIndex() usize {
     return comptime blk: {
-        if (build_options.start_room.len == 0) break :blk level.start_room_index;
+        if (!build_options.start_override) break :blk level.start_room_index;
         if (city.flow.roomIndexFor(build_options.start_chapter, build_options.start_room)) |city_room_index| {
             break :blk city_room_index;
         }
         break :blk level.roomIndexFor(build_options.start_chapter, build_options.start_room) orelse
             @compileError("invalid development start override; expected: <chapter> <room>, for example: 0 -1 or 1 1");
     };
+}
+
+fn developmentStartOverride() bool {
+    return build_options.start_override;
 }
 
 fn drawDeathCountdownScene(camera: Camera, room_index: usize, death_timer: u8) void {
@@ -204,6 +250,18 @@ fn drawDeathCountdownScene(camera: Camera, room_index: usize, death_timer: u8) v
 
 fn updateCamera(player: Player, room_index: usize) Camera {
     return camera_mod.forPlayer(player.x, player.y, rooms[room_index]);
+}
+
+fn followCamera(player: Player, room_index: usize, camera: Camera) Camera {
+    return camera_mod.followPlayer(camera, player.x, player.y, rooms[room_index]);
+}
+
+fn playMusicForRoom(room_index: usize) void {
+    if (city.flow.ownsGeneratedRoomIndex(room_index)) {
+        audio.playCityMusic();
+    } else {
+        audio.playPrologueMusic();
+    }
 }
 
 fn renderCameraWithCutsceneShake(camera: Camera, room_index: usize) Camera {

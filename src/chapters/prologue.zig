@@ -2,6 +2,7 @@ pub const bird_npc = @import("prologue/bird_npc.zig");
 pub const bridge = @import("prologue/bridge.zig");
 pub const chimney_smoke = @import("prologue/chimney_smoke.zig");
 pub const flow = @import("prologue/flow.zig");
+pub const falling_blocks = @import("prologue/falling_blocks.zig");
 pub const funny_cars = @import("prologue/funny_cars.zig");
 pub const granny_cutscene = @import("prologue/granny_cutscene.zig");
 pub const granny_npc = @import("prologue/granny_npc.zig");
