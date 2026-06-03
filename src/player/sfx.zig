@@ -14,6 +14,7 @@ const fixed_one = math.fixed_one;
 const jump_volume: u16 = 176;
 const wall_jump_volume: u16 = 176;
 const dash_volume: u16 = 192;
+const death_volume: u16 = 224;
 const grab_volume: u16 = 136;
 const land_volume: u16 = 160;
 const climb_ledge_volume: u16 = 144;
@@ -89,6 +90,10 @@ pub fn playDash(player: Player) void {
     else
         sound_ids.sfx_dash_red_right;
     play(sound_id, dash_volume);
+}
+
+pub fn playDeath() void {
+    play(sound_ids.sfx_death, death_volume);
 }
 
 pub fn playGrab(player: *Player, room_index: usize) void {

@@ -1,6 +1,6 @@
 const gba = @import("gba");
+const chapter_entities = @import("../chapters/entities.zig");
 const chapter_systems = @import("../chapters/systems.zig");
-const breakable_walls = @import("../room/breakable_walls.zig");
 const dash_effects = @import("dash_effects.zig");
 const dust = @import("../effects/dust.zig");
 const footsteps = @import("footsteps.zig");
@@ -84,9 +84,12 @@ const player_dangling_first_frame = player_mod.dangling_first_frame;
 const player_dangling_frame_count = player_mod.dangling_frame_count;
 const player_climb_pull_first_frame = player_mod.climb_pull_first_frame;
 const player_climb_pull_frame_count = player_mod.climb_pull_frame_count;
+const landing_dust_min_speed = fixed_one / 2;
+const landing_dust_air_frame_threshold: u8 = 4;
 
 pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: usize, dash_unlocked: bool) void {
     const was_grounded = player.grounded;
+    const landing_dust_air_frames = player.landing_dust_air_frames;
     const horizontal: i16 = @intCast(input.getAxisHorizontal());
     const vertical: i16 = @intCast(input.getAxisVertical());
     const grab_held = input.isPressed(.L) or input.isPressed(.R);
@@ -258,7 +261,7 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
         if (player.dash_timer == 0 and player.dash_refill_cooldown_timer == 0) {
             refillPlayerDash(player);
         }
-        if (!was_grounded and player.dust_suppress_timer == 0) {
+        if (!was_grounded and player.dust_suppress_timer == 0 and shouldSpawnLandingDust(vertical_speed_before_move, landing_dust_air_frames)) {
             dust.spawnLandingAtFeet(player.*);
         }
         if (!was_grounded) {
@@ -275,6 +278,7 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
     }
 
     updateAnimation(player);
+    updateLandingDustAirFrames(player);
     footsteps.update(player, room_index, previous_x);
 }
 
@@ -329,7 +333,7 @@ pub fn updateDashMovement(player: *Player, room_index: usize) void {
         player.dash_trail_timer = player_dash_trail_interval;
     }
 
-    _ = breakable_walls.tryBreakDashCollision(player, room_index);
+    _ = chapter_entities.tryBreakDashCollision(player, room_index);
     moveHorizontal(player, player.vx, room_index);
     player.grounded = false;
     moveVertical(player, player.vy, room_index);
@@ -340,6 +344,7 @@ pub fn updateDashMovement(player: *Player, room_index: usize) void {
     if (!was_grounded and player.grounded) {
         player_sfx.playLand(player, room_index, vertical_speed_before_move);
     }
+    updateLandingDustAirFrames(player);
 
     if (player.dash_timer > 0) {
         player.dash_timer -= 1;
@@ -367,7 +372,7 @@ pub fn updateAnimation(player: *Player) void {
         .climb
     else if (!player.grounded and player.vy < 0)
         .jump
-    else if (!player.grounded)
+    else if (shouldUseAirborneAnimation(player.*))
         .fall
     else if (player.moving)
         .run
@@ -442,6 +447,22 @@ fn applyLiftBoostToJump(player: *Player) void {
     if (player.lift_boost_timer == 0) return;
     player.vx += player.lift_boost_x;
     player.vy += player.lift_boost_y;
+}
+
+fn shouldSpawnLandingDust(vertical_speed_before_move: i32, air_frames: u8) bool {
+    return vertical_speed_before_move >= landing_dust_min_speed and air_frames >= landing_dust_air_frame_threshold;
+}
+
+fn shouldUseAirborneAnimation(player: Player) bool {
+    return !player.grounded and player.landing_dust_air_frames >= landing_dust_air_frame_threshold;
+}
+
+fn updateLandingDustAirFrames(player: *Player) void {
+    if (player.grounded) {
+        player.landing_dust_air_frames = 0;
+    } else if (player.landing_dust_air_frames < 0xff) {
+        player.landing_dust_air_frames += 1;
+    }
 }
 
 fn applyLiftBoostToDash(player: *Player) void {

@@ -64,6 +64,7 @@ const portrait_frame_ticks: u16 = 8;
 var visible: bool = false;
 var tiles: [tile_count]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** tile_count;
 var loaded_portrait_frame: u16 = 0xffff;
+var portrait_palette_loaded: bool = false;
 
 pub fn renderPage(page: CutsceneDialoguePage, dialogue_index: u8, dialogue_offset: usize, dialogue_reveal_offset: usize, typewriter: bool, cache: *Cache) usize {
     const layout = layoutFor(page);
@@ -104,9 +105,6 @@ pub fn drawObjects(camera: Camera, first_object: usize, dialogue_box: SceneRect,
         .x = clampI16(dialogue_box.x - camera.x, 0, video.screen_width - width),
         .y = clampI16(dialogue_box.y - camera.y, 0, video.screen_height - height),
     };
-    // These tiles intentionally live in shared high OBJ space, so refresh them
-    // when drawing the overlay instead of trusting the previous cached upload.
-    gba.display.memcpyObjectTiles4Bpp(base_tile, &tiles);
     if (has_portrait) {
         drawPortrait(portraitObject(first_object), position, page.portrait, anim_counter);
     } else {
@@ -212,7 +210,7 @@ fn portraitRange(portrait: DialoguePortrait) ?PortraitRange {
 
 fn drawPortrait(first_object: usize, position: room_data.Spawn, portrait: DialoguePortrait, anim_counter: u16) void {
     loadPortraitPalette();
-    loadPortraitFrame(portrait, anim_counter, true);
+    loadPortraitFrame(portrait, anim_counter, false);
     gba.display.objects[first_object] = gba.display.Object.init(.{
         .size = .size_32x32,
         .x = objX(position.x + portrait_x),
@@ -232,7 +230,9 @@ fn boxObject(first_object: usize, row: usize, col: usize) usize {
 }
 
 fn loadPortraitPalette() void {
+    if (portrait_palette_loaded) return;
     gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, portrait_palette_bank) * 16], @ptrCast(&portrait_palette_data), 16);
+    portrait_palette_loaded = true;
 }
 
 fn loadPortraitFrame(portrait: DialoguePortrait, anim_counter: u16, force: bool) void {

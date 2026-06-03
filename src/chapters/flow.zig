@@ -7,9 +7,9 @@ const room_data = @import("../world/room_data.zig");
 
 const Camera = camera_mod.Camera;
 const Player = player_mod.State;
-const Spawn = room_data.Spawn;
+const RespawnPoint = room_data.RespawnPoint;
 
-pub fn updateTransitionIfActive(player: *Player, camera: *Camera, room_index: *usize, respawn: *Spawn, input: gba.input.BufferedKeysState) bool {
+pub fn updateTransitionIfActive(player: *Player, camera: *Camera, room_index: *usize, respawn: *RespawnPoint, input: gba.input.BufferedKeysState) bool {
     return switch (activeChapterForRoom(room_index.*)) {
         .prologue => prologue.flow.updateTransitionIfActive(player, camera, room_index, respawn, input),
         .city => false,

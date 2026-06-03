@@ -39,8 +39,18 @@ var hair_tiles: [4]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.d
 var bang_pixels: [64]u8 = [_]u8{0} ** 64;
 var bang_tiles: [1]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** 1;
 
+const PaletteMode = enum(u8) {
+    invalid,
+    red,
+    blue,
+    white,
+};
+
+var palette_mode: PaletteMode = .invalid;
+
 pub fn loadPalette() void {
     gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(&hair_palette_data), 16);
+    palette_mode = .red;
 }
 
 pub fn hideObjects() void {
@@ -161,6 +171,7 @@ fn updatePalette(player: Player) void {
     const base_palette: [*]align(2) const gba.ColorRgb555 = @ptrCast(&hair_palette_data);
     const palette_base = @as(usize, palette_bank) * 16;
     if (player.dash_timer > 0) {
+        if (palette_mode == .white) return;
         gba.display.obj_palette.colors[palette_base] = base_palette[0];
         gba.display.obj_palette.colors[palette_base + 1] = .black;
         gba.display.obj_palette.colors[palette_base + 2] = gba.ColorRgb555.rgb(22, 23, 24);
@@ -169,13 +180,17 @@ fn updatePalette(player: Player) void {
         while (white_index < 16) : (white_index += 1) {
             gba.display.obj_palette.colors[palette_base + white_index] = base_palette[white_index];
         }
+        palette_mode = .white;
         return;
     }
     if (player.dashes > 0) {
+        if (palette_mode == .red) return;
         gba.mem.memcpy16(&gba.display.obj_palette.colors[palette_base], base_palette, 16);
+        palette_mode = .red;
         return;
     }
 
+    if (palette_mode == .blue) return;
     gba.display.obj_palette.colors[palette_base] = base_palette[0];
     gba.display.obj_palette.colors[palette_base + 1] = .black;
     gba.display.obj_palette.colors[palette_base + 2] = gba.ColorRgb555.rgb(3, 12, 22);
@@ -184,6 +199,7 @@ fn updatePalette(player: Player) void {
     while (index < 16) : (index += 1) {
         gba.display.obj_palette.colors[palette_base + index] = base_palette[index];
     }
+    palette_mode = .blue;
 }
 
 fn constrainNode(node: *HairNode, prev_x: i32, prev_y: i32, desired_dist: i32) void {

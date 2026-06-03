@@ -1,15 +1,11 @@
 const gba = @import("gba");
-const breakable_walls = @import("../room/breakable_walls.zig");
+const chapter_entities = @import("../chapters/entities.zig");
 const chapter_systems = @import("../chapters/systems.zig");
 const collision = @import("collision.zig");
-const disappearing_platforms = @import("../room/disappearing_platforms.zig");
 const level = @import("../generated_rooms.zig");
 const math = @import("../core/math.zig");
-const mech_blocks = @import("../room/mech_blocks.zig");
 const player_mod = @import("../player/state.zig");
-const rhythm_blocks = @import("../room/rhythm_blocks.zig");
 const room_data = @import("room_data.zig");
-const traffic_blocks = @import("../room/traffic_blocks.zig");
 
 const Player = player_mod.State;
 const Spawn = room_data.Spawn;
@@ -25,6 +21,28 @@ const player_body_width = player_mod.body_width;
 const player_body_height = player_mod.body_height;
 const transition_cooldown_frames = player_mod.room_transition_cooldown_frames;
 const exit_line_min_overlap_px: i16 = 4;
+const vertical_transition_overlap_px: i16 = 8;
+const entry_wall_restore_x_px: i16 = 10;
+const entry_wall_restore_y_px: i16 = 4;
+
+const EntryYBounds = struct {
+    min: i16,
+    max: i16,
+};
+
+const EntryPosition = struct {
+    x: i16,
+    y: i16,
+};
+
+const EntryActionContext = struct {
+    wall_dir: i16 = 0,
+    vx: i32 = 0,
+    vy: i32 = 0,
+    climbing: bool = false,
+    climb_dangling: bool = false,
+    wall_sliding: bool = false,
+};
 
 pub fn spawnPlayer(room_index: usize) Player {
     return spawnPlayerAt(rooms[room_index].spawn);
@@ -38,54 +56,44 @@ pub fn spawnPlayerAt(spawn: Spawn) Player {
     };
 }
 
-pub fn respawnForDeath(room_index: usize, player: Player) Spawn {
+pub fn respawnForEntrySide(room_index: usize, entry_side: room_data.ExitDirection) Spawn {
     const room = rooms[room_index];
-    const player_x = fixedToPixel(player.x);
-    const player_y = fixedToPixel(player.y);
-    const candidates = [_]Spawn{
-        room.spawn,
-        room.spawn_left,
-        room.spawn_right,
-        room.spawn_top,
-        room.spawn_bottom,
+    return switch (entry_side) {
+        .left => room.spawn_left,
+        .right => room.spawn_right,
+        .up => room.spawn_top,
+        .down => room.spawn_bottom,
     };
-
-    var best = candidates[0];
-    var best_distance: i32 = respawnDistance(player_x, player_y, best);
-    for (candidates[1..]) |candidate| {
-        const distance = respawnDistance(player_x, player_y, candidate);
-        if (distance < best_distance) {
-            best = candidate;
-            best_distance = distance;
-        }
-    }
-    return best;
 }
 
-pub fn trySwitch(player: *Player, input: gba.input.BufferedKeysState, room_index: *usize) bool {
+pub fn trySwitch(player: *Player, input: gba.input.BufferedKeysState, room_index: *usize, entry_side: *room_data.ExitDirection) bool {
     if (player.room_transition_cooldown > 0) return false;
 
     const room = rooms[room_index.*];
     const player_x = fixedToPixel(player.x);
     const player_y = fixedToPixel(player.y);
-    if (tryExitLineSwitch(player, input, room_index, player_x, player_y)) return true;
+    if (tryExitLineSwitch(player, input, room_index, player_x, player_y, entry_side)) return true;
     if (input.isPressed(.right) and player_x >= room.width_pixels - player_body_width and !hasExitLine(room, .right)) {
         if (room.right) |next_room| {
             if (!implicitEdgeTransitionAllowed(room_index.*, next_room, .right, player_x, player_y)) return false;
             const previous_room = room_index.*;
             const previous_player = player.*;
+            const entry_context = entryActionContext(player.*, previous_room);
             const source_floor_world_y = if (player.grounded or floorContact(player.*, room_index.*))
                 sideTransitionSourceFloorWorldY(player.*, room_index.*)
             else
                 null;
             alignPlayerBetweenRooms(player, previous_room, next_room);
+            const aligned_entry = entryPosition(player.*);
             room_index.* = next_room;
             enterRoomFromLeft(player);
-            if (!fitPlayerAfterSideRoomEntry(player, room_index.*, previous_room, .left, source_floor_world_y)) {
+            if (!fitPlayerAfterSideRoomEntry(player, room_index.*, previous_room, .left, source_floor_world_y, aligned_entry)) {
                 player.* = previous_player;
                 room_index.* = previous_room;
                 return false;
             }
+            restoreEntryActionContact(player, room_index.*, entry_context);
+            entry_side.* = oppositeDirection(.right);
             startCooldown(player);
             return true;
         }
@@ -95,42 +103,56 @@ pub fn trySwitch(player: *Player, input: gba.input.BufferedKeysState, room_index
             if (!implicitEdgeTransitionAllowed(room_index.*, next_room, .left, player_x, player_y)) return false;
             const previous_room = room_index.*;
             const previous_player = player.*;
+            const entry_context = entryActionContext(player.*, previous_room);
             const source_floor_world_y = if (player.grounded or floorContact(player.*, room_index.*))
                 sideTransitionSourceFloorWorldY(player.*, room_index.*)
             else
                 null;
             alignPlayerBetweenRooms(player, previous_room, next_room);
+            const aligned_entry = entryPosition(player.*);
             room_index.* = next_room;
             enterRoomFromRight(player, room_index.*);
-            if (!fitPlayerAfterSideRoomEntry(player, room_index.*, previous_room, .right, source_floor_world_y)) {
+            if (!fitPlayerAfterSideRoomEntry(player, room_index.*, previous_room, .right, source_floor_world_y, aligned_entry)) {
                 player.* = previous_player;
                 room_index.* = previous_room;
                 return false;
             }
+            restoreEntryActionContact(player, room_index.*, entry_context);
+            entry_side.* = oppositeDirection(.left);
             startCooldown(player);
             return true;
         }
     }
-    if (player_y <= 0 and player.vy < 0 and !hasExitLine(room, .up)) {
+    if (player_y <= -vertical_transition_overlap_px and player.vy < 0 and !hasExitLine(room, .up)) {
         if (room.up) |next_room| {
             if (!implicitEdgeTransitionAllowed(room_index.*, next_room, .up, player_x, player_y)) return false;
-            alignPlayerBetweenRooms(player, room_index.*, next_room);
+            const previous_room = room_index.*;
+            const entry_context = entryActionContext(player.*, previous_room);
+            alignPlayerBetweenRooms(player, previous_room, next_room);
+            const aligned_entry = entryPosition(player.*);
             room_index.* = next_room;
             clampPlayerToRoom(player, room_index.*);
             enterRoomFromBottom(player, room_index.*);
-            fitPlayerAfterRoomEntry(player, room_index.*);
+            fitPlayerAfterVerticalRoomEntry(player, room_index.*, aligned_entry);
+            restoreEntryActionContact(player, room_index.*, entry_context);
+            entry_side.* = oppositeDirection(.up);
             startCooldown(player);
             return true;
         }
     }
-    if (player_y >= room.height_pixels - player_body_height - 1 and player.vy > 0 and !hasExitLine(room, .down)) {
+    if (player_y >= room.height_pixels - player_body_height + vertical_transition_overlap_px and player.vy > 0 and !hasExitLine(room, .down)) {
         if (room.down) |next_room| {
             if (!implicitEdgeTransitionAllowed(room_index.*, next_room, .down, player_x, player_y)) return false;
-            alignPlayerBetweenRooms(player, room_index.*, next_room);
+            const previous_room = room_index.*;
+            const entry_context = entryActionContext(player.*, previous_room);
+            alignPlayerBetweenRooms(player, previous_room, next_room);
+            const aligned_entry = entryPosition(player.*);
             room_index.* = next_room;
             clampPlayerToRoom(player, room_index.*);
             enterRoomFromTop(player);
-            fitPlayerAfterRoomEntry(player, room_index.*);
+            fitPlayerAfterVerticalRoomEntry(player, room_index.*, aligned_entry);
+            restoreEntryActionContact(player, room_index.*, entry_context);
+            entry_side.* = oppositeDirection(.down);
             startCooldown(player);
             return true;
         }
@@ -182,6 +204,7 @@ fn tryExitLineSwitch(
     room_index: *usize,
     player_x: i16,
     player_y: i16,
+    entry_side: *room_data.ExitDirection,
 ) bool {
     const room = rooms[room_index.*];
     for (room.exit_lines) |exit_line| {
@@ -191,18 +214,22 @@ fn tryExitLineSwitch(
                 if (!lineRangeOverlapsBy(player_y, player_y + player_body_height, exit_line.y1, exit_line.y2, exit_line_min_overlap_px)) continue;
                 const previous_room = room_index.*;
                 const previous_player = player.*;
+                const entry_context = entryActionContext(player.*, previous_room);
                 const source_floor_world_y = if (player.grounded or floorContact(player.*, room_index.*))
                     sideTransitionSourceFloorWorldY(player.*, room_index.*)
                 else
                     null;
                 alignPlayerBetweenRooms(player, previous_room, exit_line.target);
+                const aligned_entry = entryPosition(player.*);
                 room_index.* = exit_line.target;
                 enterRoomFromLeft(player);
-                if (!fitPlayerAfterSideRoomEntry(player, room_index.*, previous_room, .left, source_floor_world_y)) {
+                if (!fitPlayerAfterSideRoomEntry(player, room_index.*, previous_room, .left, source_floor_world_y, aligned_entry)) {
                     player.* = previous_player;
                     room_index.* = previous_room;
                     continue;
                 }
+                restoreEntryActionContact(player, room_index.*, entry_context);
+                entry_side.* = oppositeDirection(exit_line.direction);
                 startCooldown(player);
                 return true;
             },
@@ -211,52 +238,64 @@ fn tryExitLineSwitch(
                 if (!lineRangeOverlapsBy(player_y, player_y + player_body_height, exit_line.y1, exit_line.y2, exit_line_min_overlap_px)) continue;
                 const previous_room = room_index.*;
                 const previous_player = player.*;
+                const entry_context = entryActionContext(player.*, previous_room);
                 const source_floor_world_y = if (player.grounded or floorContact(player.*, room_index.*))
                     sideTransitionSourceFloorWorldY(player.*, room_index.*)
                 else
                     null;
                 alignPlayerBetweenRooms(player, previous_room, exit_line.target);
+                const aligned_entry = entryPosition(player.*);
                 room_index.* = exit_line.target;
                 enterRoomFromRight(player, room_index.*);
-                if (!fitPlayerAfterSideRoomEntry(player, room_index.*, previous_room, .right, source_floor_world_y)) {
+                if (!fitPlayerAfterSideRoomEntry(player, room_index.*, previous_room, .right, source_floor_world_y, aligned_entry)) {
                     player.* = previous_player;
                     room_index.* = previous_room;
                     continue;
                 }
+                restoreEntryActionContact(player, room_index.*, entry_context);
+                entry_side.* = oppositeDirection(exit_line.direction);
                 startCooldown(player);
                 return true;
             },
             .up => {
-                if (player_y > 0 or player.vy >= 0) continue;
+                if (player_y > -vertical_transition_overlap_px or player.vy >= 0) continue;
                 if (!lineRangeOverlapsBy(player_x, player_x + player_body_width, exit_line.x1, exit_line.x2, exit_line_min_overlap_px)) continue;
                 const previous_room = room_index.*;
                 const previous_player = player.*;
+                const entry_context = entryActionContext(player.*, previous_room);
                 alignPlayerBetweenRooms(player, previous_room, exit_line.target);
+                const aligned_entry = entryPosition(player.*);
                 room_index.* = exit_line.target;
                 clampPlayerToRoom(player, room_index.*);
                 enterRoomFromBottom(player, room_index.*);
-                if (!fitPlayerAfterLineRoomEntry(player, room_index.*, previous_room, .down)) {
+                if (!fitPlayerAfterLineRoomEntry(player, room_index.*, previous_room, .down, verticalEntryYBounds(room_index.*), aligned_entry)) {
                     player.* = previous_player;
                     room_index.* = previous_room;
                     continue;
                 }
+                restoreEntryActionContact(player, room_index.*, entry_context);
+                entry_side.* = oppositeDirection(exit_line.direction);
                 startCooldown(player);
                 return true;
             },
             .down => {
-                if (player_y < room.height_pixels - player_body_height - 1 or player.vy <= 0) continue;
+                if (player_y < room.height_pixels - player_body_height + vertical_transition_overlap_px or player.vy <= 0) continue;
                 if (!lineRangeOverlapsBy(player_x, player_x + player_body_width, exit_line.x1, exit_line.x2, exit_line_min_overlap_px)) continue;
                 const previous_room = room_index.*;
                 const previous_player = player.*;
+                const entry_context = entryActionContext(player.*, previous_room);
                 alignPlayerBetweenRooms(player, previous_room, exit_line.target);
+                const aligned_entry = entryPosition(player.*);
                 room_index.* = exit_line.target;
                 clampPlayerToRoom(player, room_index.*);
                 enterRoomFromTop(player);
-                if (!fitPlayerAfterLineRoomEntry(player, room_index.*, previous_room, .up)) {
+                if (!fitPlayerAfterLineRoomEntry(player, room_index.*, previous_room, .up, verticalEntryYBounds(room_index.*), aligned_entry)) {
                     player.* = previous_player;
                     room_index.* = previous_room;
                     continue;
                 }
+                restoreEntryActionContact(player, room_index.*, entry_context);
+                entry_side.* = oppositeDirection(exit_line.direction);
                 startCooldown(player);
                 return true;
             },
@@ -273,63 +312,184 @@ fn lineRangeOverlapsBy(a_min: i16, a_max: i16, b0: i16, b1: i16, minimum: i16) b
     return overlap_max - overlap_min >= minimum;
 }
 
-fn respawnDistance(player_x: i16, player_y: i16, spawn: Spawn) i32 {
-    return absI32(@as(i32, player_x) - spawn.x) + absI32(@as(i32, player_y) - spawn.y);
-}
-
-fn absI32(value: i32) i32 {
-    return if (value < 0) -value else value;
-}
-
 fn enterRoomFromLeft(player: *Player) void {
-    player.x = pixelToFixed(1);
-    resetPlayerStateForSideRoomEntry(player);
+    if (fixedToPixel(player.x) < 1) {
+        player.x = pixelToFixed(1);
+    }
+    markPlayerRoomEntry(player);
 }
 
 fn enterRoomFromRight(player: *Player, room_index: usize) void {
-    player.x = pixelToFixed(rooms[room_index].width_pixels - player_body_width - 1);
-    resetPlayerStateForSideRoomEntry(player);
+    const max_x = rooms[room_index].width_pixels - player_body_width - 1;
+    if (fixedToPixel(player.x) > max_x) {
+        player.x = pixelToFixed(max_x);
+    }
+    markPlayerRoomEntry(player);
 }
 
 fn enterRoomFromTop(player: *Player) void {
-    player.y = pixelToFixed(1);
-    resetPlayerMotionForRoomEntry(player);
+    const min_y = -player_body_height + vertical_transition_overlap_px;
+    if (fixedToPixel(player.y) < min_y) {
+        player.y = pixelToFixed(min_y);
+    }
+    markPlayerRoomEntry(player);
 }
 
 fn enterRoomFromBottom(player: *Player, room_index: usize) void {
-    player.y = pixelToFixed(rooms[room_index].height_pixels - player_body_height - 8);
-    resetPlayerMotionForRoomEntry(player);
+    const max_y = rooms[room_index].height_pixels - vertical_transition_overlap_px;
+    if (fixedToPixel(player.y) > max_y) {
+        player.y = pixelToFixed(max_y);
+    }
+    markPlayerRoomEntry(player);
 }
 
 fn alignPlayerBetweenRooms(player: *Player, from_room: usize, to_room: usize) void {
     const from = rooms[from_room];
     const to = rooms[to_room];
-    player.x += @as(i32, from.world_x - to.world_x) << fixed_shift;
-    player.y += @as(i32, from.world_y - to.world_y) << fixed_shift;
+    const dx = @as(i32, from.world_x - to.world_x) << fixed_shift;
+    const dy = @as(i32, from.world_y - to.world_y) << fixed_shift;
+    player.x += dx;
+    player.y += dy;
+    player.climb_ledge_start_x += dx;
+    player.climb_ledge_start_y += dy;
+    player.climb_ledge_target_x += dx;
+    player.climb_ledge_target_y += dy;
 }
 
-fn resetPlayerMotionForRoomEntry(player: *Player) void {
-    player.vx = 0;
-    player.vy = 0;
-    resetPlayerStateForSideRoomEntry(player);
-}
-
-fn resetPlayerStateForSideRoomEntry(player: *Player) void {
+fn markPlayerRoomEntry(player: *Player) void {
     player.grounded = false;
     player.dust_suppress_timer = 2;
-    player.climbing = false;
-    player.climb_dangling = false;
-    player.climb_ledge_timer = 0;
+}
+
+fn entryPosition(player: Player) EntryPosition {
+    return .{
+        .x = fixedToPixel(player.x),
+        .y = fixedToPixel(player.y),
+    };
+}
+
+fn restoreAlignedEntryPosition(player: *Player, room_index: usize, position: EntryPosition, y_bounds: EntryYBounds) bool {
+    if (position.y < y_bounds.min or position.y > y_bounds.max) return false;
+    if (roomEntryCollidesAt(position.x, position.y, room_index)) return false;
+    player.x = pixelToFixed(position.x);
+    player.y = pixelToFixed(position.y);
+    return true;
+}
+
+fn entryActionContext(player: Player, room_index: usize) EntryActionContext {
+    var wall_dir = entryWallContactDirection(player, room_index);
+    if (wall_dir == 0 and (player.climbing or player.climb_dangling or player.wall_sliding)) {
+        wall_dir = if (player.facing_left) -1 else 1;
+    }
+    return .{
+        .wall_dir = wall_dir,
+        .vx = player.vx,
+        .vy = player.vy,
+        .climbing = player.climbing,
+        .climb_dangling = player.climb_dangling,
+        .wall_sliding = player.wall_sliding,
+    };
+}
+
+fn restoreEntryActionContact(player: *Player, room_index: usize, context: EntryActionContext) void {
+    const preserves_wall_action = context.climbing or context.climb_dangling or context.wall_sliding;
+    if (!preserves_wall_action) return;
+
+    player.vx = context.vx;
+    player.vy = context.vy;
+    player.grounded = false;
+
+    if (context.wall_dir == 0) return;
+    restoreWallContactAfterEntry(player, room_index, context.wall_dir);
+    if (!entryWallContactAtPlayer(player.*, context.wall_dir, room_index)) return;
+
+    player.facing_left = context.wall_dir < 0;
+    player.climbing = context.climbing;
+    player.climb_dangling = context.climb_dangling;
+    player.wall_sliding = context.wall_sliding;
+}
+
+fn restoreWallContactAfterEntry(player: *Player, room_index: usize, wall_dir: i16) void {
+    if (entryWallContactAtPlayer(player.*, wall_dir, room_index)) return;
+
+    const start_x = fixedToPixel(player.x);
+    const start_y = fixedToPixel(player.y);
+    var x_offset: i16 = 1;
+    while (x_offset <= entry_wall_restore_x_px) : (x_offset += 1) {
+        const candidate_x = start_x + wall_dir * x_offset;
+        if (tryRestoreWallContactAtX(player, room_index, wall_dir, candidate_x, start_y)) return;
+    }
+}
+
+fn tryRestoreWallContactAtX(player: *Player, room_index: usize, wall_dir: i16, x: i16, start_y: i16) bool {
+    var y_offset: i16 = 0;
+    while (y_offset <= entry_wall_restore_y_px) : (y_offset += 1) {
+        if (tryRestoreWallContactAt(player, room_index, wall_dir, x, start_y - y_offset)) return true;
+        if (y_offset != 0 and tryRestoreWallContactAt(player, room_index, wall_dir, x, start_y + y_offset)) return true;
+    }
+    return false;
+}
+
+fn tryRestoreWallContactAt(player: *Player, room_index: usize, wall_dir: i16, x: i16, y: i16) bool {
+    if (roomEntryCollidesAt(x, y, room_index)) return false;
+    if (!entryWallContactAt(x, y, wall_dir, room_index)) return false;
+    player.x = pixelToFixed(x);
+    player.y = pixelToFixed(y);
+    return true;
+}
+
+fn entryWallContactDirection(player: Player, room_index: usize) i16 {
+    const facing_dir: i16 = if (player.facing_left) -1 else 1;
+    if (entryWallContactAtPlayer(player, facing_dir, room_index)) return facing_dir;
+    if (entryWallContactAtPlayer(player, -facing_dir, room_index)) return -facing_dir;
+    return 0;
+}
+
+fn entryWallContactAtPlayer(player: Player, dir: i16, room_index: usize) bool {
+    return entryWallContactAt(fixedToPixel(player.x), fixedToPixel(player.y), dir, room_index);
+}
+
+fn entryWallContactAt(x: i16, y: i16, dir: i16, room_index: usize) bool {
+    const side_offset: i16 = if (dir < 0) -1 else player_body_width;
+    const wall_x = x + side_offset;
+    return roomEntryWallSolidAtPixel(wall_x, y + 2, room_index) or
+        roomEntryWallSolidAtPixel(wall_x, y + player_body_height - 3, room_index);
+}
+
+fn roomEntryWallSolidAtPixel(x: i16, y: i16, room_index: usize) bool {
+    return collision.solidRectAt(rooms[room_index], x, y, 1, 1);
 }
 
 fn fitPlayerAfterRoomEntry(player: *Player, room_index: usize) void {
-    _ = tryFitPlayerAfterRoomEntryAt(player, room_index, fixedToPixel(player.x), fixedToPixel(player.y));
+    _ = tryFitPlayerAfterRoomEntryAt(player, room_index, fixedToPixel(player.x), fixedToPixel(player.y), fullEntryYBounds(room_index));
 }
 
-fn tryFitPlayerAfterRoomEntryAt(player: *Player, room_index: usize, start_x: i16, start_y: i16) bool {
+fn fitPlayerAfterVerticalRoomEntry(player: *Player, room_index: usize, aligned_entry: EntryPosition) void {
+    const y_bounds = verticalEntryYBounds(room_index);
+    if (restoreAlignedEntryPosition(player, room_index, aligned_entry, y_bounds)) return;
+    _ = tryFitPlayerAfterRoomEntryAt(player, room_index, fixedToPixel(player.x), fixedToPixel(player.y), y_bounds);
+}
+
+fn fullEntryYBounds(room_index: usize) EntryYBounds {
+    const room = rooms[room_index];
+    return .{
+        .min = -player_body_height + 1,
+        .max = room.height_pixels - player_body_height - 1,
+    };
+}
+
+fn verticalEntryYBounds(room_index: usize) EntryYBounds {
+    const room = rooms[room_index];
+    return .{
+        .min = -player_body_height + vertical_transition_overlap_px,
+        .max = room.height_pixels - vertical_transition_overlap_px,
+    };
+}
+
+fn tryFitPlayerAfterRoomEntryAt(player: *Player, room_index: usize, start_x: i16, start_y: i16, y_bounds: EntryYBounds) bool {
     const room = rooms[room_index];
     const clamped_x = clampI16(start_x, 1, room.width_pixels - player_body_width - 1);
-    const clamped_y = clampI16(start_y, -player_body_height + 1, room.height_pixels - player_body_height - 1);
+    const clamped_y = clampI16(start_y, y_bounds.min, y_bounds.max);
     player.x = pixelToFixed(clamped_x);
     player.y = pixelToFixed(clamped_y);
     if (!roomEntryCollidesAt(clamped_x, clamped_y, room_index)) return true;
@@ -337,7 +497,7 @@ fn tryFitPlayerAfterRoomEntryAt(player: *Player, room_index: usize, start_x: i16
     var offset: i16 = 1;
     while (offset <= 64) : (offset += 1) {
         const up_y = clamped_y - offset;
-        if (up_y >= -player_body_height + 1 and !roomEntryCollidesAt(clamped_x, up_y, room_index)) {
+        if (up_y >= y_bounds.min and !roomEntryCollidesAt(clamped_x, up_y, room_index)) {
             player.y = pixelToFixed(up_y);
             player.vy = 0;
             player.grounded = false;
@@ -345,7 +505,7 @@ fn tryFitPlayerAfterRoomEntryAt(player: *Player, room_index: usize, start_x: i16
         }
 
         const down_y = clamped_y + offset;
-        if (down_y <= room.height_pixels - player_body_height - 1 and !roomEntryCollidesAt(clamped_x, down_y, room_index)) {
+        if (down_y <= y_bounds.max and !roomEntryCollidesAt(clamped_x, down_y, room_index)) {
             player.y = pixelToFixed(down_y);
             player.vy = 0;
             player.grounded = false;
@@ -355,14 +515,15 @@ fn tryFitPlayerAfterRoomEntryAt(player: *Player, room_index: usize, start_x: i16
     return false;
 }
 
-fn fitPlayerAfterLineRoomEntry(player: *Player, room_index: usize, from_room: usize, entry_direction: room_data.ExitDirection) bool {
+fn fitPlayerAfterLineRoomEntry(player: *Player, room_index: usize, from_room: usize, entry_direction: room_data.ExitDirection, y_bounds: EntryYBounds, aligned_entry: EntryPosition) bool {
+    if (restoreAlignedEntryPosition(player, room_index, aligned_entry, y_bounds)) return true;
     if (reciprocalExitLine(room_index, from_room, entry_direction)) |exit_line| {
         return switch (entry_direction) {
-            .up, .down => fitPlayerWithinHorizontalExitLine(player, room_index, exit_line),
-            .left, .right => fitPlayerWithinVerticalExitLine(player, room_index, exit_line),
+            .up, .down => fitPlayerWithinHorizontalExitLine(player, room_index, exit_line, y_bounds),
+            .left, .right => fitPlayerWithinVerticalExitLine(player, room_index, exit_line, y_bounds),
         };
     }
-    return tryFitPlayerAfterRoomEntryAt(player, room_index, fixedToPixel(player.x), fixedToPixel(player.y));
+    return tryFitPlayerAfterRoomEntryAt(player, room_index, fixedToPixel(player.x), fixedToPixel(player.y), y_bounds);
 }
 
 fn reciprocalExitLine(room_index: usize, from_room: usize, direction: room_data.ExitDirection) ?room_data.ExitLine {
@@ -372,50 +533,49 @@ fn reciprocalExitLine(room_index: usize, from_room: usize, direction: room_data.
     return null;
 }
 
-fn fitPlayerWithinHorizontalExitLine(player: *Player, room_index: usize, exit_line: room_data.ExitLine) bool {
+fn fitPlayerWithinHorizontalExitLine(player: *Player, room_index: usize, exit_line: room_data.ExitLine, y_bounds: EntryYBounds) bool {
     const room = rooms[room_index];
     const room_min = @as(i16, 1);
     const room_max = room.width_pixels - player_body_width - 1;
     const min_x = clampI16(@min(exit_line.x1, exit_line.x2), room_min, room_max);
     var max_x = clampI16(@max(exit_line.x1, exit_line.x2) - player_body_width, room_min, room_max);
     if (max_x < min_x) max_x = min_x;
-    return tryFitPlayerInXRange(player, room_index, fixedToPixel(player.x), fixedToPixel(player.y), min_x, max_x);
+    return tryFitPlayerInXRange(player, room_index, fixedToPixel(player.x), fixedToPixel(player.y), min_x, max_x, y_bounds);
 }
 
-fn fitPlayerWithinVerticalExitLine(player: *Player, room_index: usize, exit_line: room_data.ExitLine) bool {
-    const room = rooms[room_index];
-    const room_min = -player_body_height + 1;
-    const room_max = room.height_pixels - player_body_height - 1;
+fn fitPlayerWithinVerticalExitLine(player: *Player, room_index: usize, exit_line: room_data.ExitLine, y_bounds: EntryYBounds) bool {
+    const room_min = y_bounds.min;
+    const room_max = y_bounds.max;
     const min_y = clampI16(@min(exit_line.y1, exit_line.y2), room_min, room_max);
     var max_y = clampI16(@max(exit_line.y1, exit_line.y2) - player_body_height, room_min, room_max);
     if (max_y < min_y) max_y = min_y;
-    return tryFitPlayerInYRange(player, room_index, fixedToPixel(player.x), fixedToPixel(player.y), min_y, max_y);
+    return tryFitPlayerInYRange(player, room_index, fixedToPixel(player.x), fixedToPixel(player.y), min_y, max_y, y_bounds);
 }
 
-fn tryFitPlayerInXRange(player: *Player, room_index: usize, start_x: i16, start_y: i16, min_x: i16, max_x: i16) bool {
+fn tryFitPlayerInXRange(player: *Player, room_index: usize, start_x: i16, start_y: i16, min_x: i16, max_x: i16, y_bounds: EntryYBounds) bool {
     const clamped_start = clampI16(start_x, min_x, max_x);
     const max_distance = @max(absI16(clamped_start - min_x), absI16(max_x - clamped_start));
     var offset: i16 = 0;
     while (offset <= max_distance) : (offset += 1) {
         const left_x = clamped_start - offset;
-        if (left_x >= min_x and tryFitPlayerAfterRoomEntryAt(player, room_index, left_x, start_y)) return true;
+        if (left_x >= min_x and tryFitPlayerAfterRoomEntryAt(player, room_index, left_x, start_y, y_bounds)) return true;
 
         const right_x = clamped_start + offset;
-        if (offset != 0 and right_x <= max_x and tryFitPlayerAfterRoomEntryAt(player, room_index, right_x, start_y)) return true;
+        if (offset != 0 and right_x <= max_x and tryFitPlayerAfterRoomEntryAt(player, room_index, right_x, start_y, y_bounds)) return true;
     }
     return false;
 }
 
-fn tryFitPlayerInYRange(player: *Player, room_index: usize, start_x: i16, start_y: i16, min_y: i16, max_y: i16) bool {
+fn tryFitPlayerInYRange(player: *Player, room_index: usize, start_x: i16, start_y: i16, min_y: i16, max_y: i16, y_bounds: EntryYBounds) bool {
     const clamped_start = clampI16(start_y, min_y, max_y);
     const max_distance = @max(absI16(clamped_start - min_y), absI16(max_y - clamped_start));
     var offset: i16 = 0;
     while (offset <= max_distance) : (offset += 1) {
         const up_y = clamped_start - offset;
-        if (up_y >= min_y and tryFitPlayerAfterRoomEntryAt(player, room_index, start_x, up_y)) return true;
+        if (up_y >= min_y and tryFitPlayerAfterRoomEntryAt(player, room_index, start_x, up_y, y_bounds)) return true;
 
         const down_y = clamped_start + offset;
-        if (offset != 0 and down_y <= max_y and tryFitPlayerAfterRoomEntryAt(player, room_index, start_x, down_y)) return true;
+        if (offset != 0 and down_y <= max_y and tryFitPlayerAfterRoomEntryAt(player, room_index, start_x, down_y, y_bounds)) return true;
     }
     return false;
 }
@@ -453,9 +613,11 @@ fn fitPlayerAfterSideRoomEntry(
     from_room: usize,
     entry_direction: room_data.ExitDirection,
     source_floor_world_y: ?i16,
+    aligned_entry: EntryPosition,
 ) bool {
+    if (restoreAlignedEntryPosition(player, room_index, aligned_entry, fullEntryYBounds(room_index))) return true;
     if (reciprocalExitLine(room_index, from_room, entry_direction)) |exit_line| {
-        return fitPlayerWithinVerticalExitLine(player, room_index, exit_line);
+        return fitPlayerWithinVerticalExitLine(player, room_index, exit_line, fullEntryYBounds(room_index));
     }
     fitOrSnapPlayerAfterSideRoomEntry(player, room_index, source_floor_world_y);
     return !roomEntryCollidesAt(fixedToPixel(player.x), fixedToPixel(player.y), room_index);
@@ -519,11 +681,7 @@ fn floorContactAt(x: i16, y: i16, room_index: usize) bool {
 
 fn collidesAt(x: i16, y: i16, room_index: usize) bool {
     return collision.solidRectAt(rooms[room_index], x, y, player_body_width, player_body_height) or
-        breakable_walls.solidRectAt(x, y, player_body_width, player_body_height) or
-        mech_blocks.solidRectAt(x, y, player_body_width, player_body_height) or
-        traffic_blocks.solidRectAt(x, y, player_body_width, player_body_height) or
-        rhythm_blocks.solidRectAt(x, y, player_body_width, player_body_height) or
-        disappearing_platforms.solidRectAt(x, y, player_body_width, player_body_height) or
+        chapter_entities.dynamicSolidRectAt(room_index, x, y, player_body_width, player_body_height) or
         chapter_systems.dynamicSolidRectAt(room_index, x, y, player_body_width, player_body_height);
 }
 

@@ -80,6 +80,7 @@ pub fn build(b: *std.Build) void {
     addCacheInputPath(build_level, combined_room_manifest);
     addCacheInputDir(b, build_level, "assets/chapters/prologue_a");
     addCacheInputDir(b, build_level, "assets/chapters/1_city");
+    addCacheInputDir(b, build_level, "assets/animations/conveyor_belt_platform");
     addCacheOutputDir(b, build_level, "src/generated/assets/chapters");
     addCacheOutput(b, build_level, "src/generated_rooms.zig");
     finishCachedPythonCommand(b, build_level, "tools/build_level_assets.py");
@@ -582,6 +583,7 @@ const soundbank_sfx_files = [_][]const u8{
     "assets/audio/raw/sfx/madeline/jump_wall_climblayer_right.wav",
     "assets/audio/raw/sfx/madeline/dash_red_left.wav",
     "assets/audio/raw/sfx/madeline/dash_red_right.wav",
+    "assets/audio/raw/sfx/madeline/death.wav",
     "assets/audio/raw/sfx/madeline/grab_00_dirt_01.wav",
     "assets/audio/raw/sfx/madeline/grab_00_dirt_02.wav",
     "assets/audio/raw/sfx/madeline/grab_00_dirt_03.wav",

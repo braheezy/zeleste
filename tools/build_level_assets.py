@@ -4,12 +4,41 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 from split_foreground_tileset import read_png_rgba
+
+
+ROOM_CACHE_VERSION = 1
+ROOM_BUNDLE_OUTPUTS = [
+    "bg_tiles.bin",
+    "bg_map.bin",
+    "bg_palette.bin",
+    "spawn.bin",
+    "collision.bin",
+    "falling_blocks.bin",
+    "breakable_walls.bin",
+    "disappearing_platforms.bin",
+    "mech_blocks.bin",
+    "traffic_block_tiles.bin",
+    "traffic_block_palette.bin",
+    "rhythm_blocks.bin",
+    "springs.bin",
+    "strawberries.bin",
+    "foreground_stamps.bin",
+    "bridge_poles.bin",
+    "generic_stamps.bin",
+    "bird_npcs.bin",
+    "wires.bin",
+    "wire_tiles.bin",
+    "bridge_ending.bin",
+    "room.json",
+]
 
 
 def zig_room_name(prefix: str, room_id: str) -> str:
@@ -63,6 +92,138 @@ def load_annotation(image: Path) -> dict:
     if not path.exists():
         return {}
     return json.loads(path.read_text())
+
+
+def scene_path_for_image(image: Path) -> Path:
+    return image.with_name(f"{image.stem}_scene.json")
+
+
+def update_hash(hasher: "hashlib._Hash", value: str) -> None:
+    encoded = value.encode("utf-8", errors="surrogateescape")
+    hasher.update(len(encoded).to_bytes(8, "little"))
+    hasher.update(encoded)
+
+
+def stable_path(path: Path | str) -> str:
+    return os.path.abspath(os.fspath(path))
+
+
+def stable_command_part(part: str) -> str:
+    if "/" in part or "\\" in part:
+        return stable_path(part)
+    return part
+
+
+def hash_file_contents(hasher: "hashlib._Hash", path: Path) -> None:
+    with path.open("rb") as file:
+        while True:
+            chunk = file.read(1024 * 1024)
+            if not chunk:
+                break
+            hasher.update(chunk)
+
+
+def hash_required_file(hasher: "hashlib._Hash", path: Path, label: str) -> None:
+    if not path.is_file():
+        raise FileNotFoundError(f"room asset input missing for {label}: {path}")
+    update_hash(hasher, f"file:{label}")
+    update_hash(hasher, stable_path(path))
+    hash_file_contents(hasher, path)
+
+
+def hash_optional_file(hasher: "hashlib._Hash", path: Path, label: str) -> None:
+    update_hash(hasher, f"optional-file:{label}")
+    update_hash(hasher, stable_path(path))
+    if path.is_file():
+        update_hash(hasher, "present")
+        hash_file_contents(hasher, path)
+    else:
+        update_hash(hasher, "missing")
+
+
+def hash_optional_dir(hasher: "hashlib._Hash", path: Path, label: str) -> None:
+    update_hash(hasher, f"optional-dir:{label}")
+    update_hash(hasher, stable_path(path))
+    if not path.is_dir():
+        update_hash(hasher, "missing")
+        return
+    update_hash(hasher, "present")
+    for file in sorted(item for item in path.rglob("*") if item.is_file()):
+        relative = file.relative_to(path).as_posix()
+        update_hash(hasher, relative)
+        hash_file_contents(hasher, file)
+
+
+def read_room_cache(path: Path) -> dict:
+    if not path.is_file():
+        return {"version": ROOM_CACHE_VERSION, "rooms": {}}
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return {"version": ROOM_CACHE_VERSION, "rooms": {}}
+    if data.get("version") != ROOM_CACHE_VERSION or not isinstance(data.get("rooms"), dict):
+        return {"version": ROOM_CACHE_VERSION, "rooms": {}}
+    return data
+
+
+def write_room_cache(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+    tmp.replace(path)
+
+
+def expected_room_outputs(room: dict, output_dir: Path) -> list[Path]:
+    outputs = [output_dir / filename for filename in ROOM_BUNDLE_OUTPUTS]
+    if "parallax" in room:
+        name = str(room["parallax"].get("name", "parallax_fg"))
+        outputs.extend(
+            [
+                output_dir / f"{name}_tiles.bin",
+                output_dir / f"{name}_map.bin",
+                output_dir / f"{name}_palette.bin",
+            ]
+        )
+    return outputs
+
+
+def room_outputs_exist(room: dict, output_dir: Path) -> bool:
+    return all(path.is_file() for path in expected_room_outputs(room, output_dir))
+
+
+def room_fingerprint(
+    manifest_dir: Path,
+    output_dir: Path,
+    room: dict,
+    command: list[str],
+    rgb_bits: int,
+) -> str:
+    image = manifest_dir / str(room["image"])
+    tools_dir = Path(__file__).resolve().parent
+    repo_root = tools_dir.parent
+    hasher = hashlib.sha256()
+    update_hash(hasher, f"room-cache-v{ROOM_CACHE_VERSION}")
+    update_hash(hasher, stable_path(output_dir))
+    update_hash(hasher, json.dumps(room, sort_keys=True, separators=(",", ":")))
+    update_hash(hasher, f"rgb-bits:{rgb_bits}")
+    for part in command:
+        update_hash(hasher, stable_command_part(part))
+    hash_required_file(hasher, image, "background")
+    hash_optional_file(hasher, annotation_path_for_image(image), "annotations")
+    hash_optional_file(hasher, scene_path_for_image(image), "scene")
+    for tool in [
+        "build_room_bundle.py",
+        "convert_room_tilemap_8bpp.py",
+        "split_foreground_tileset.py",
+    ]:
+        hash_required_file(hasher, tools_dir / tool, tool)
+    if "parallax" in room:
+        parallax = room["parallax"]
+        hash_required_file(hasher, manifest_dir / str(parallax["image"]), "parallax")
+        hash_required_file(hasher, tools_dir / "pack_parallax_obj.py", "pack_parallax_obj.py")
+    hash_optional_dir(hasher, repo_root / "assets" / "animations" / "conveyor_belt_platform", "conveyor_belt_platform")
+    hash_optional_file(hasher, repo_root / "assets" / "source" / "prologue-bridge" / "whole-pole.png", "bridge_pole")
+    return hasher.hexdigest()
 
 
 def exit_direction(exit_line: dict, width: int, height: int) -> str:
@@ -224,35 +385,59 @@ def emit_granny_cutscene(lines: list[str], room_name: str, cutscene: dict) -> No
     lines.append("")
 
 
-def build_room(manifest_dir: Path, generated_root: Path, prefix: str, room: dict, rgb_bits: int) -> tuple[str, dict]:
+def build_room(
+    manifest_dir: Path,
+    generated_root: Path,
+    prefix: str,
+    room: dict,
+    rgb_bits: int,
+    room_cache: dict,
+) -> tuple[str, dict]:
     room_name = zig_room_name(prefix, str(room["id"]))
     output_dir = generated_root / room_name
     image = manifest_dir / str(room["image"])
+    effective_rgb_bits = int(room.get("rgbBits", rgb_bits))
     command = [
         sys.executable,
         str(Path(__file__).with_name("build_room_bundle.py")),
         str(image),
         str(output_dir),
         "--rgb-bits",
-        str(int(room.get("rgbBits", rgb_bits))),
+        str(effective_rgb_bits),
     ]
-    subprocess.run(command, check=True)
+    digest = room_fingerprint(manifest_dir, output_dir, room, command, effective_rgb_bits)
+    cached_room = room_cache["rooms"].get(room_name)
+    cache_hit = (
+        os.environ.get("ASSET_FORCE") != "1"
+        and isinstance(cached_room, dict)
+        and cached_room.get("fingerprint") == digest
+        and room_outputs_exist(room, output_dir)
+    )
+    if not cache_hit:
+        subprocess.run(command, check=True)
 
-    if "parallax" in room:
-        parallax = room["parallax"]
-        subprocess.run(
-            [
-                sys.executable,
-                str(Path(__file__).with_name("pack_parallax_obj.py")),
-                "--input",
-                str(manifest_dir / str(parallax["image"])),
-                "--output-dir",
-                str(output_dir),
-                "--name",
-                str(parallax.get("name", "parallax_fg")),
-            ],
-            check=True,
-        )
+        if "parallax" in room:
+            parallax = room["parallax"]
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(Path(__file__).with_name("pack_parallax_obj.py")),
+                    "--input",
+                    str(manifest_dir / str(parallax["image"])),
+                    "--output-dir",
+                    str(output_dir),
+                    "--name",
+                    str(parallax.get("name", "parallax_fg")),
+                ],
+                check=True,
+            )
+        if not room_outputs_exist(room, output_dir):
+            missing = [str(path) for path in expected_room_outputs(room, output_dir) if not path.is_file()]
+            raise RuntimeError(f"room bundle {room_name} did not produce expected outputs: {', '.join(missing)}")
+    room_cache["rooms"][room_name] = {
+        "fingerprint": digest,
+        "outputs": [path.name for path in expected_room_outputs(room, output_dir)],
+    }
 
     image_data = read_png_rgba(image)
     return room_name, {"width": image_data.width, "height": image_data.height}
@@ -319,7 +504,6 @@ def emit_generated_zig(
             ("breakable_walls", "breakable_walls.bin"),
             ("disappearing_platforms", "disappearing_platforms.bin"),
             ("mech_blocks", "mech_blocks.bin"),
-            ("traffic_blocks", "traffic_blocks.bin"),
             ("traffic_block_tiles", "traffic_block_tiles.bin"),
             ("traffic_block_palette", "traffic_block_palette.bin"),
             ("rhythm_blocks", "rhythm_blocks.bin"),
@@ -370,7 +554,6 @@ def emit_generated_zig(
                 f"        .breakable_walls = &{room_name}_breakable_walls,",
                 f"        .disappearing_platforms = &{room_name}_disappearing_platforms,",
                 f"        .mech_blocks = &{room_name}_mech_blocks,",
-                f"        .traffic_blocks = &{room_name}_traffic_blocks,",
                 f"        .traffic_block_tiles = &{room_name}_traffic_block_tiles,",
                 f"        .traffic_block_palette = &{room_name}_traffic_block_palette,",
                 f"        .rhythm_blocks = &{room_name}_rhythm_blocks,",
@@ -434,14 +617,17 @@ def main() -> int:
     manifest = json.loads(args.manifest.read_text())
     manifest_dir = args.manifest.parent
     prefix = str(manifest.get("outputPrefix", manifest["id"]))
+    room_cache_path = args.generated_root / ".room_bundle_cache.json"
+    room_cache = read_room_cache(room_cache_path)
     room_names: list[str] = []
     room_sizes: list[dict] = []
     for room in manifest["rooms"]:
-        room_name, size = build_room(manifest_dir, args.generated_root, prefix, room, args.rgb_bits)
+        room_name, size = build_room(manifest_dir, args.generated_root, prefix, room, args.rgb_bits, room_cache)
         room_names.append(room_name)
         room_sizes.append(size)
 
     emit_generated_zig(args.zig_output, manifest_dir, args.generated_root, prefix, manifest, room_names, room_sizes, args.chapter_index)
+    write_room_cache(room_cache_path, room_cache)
     print(f"generated {args.zig_output} for {len(room_names)} rooms")
     return 0
 

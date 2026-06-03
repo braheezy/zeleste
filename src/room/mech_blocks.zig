@@ -3,6 +3,7 @@ const gba = @import("gba");
 const camera_mod = @import("../world/camera.zig");
 const collision = @import("../world/collision.zig");
 const dynamic_object_slots = @import("dynamic_object_slots.zig");
+const falling_blocks = @import("falling_blocks.zig");
 const level = @import("../generated_rooms.zig");
 const math = @import("../core/math.zig");
 const oam = @import("../core/oam.zig");
@@ -27,11 +28,12 @@ pub const max_blocks = 8;
 
 const record_bytes = 12;
 const charge_frames: u8 = 6;
-const outbound_frames: u8 = 32;
+const outbound_frames: u8 = 20;
 const pause_frames: u8 = 48;
-const return_frames: u8 = 128;
+const return_frames: u8 = 96;
 const cooldown_frames: u8 = 10;
 const grab_trigger_frames: u8 = 8;
+const terminal_lift_boost_frames: u8 = 5;
 const base_tile: u10 = 432;
 const max_tiles = 104;
 const light_frame_tiles: u10 = 2;
@@ -47,6 +49,12 @@ const State = enum(u8) {
     pause,
     returning,
     cooldown,
+};
+
+const MoveEase = enum {
+    linear,
+    ease_in,
+    ease_out,
 };
 
 const Contact = struct {
@@ -156,9 +164,12 @@ pub fn update(player: *Player, room_index: usize) UpdateResult {
         const block = &blocks[index];
         if (!block.active) continue;
 
+        const old_fixed_x = block.x;
+        const old_fixed_y = block.y;
         const old_x = fixedToPixel(block.x);
         const old_y = fixedToPixel(block.y);
         const contact = playerContactAt(player.*, block.*, old_x, old_y);
+        const previous_state = block.state;
         updateTrigger(block, contact);
         advanceState(block);
 
@@ -166,13 +177,16 @@ pub fn update(player: *Player, room_index: usize) UpdateResult {
         const new_y = fixedToPixel(block.y);
         const dx = new_x - old_x;
         const dy = new_y - old_y;
-        if (dx != 0 or dy != 0) {
-            if (movePlayerOrCrush(player, room_index, block.*, old_x, old_y, new_x, new_y, dx, dy, contact)) {
+        const fixed_dx = block.x - old_fixed_x;
+        const fixed_dy = block.y - old_fixed_y;
+        if (fixed_dx != 0 or fixed_dy != 0 or dx != 0 or dy != 0) {
+            if (movePlayerOrCrush(player, room_index, block.*, old_x, old_y, new_x, new_y, fixed_dx, fixed_dy, contact)) {
                 result.killed_player = true;
                 return result;
             }
-        } else if (contact.any()) {
-            storeLiftBoost(player, 0, 0);
+        }
+        if (contact.any() and terminalStopReached(previous_state, block.state)) {
+            shortenLiftBoost(player, terminal_lift_boost_frames);
         }
     }
     return result;
@@ -262,11 +276,13 @@ pub fn usedObjectCount() usize {
 }
 
 fn firstObject() usize {
-    return dynamic_object_slots.first_object;
+    return dynamic_object_slots.first_object + falling_blocks.usedObjectCount();
 }
 
 fn objectCapacity() usize {
-    return dynamic_object_slots.object_capacity;
+    const used = falling_blocks.usedObjectCount();
+    if (used >= dynamic_object_slots.object_capacity) return 0;
+    return dynamic_object_slots.object_capacity - used;
 }
 
 fn updateTrigger(block: *Block, contact: Contact) void {
@@ -296,7 +312,7 @@ fn advanceState(block: *Block) void {
             if (advanceTimer(block, charge_frames)) startMoveOut(block);
         },
         .moving_out => {
-            if (advanceMove(block, outbound_frames)) {
+            if (advanceMove(block, outbound_frames, .ease_in)) {
                 block.state = .pause;
                 block.timer = 0;
                 block.x = block.target_x;
@@ -307,7 +323,7 @@ fn advanceState(block: *Block) void {
             if (advanceTimer(block, pause_frames)) startReturn(block);
         },
         .returning => {
-            if (advanceMove(block, return_frames)) {
+            if (advanceMove(block, return_frames, .ease_out)) {
                 block.state = .cooldown;
                 block.timer = 0;
                 block.x = block.start_x;
@@ -330,10 +346,10 @@ fn advanceTimer(block: *Block, duration: u8) bool {
     return block.timer >= duration;
 }
 
-fn advanceMove(block: *Block, duration: u8) bool {
+fn advanceMove(block: *Block, duration: u8, ease: MoveEase) bool {
     block.timer += 1;
-    block.x = interpolateFixed(block.move_from_x, block.move_to_x, block.timer, duration);
-    block.y = interpolateFixed(block.move_from_y, block.move_to_y, block.timer, duration);
+    block.x = interpolateFixed(block.move_from_x, block.move_to_x, block.timer, duration, ease);
+    block.y = interpolateFixed(block.move_from_y, block.move_to_y, block.timer, duration, ease);
     return block.timer >= duration;
 }
 
@@ -355,14 +371,30 @@ fn startReturn(block: *Block) void {
     block.move_to_y = block.start_y;
 }
 
-fn interpolateFixed(from: i32, to: i32, timer: u8, duration: u8) i32 {
-    const t: i32 = @intCast(@min(timer, duration));
-    const d: i32 = @intCast(duration);
-    return from + @divTrunc((to - from) * t, d);
+fn interpolateFixed(from: i32, to: i32, timer: u8, duration: u8, ease: MoveEase) i32 {
+    const t: i64 = @intCast(@min(timer, duration));
+    const d: i64 = @intCast(duration);
+    const delta: i64 = @intCast(to - from);
+    const remaining = d - t;
+    const numerator = switch (ease) {
+        .linear => t,
+        .ease_in => t * t,
+        .ease_out => d * d - remaining * remaining,
+    };
+    const denominator = switch (ease) {
+        .linear => d,
+        .ease_in, .ease_out => d * d,
+    };
+    return from + @as(i32, @intCast(@divTrunc(delta * numerator, denominator)));
 }
 
 fn pathMoves(block: Block) bool {
     return block.start_x != block.target_x or block.start_y != block.target_y;
+}
+
+fn terminalStopReached(previous_state: State, next_state: State) bool {
+    return (previous_state == .moving_out and next_state == .pause) or
+        (previous_state == .returning and next_state == .cooldown);
 }
 
 fn movePlayerOrCrush(
@@ -373,31 +405,41 @@ fn movePlayerOrCrush(
     old_y: i16,
     new_x: i16,
     new_y: i16,
-    dx: i16,
-    dy: i16,
+    fixed_dx: i32,
+    fixed_dy: i32,
     contact: Contact,
 ) bool {
     if (contact.any()) {
-        player.x += @as(i32, dx) << fixed_shift;
-        player.y += @as(i32, dy) << fixed_shift;
-        storeLiftBoost(player, dx, dy);
+        player.x += fixed_dx;
+        player.y += fixed_dy;
+        storeLiftBoost(player, fixed_dx, fixed_dy);
         return playerCollidesWithStatic(player.*, room_index);
     }
 
-    return movingBlockCrushesPlayer(player.*, old_x, old_y, new_x, new_y, block.w, block.h);
+    return moveOverlappingPlayerOrCrush(player, room_index, new_x, new_y, block.w, block.h, new_x - old_x, new_y - old_y, fixed_dx, fixed_dy);
 }
 
-fn storeLiftBoost(player: *Player, dx: i16, dy: i16) void {
-    player.lift_boost_x = @as(i32, dx) << fixed_shift;
-    player.lift_boost_y = @as(i32, dy) << fixed_shift;
+fn storeLiftBoost(player: *Player, fixed_dx: i32, fixed_dy: i32) void {
+    player.lift_boost_x = @max(-player_mod.lift_boost_x_cap, @min(player_mod.lift_boost_x_cap, fixed_dx));
+    player.lift_boost_y = if (fixed_dy > 0) 0 else @max(player_mod.lift_boost_y_cap, fixed_dy);
     player.lift_boost_timer = player_mod.lift_boost_frames;
 }
 
+fn shortenLiftBoost(player: *Player, frames: u8) void {
+    if (player.lift_boost_timer > frames) {
+        player.lift_boost_timer = frames;
+    }
+}
+
 fn playerCollidesWithStatic(player: Player, room_index: usize) bool {
+    return playerCollidesWithStaticAt(room_index, fixedToPixel(player.x), fixedToPixel(player.y));
+}
+
+fn playerCollidesWithStaticAt(room_index: usize, x: i16, y: i16) bool {
     return collision.solidRectAt(
         rooms[room_index],
-        fixedToPixel(player.x),
-        fixedToPixel(player.y),
+        x,
+        y,
         player_mod.body_width,
         player_mod.body_height,
     );
@@ -435,7 +477,18 @@ fn playerHoldingBlock(player: Player, block: Block, block_x: i16, block_y: i16) 
     return vertical_overlap and (left_contact or right_contact);
 }
 
-fn movingBlockCrushesPlayer(player: Player, old_x: i16, old_y: i16, new_x: i16, new_y: i16, w: u8, h: u8) bool {
+fn moveOverlappingPlayerOrCrush(
+    player: *Player,
+    room_index: usize,
+    new_x: i16,
+    new_y: i16,
+    w: u8,
+    h: u8,
+    dx: i16,
+    dy: i16,
+    fixed_dx: i32,
+    fixed_dy: i32,
+) bool {
     const player_left = fixedToPixel(player.x);
     const player_top = fixedToPixel(player.y);
     const player_right = player_left + player_mod.body_width;
@@ -449,16 +502,46 @@ fn movingBlockCrushesPlayer(player: Player, old_x: i16, old_y: i16, new_x: i16, 
         return false;
     }
 
-    const old_right = old_x + @as(i16, @intCast(w));
-    const old_bottom = old_y + @as(i16, @intCast(h));
-    const dx = new_x - old_x;
-    const dy = new_y - old_y;
+    if (dx == 0 and dy == 0) return false;
 
-    if (dy > 0 and old_bottom <= player_top + 1) return true;
-    if (dy < 0 and old_y >= player_bottom - 1) return true;
-    if (dx > 0 and old_right <= player_left + 1) return true;
-    if (dx < 0 and old_x >= player_right - 1) return true;
-    return dx != 0 or dy != 0;
+    const prefer_horizontal = absI16(dx) >= absI16(dy);
+    if (prefer_horizontal) {
+        if (tryPushPlayerHorizontal(player, room_index, block_left, block_right, dx, fixed_dx, fixed_dy)) return false;
+        if (tryPushPlayerVertical(player, room_index, block_top, block_bottom, dy, fixed_dx, fixed_dy)) return false;
+    } else {
+        if (tryPushPlayerVertical(player, room_index, block_top, block_bottom, dy, fixed_dx, fixed_dy)) return false;
+        if (tryPushPlayerHorizontal(player, room_index, block_left, block_right, dx, fixed_dx, fixed_dy)) return false;
+    }
+
+    return true;
+}
+
+fn tryPushPlayerHorizontal(player: *Player, room_index: usize, block_left: i16, block_right: i16, dx: i16, fixed_dx: i32, fixed_dy: i32) bool {
+    if (dx > 0 and tryPlacePushedPlayer(player, room_index, block_right, fixedToPixel(player.y), fixed_dx, fixed_dy, false)) return true;
+    if (dx < 0 and tryPlacePushedPlayer(player, room_index, block_left - player_mod.body_width, fixedToPixel(player.y), fixed_dx, fixed_dy, false)) return true;
+    return false;
+}
+
+fn tryPushPlayerVertical(player: *Player, room_index: usize, block_top: i16, block_bottom: i16, dy: i16, fixed_dx: i32, fixed_dy: i32) bool {
+    if (dy < 0 and tryPlacePushedPlayer(player, room_index, fixedToPixel(player.x), block_top - player_mod.body_height, fixed_dx, fixed_dy, true)) return true;
+    if (dy > 0 and tryPlacePushedPlayer(player, room_index, fixedToPixel(player.x), block_bottom, fixed_dx, fixed_dy, false)) return true;
+    return false;
+}
+
+fn tryPlacePushedPlayer(player: *Player, room_index: usize, x: i16, y: i16, fixed_dx: i32, fixed_dy: i32, grounded: bool) bool {
+    if (playerCollidesWithStaticAt(room_index, x, y)) return false;
+    player.x = pixelToFixed(x);
+    player.y = pixelToFixed(y);
+    if (grounded) {
+        player.vy = 0;
+        player.grounded = true;
+    }
+    storeLiftBoost(player, fixed_dx, fixed_dy);
+    return true;
+}
+
+fn absI16(value: i16) i16 {
+    return if (value < 0) -value else value;
 }
 
 fn objectCountFor(block: Block) usize {

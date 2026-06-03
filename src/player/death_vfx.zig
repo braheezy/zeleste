@@ -24,15 +24,29 @@ pub const Intro = struct {
     facing_left: bool = false,
 };
 
+pub const BurstPalette = enum(u8) {
+    red,
+    blue,
+};
+
 const first_object = 0;
 const spoke_count = 8;
 const object_count = spoke_count + 1;
 const base_tile: u10 = player_render.sweat_base_tile + player_render.sweat_tiles_per_frame;
 const palette_bank: u4 = 3;
 
+const LoadedPalette = enum(u8) {
+    invalid,
+    red,
+    blue,
+};
+
 var tiles: [6]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** 6;
+var loaded_palette: LoadedPalette = .invalid;
 
 pub fn loadTiles() void {
+    loaded_palette = .invalid;
+    loadPalette(.red);
     tiles = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** 6;
     drawDisc(0, 3, 3, 3, 5);
     drawDisc(0, 3, 3, 2, 1);
@@ -65,7 +79,7 @@ pub fn loadTiles() void {
     gba.display.memcpyObjectTiles4Bpp(base_tile, &tiles);
 }
 
-pub fn drawDeath(camera: Camera, elapsed: u8, origin_x: i32, origin_y: i32, intro: Intro) void {
+pub fn drawDeath(camera: Camera, elapsed: u8, origin_x: i32, origin_y: i32, palette: BurstPalette, intro: Intro) void {
     if (intro.frame_count != 0 and elapsed < intro.total_frames) {
         drawIntro(camera, intro, elapsed);
         hideObjects();
@@ -74,15 +88,15 @@ pub fn drawDeath(camera: Camera, elapsed: u8, origin_x: i32, origin_y: i32, intr
 
     hideObject(player_render.object);
     if (intro.frame_count != 0) {
-        drawBalls(camera, origin_x, origin_y, elapsed - intro.total_frames);
+        drawBalls(camera, origin_x, origin_y, elapsed - intro.total_frames, palette);
         return;
     }
 
-    drawBurst(camera, origin_x, origin_y, elapsed);
+    drawBurst(camera, origin_x, origin_y, elapsed, palette);
 }
 
-pub fn drawRespawn(camera: Camera, origin_x: i32, origin_y: i32, respawn_timer: u8) void {
-    drawBalls(camera, origin_x, origin_y, respawn_timer + 6);
+pub fn drawRespawn(camera: Camera, origin_x: i32, origin_y: i32, respawn_timer: u8, palette: BurstPalette) void {
+    drawBalls(camera, origin_x, origin_y, respawn_timer + 6, palette);
 }
 
 pub fn hideObjects() void {
@@ -115,24 +129,25 @@ fn drawIntro(camera: Camera, intro: Intro, elapsed: u8) void {
     });
 }
 
-fn drawBurst(camera: Camera, origin_x: i32, origin_y: i32, elapsed: u8) void {
+fn drawBurst(camera: Camera, origin_x: i32, origin_y: i32, elapsed: u8, palette: BurstPalette) void {
     if (elapsed < 3) {
-        drawCore(camera, origin_x, origin_y, .size_8x8, base_tile, -4, -4);
+        drawCore(camera, origin_x, origin_y, .size_8x8, base_tile, -4, -4, palette);
         return;
     }
     if (elapsed < 6) {
-        drawCore(camera, origin_x, origin_y, .size_8x8, base_tile + 1, -4, -4);
+        drawCore(camera, origin_x, origin_y, .size_8x8, base_tile + 1, -4, -4, palette);
         return;
     }
     if (elapsed < 10) {
-        drawCore(camera, origin_x, origin_y, .size_16x16, base_tile + 2, -8, -8);
+        drawCore(camera, origin_x, origin_y, .size_16x16, base_tile + 2, -8, -8, palette);
         return;
     }
 
-    drawBalls(camera, origin_x, origin_y, elapsed - 10);
+    drawBalls(camera, origin_x, origin_y, elapsed - 10, palette);
 }
 
-fn drawCore(camera: Camera, origin_x: i32, origin_y: i32, size: gba.display.Object.Size, tile: u10, x_offset: i16, y_offset: i16) void {
+fn drawCore(camera: Camera, origin_x: i32, origin_y: i32, size: gba.display.Object.Size, tile: u10, x_offset: i16, y_offset: i16, palette: BurstPalette) void {
+    loadPalette(palette);
     const draw_origin_x = clampI16(fixedToPixel(origin_x) - camera.x - 4, 4, video.screen_width - 12);
     const draw_origin_y = clampI16(fixedToPixel(origin_y) - camera.y - 4, 4, video.screen_height - 12);
     gba.display.objects[first_object] = gba.display.Object.init(.{
@@ -149,7 +164,8 @@ fn drawCore(camera: Camera, origin_x: i32, origin_y: i32, size: gba.display.Obje
     }
 }
 
-fn drawBalls(camera: Camera, origin_x: i32, origin_y: i32, progress: u8) void {
+fn drawBalls(camera: Camera, origin_x: i32, origin_y: i32, progress: u8, palette: BurstPalette) void {
+    loadPalette(palette);
     const directions = [_][2]i16{
         .{ 0, -16 },
         .{ 11, -11 },
@@ -191,6 +207,34 @@ fn burstRadius(progress: u8) i16 {
     };
     if (progress < radii.len) return radii[progress];
     return 25;
+}
+
+fn loadPalette(palette: BurstPalette) void {
+    const palette_mode: LoadedPalette = switch (palette) {
+        .red => .red,
+        .blue => .blue,
+    };
+    if (loaded_palette == palette_mode) return;
+
+    const base = @as(usize, palette_bank) * 16;
+    gba.display.obj_palette.colors[base + 0] = .black;
+    gba.display.obj_palette.colors[base + 1] = .white;
+    gba.display.obj_palette.colors[base + 2] = gba.ColorRgb555.rgb(17, 27, 31);
+    switch (palette) {
+        .red => {
+            gba.display.obj_palette.colors[base + 3] = gba.ColorRgb555.rgb(29, 4, 4);
+            gba.display.obj_palette.colors[base + 4] = gba.ColorRgb555.rgb(17, 2, 3);
+        },
+        .blue => {
+            gba.display.obj_palette.colors[base + 3] = gba.ColorRgb555.rgb(8, 22, 31);
+            gba.display.obj_palette.colors[base + 4] = gba.ColorRgb555.rgb(3, 12, 22);
+        },
+    }
+    gba.display.obj_palette.colors[base + 5] = .black;
+    gba.display.obj_palette.colors[base + 6] = gba.ColorRgb555.rgb(6, 7, 10);
+    gba.display.obj_palette.colors[base + 7] = gba.ColorRgb555.rgb(15, 21, 31);
+    gba.display.obj_palette.colors[base + 8] = gba.ColorRgb555.rgb(31, 24, 9);
+    loaded_palette = palette_mode;
 }
 
 fn drawDisc(tile_index: usize, center_x: i16, center_y: i16, radius: u8, color: u4) void {

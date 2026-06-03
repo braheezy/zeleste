@@ -29,6 +29,7 @@ const origin = Origin{ .x = 194, .y = 49 };
 
 var counter: u8 = 0;
 var tiles: [tile_count]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** tile_count;
+var uploaded_counter: u8 = 0xff;
 
 pub fn loadPalette() void {
     gba.display.obj_palette.colors[@as(usize, palette_bank) * 16 + @as(usize, soft_color)] = gba.ColorRgb555.rgb(25, 28, 29);
@@ -36,6 +37,7 @@ pub fn loadPalette() void {
 
 pub fn reset(first_object: usize) void {
     counter = 0;
+    uploaded_counter = 0xff;
     hideObjects(first_object);
 }
 
@@ -54,11 +56,14 @@ pub fn draw(camera: Camera, active_room_index: usize, first_object: usize) void 
         return;
     }
 
+    const upload_tiles = counter != uploaded_counter;
     var index: usize = 0;
     while (index < object_count) : (index += 1) {
-        clearTile(index);
         const particle_age = age(index);
-        drawShape(index, particle_age, index);
+        if (upload_tiles) {
+            clearTile(index);
+            drawShape(index, particle_age, index);
+        }
 
         const rise: i16 = @intCast(particle_age / 5);
         const draw_x = origin.x + wobble(particle_age, index) - camera.x - 8;
@@ -73,7 +78,10 @@ pub fn draw(camera: Camera, active_room_index: usize, first_object: usize) void 
         });
     }
 
-    gba.display.memcpyObjectTiles4Bpp(base_tile, &tiles);
+    if (upload_tiles) {
+        gba.display.memcpyObjectTiles4Bpp(base_tile, &tiles);
+        uploaded_counter = counter;
+    }
 }
 
 pub fn hideObjects(first_object: usize) void {

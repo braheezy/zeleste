@@ -2,14 +2,12 @@ const assets = @import("../core/assets.zig");
 const audio = @import("../core/audio.zig");
 const sound_ids = assets.sound_ids;
 const background = @import("../world/background.zig");
+const chapter_entities = @import("../chapters/entities.zig");
 const chapter_systems = @import("../chapters/systems.zig");
 const collision = @import("../world/collision.zig");
-const disappearing_platforms = @import("../room/disappearing_platforms.zig");
 const level = @import("../generated_rooms.zig");
 const math = @import("../core/math.zig");
-const mech_blocks = @import("../room/mech_blocks.zig");
 const player_mod = @import("state.zig");
-const rhythm_blocks = @import("../room/rhythm_blocks.zig");
 const room_data = @import("../world/room_data.zig");
 
 const Player = player_mod.State;
@@ -134,9 +132,12 @@ pub fn surfaceAtPlayerFeet(player: Player, room_index: usize) Surface {
     if (chapter_systems.actorFloorAt(room_index, player_x, player_y)) return .car;
     if (chapter_systems.asphaltFloorAtPlayer(room_index, player)) return .asphalt;
     if (chapter_systems.snowFloorAtPlayer(room_index, player)) return .snow;
-    if (mech_blocks.floorAtPlayer(player)) return .asphalt;
-    if (rhythm_blocks.floorAtPlayer(player)) return .asphalt;
-    if (disappearing_platforms.floorAtPlayer(player)) return .dirt;
+    if (chapter_entities.floorSurfaceAtPlayer(room_index, player)) |surface| {
+        return switch (surface) {
+            .asphalt => .asphalt,
+            .dirt => .dirt,
+        };
+    }
     if (oneWayFloorAt(player_x, player_y, room_index)) return .wood;
 
     return backgroundSurfaceAt(room_index, player_x, bottom);

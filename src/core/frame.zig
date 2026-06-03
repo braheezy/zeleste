@@ -17,5 +17,5 @@ pub fn syncFrontend() void {
 }
 
 fn waitVBlank() void {
-    gba.display.naiveVSync();
+    gba.bios.vblankIntrWait();
 }

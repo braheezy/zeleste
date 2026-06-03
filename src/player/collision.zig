@@ -1,13 +1,9 @@
 const collision = @import("../world/collision.zig");
+const chapter_entities = @import("../chapters/entities.zig");
 const chapter_systems = @import("../chapters/systems.zig");
-const breakable_walls = @import("../room/breakable_walls.zig");
-const disappearing_platforms = @import("../room/disappearing_platforms.zig");
 const level = @import("../generated_rooms.zig");
 const math = @import("../core/math.zig");
-const mech_blocks = @import("../room/mech_blocks.zig");
 const player_mod = @import("state.zig");
-const rhythm_blocks = @import("../room/rhythm_blocks.zig");
-const traffic_blocks = @import("../room/traffic_blocks.zig");
 
 const Player = player_mod.State;
 const fixedToPixel = math.fixedToPixel;
@@ -145,11 +141,7 @@ pub fn solidRectAt(x: i16, y: i16, width: i16, height: i16, room_index: usize) b
 }
 
 pub fn dynamicSolidRectAt(room_index: usize, x: i16, y: i16, width: i16, height: i16) bool {
-    if (breakable_walls.solidRectAt(x, y, width, height)) return true;
-    if (mech_blocks.solidRectAt(x, y, width, height)) return true;
-    if (traffic_blocks.solidRectAt(x, y, width, height)) return true;
-    if (rhythm_blocks.solidRectAt(x, y, width, height)) return true;
-    if (disappearing_platforms.solidRectAt(x, y, width, height)) return true;
+    if (chapter_entities.dynamicSolidRectAt(room_index, x, y, width, height)) return true;
     return chapter_systems.dynamicSolidRectAt(room_index, x, y, width, height);
 }
 

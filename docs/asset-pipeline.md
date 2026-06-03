@@ -109,6 +109,9 @@ Current annotation model:
 - respawn points are candidates used after death;
 - transition placement is calculated from room exits and current player
   position, not from respawn points.
+- falling block annotations are rectangular dynamic solids. Prologue blocks
+  keep the legacy `playerBelow` trigger and `maxY` target; other chapter blocks
+  default to `grab` and fall until they hit static collision.
 
 ## Foreground Grass Pipeline
 

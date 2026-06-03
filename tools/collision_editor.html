@@ -22,6 +22,7 @@
                 --dash-refill: rgba(100, 245, 255, 0.82);
                 --cassette: rgba(196, 112, 255, 0.82);
                 --stone: rgba(150, 160, 172, 0.72);
+                --falling: rgba(128, 186, 255, 0.72);
                 --mech: rgba(92, 255, 220, 0.68);
                 --traffic: rgba(255, 224, 92, 0.72);
                 --traffic-blue: rgba(80, 174, 255, 0.76);
@@ -188,8 +189,9 @@
                     <option value="dashRefill">Dash Refill</option>
                     <option value="cassette">Cassette Tape</option>
                     <option value="stonePlatform">Stone Platform</option>
+                    <option value="fallingBlock">Falling Block</option>
                     <option value="mechBlock">Mech Block</option>
-                    <option value="trafficBlock">Traffic Block</option>
+                    <option value="trafficBlock">Rhythm Block</option>
                     <option value="exitLine">Exit Line</option>
                     <option value="pitDeathLine">Pit Death Line</option>
                     <option value="spawn">Spawn Point</option>
@@ -215,7 +217,7 @@
                 </div>
 
                 <div id="trafficBlockPanel">
-                    <label for="trafficBlockColor">Traffic Block Color</label>
+                    <label for="trafficBlockColor">Rhythm Block Color</label>
                     <select id="trafficBlockColor">
                         <option value="blue">Blue</option>
                         <option value="pink">Pink</option>
@@ -286,8 +288,9 @@
                     <div>Dash Refills: <span id="dashRefillStats">0</span></div>
                     <div>Cassettes: <span id="cassetteStats">0</span></div>
                     <div>Stone Platforms: <span id="stonePlatformStats">0</span></div>
+                    <div>Falling Blocks: <span id="fallingBlockStats">0</span></div>
                     <div>Mech Blocks: <span id="mechBlockStats">0</span></div>
-                    <div>Traffic Blocks: <span id="trafficBlockStats">0</span></div>
+                    <div>Rhythm Blocks: <span id="trafficBlockStats">0</span></div>
                     <div>Exits: <span id="exitLineStats">0</span></div>
                     <div>Pit Deaths: <span id="pitDeathLineStats">0</span></div>
                     <div>Spawn: <span id="spawnStats">none</span></div>
@@ -328,6 +331,7 @@
             const dashRefillStats = document.getElementById("dashRefillStats");
             const cassetteStats = document.getElementById("cassetteStats");
             const stonePlatformStats = document.getElementById("stonePlatformStats");
+            const fallingBlockStats = document.getElementById("fallingBlockStats");
             const mechBlockStats = document.getElementById("mechBlockStats");
             const trafficBlockStats = document.getElementById("trafficBlockStats");
             const exitLineStats = document.getElementById("exitLineStats");
@@ -368,6 +372,7 @@
             let dashRefills = [];
             let cassettes = [];
             let stonePlatforms = new Set();
+            let fallingBlocks = [];
             let mechBlocks = new Map();
             let selectedMechBlock = "";
             let trafficBlocks = new Map();
@@ -375,7 +380,6 @@
             let exitLines = [];
             let pitDeathLines = [];
             let respawnPoints = [];
-            let prologueFallingBlocks = [];
             let stampFolders = [];
             let foregroundStampDefs = [];
             let foregroundStamps = [];
@@ -422,6 +426,8 @@
             const springLongSize = 14;
             const springThickness = 4;
             const stonePlatformSize = 8;
+            const defaultFallingBlockWidth = stonePlatformSize;
+            const defaultFallingBlockHeight = stonePlatformSize;
             const defaultMechBlockWidth = 24;
             const defaultMechBlockHeight = 16;
             const defaultTrafficBlockWidth = 24;
@@ -671,6 +677,7 @@
                 dashRefills = [];
                 cassettes = [];
                 stonePlatforms = new Set();
+                fallingBlocks = [];
                 mechBlocks = new Map();
                 selectedMechBlock = "";
                 trafficBlocks = new Map();
@@ -678,20 +685,20 @@
                 exitLines = [];
                 pitDeathLines = [];
                 respawnPoints = [];
-                prologueFallingBlocks = [];
                 foregroundStamps = [];
                 birdNpc = null;
                 const result = await apiJson(`/api/annotation?image=${encodeURIComponent(imagePath)}`);
                 annotationStats.textContent = result.path;
-                if (isPrologueBackgroundPath(imagePath)) {
-                    prologueFallingBlocks = ((result.data && result.data.fallingBlocks) || []).map((block) => ({
+                fallingBlocks = ((result.data && result.data.fallingBlocks) || []).map((block) =>
+                    makeFallingBlock({
                         x: Number(block.x) || 0,
                         y: Number(block.y) || 0,
-                        w: Math.max(8, Number(block.w) || 8),
-                        h: Math.max(8, Number(block.h) || 8),
+                        w: Math.max(8, Number(block.w) || defaultFallingBlockWidth),
+                        h: Math.max(8, Number(block.h) || defaultFallingBlockHeight),
                         maxY: Number(block.maxY ?? block.y) || 0,
-                    }));
-                }
+                        trigger: normalizeFallingBlockTrigger(block.trigger || block.triggerMode || block.activation || (isPrologueBackgroundPath(imagePath) ? "playerBelow" : "grab")),
+                    }),
+                );
                 if (result.data && result.data.tileSize) {
                     tileSizeInput.value = result.data.tileSize;
                 }
@@ -1040,6 +1047,13 @@
                     drawStonePlatform(platform.x, platform.y, 0.86);
                 }
 
+                overlayCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--falling");
+                overlayCtx.strokeStyle = "rgba(255,255,255,0.68)";
+                overlayCtx.lineWidth = 1;
+                for (const block of fallingBlocks) {
+                    drawFallingBlock(block, 0.82);
+                }
+
                 for (const [blockKey, block] of mechBlocks) {
                     drawMechTrack(block, blockKey === selectedMechBlock);
                 }
@@ -1101,6 +1115,19 @@
                     overlayCtx.strokeStyle = "rgba(255,255,255,0.62)";
                     overlayCtx.lineWidth = 1;
                     drawStonePlatform(platform.x, platform.y, 0.48);
+                }
+                if (modeSelect.value === "fallingBlock" && !eraseMode && hoverPixel) {
+                    const block = dragStartPixel && isPointerDown
+                        ? fallingBlockRectFromPoints(dragStartPixel, hoverPixel)
+                        : makeFallingBlock({
+                              ...clampFallingBlockPosition(hoverPixel, defaultFallingBlockWidth, defaultFallingBlockHeight),
+                              w: defaultFallingBlockWidth,
+                              h: defaultFallingBlockHeight,
+                          });
+                    overlayCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--falling");
+                    overlayCtx.strokeStyle = "rgba(255,255,255,0.68)";
+                    overlayCtx.lineWidth = 1;
+                    drawFallingBlock(block, 0.48);
                 }
                 if (modeSelect.value === "mechBlock" && !eraseMode && hoverPixel) {
                     if (hoverShift && mechBlocks.size > 0) {
@@ -1191,6 +1218,7 @@
                 dashRefillStats.textContent = String(dashRefills.length);
                 cassetteStats.textContent = String(cassettes.length);
                 stonePlatformStats.textContent = String(stonePlatforms.size);
+                fallingBlockStats.textContent = String(fallingBlocks.length);
                 mechBlockStats.textContent = mechBlockStatsText();
                 trafficBlockStats.textContent = trafficBlockStatsText();
                 exitLineStats.textContent = String(exitLines.length);
@@ -1351,7 +1379,8 @@
             }
 
             function spikeHitbox(x, y, tileSize, direction) {
-                return orientedEdgeBox(x, y, tileSize, direction, 5);
+                const depth = direction === "left" || direction === "right" ? tileSize / 2 : (tileSize * 5) / 8;
+                return orientedEdgeBox(x, y, tileSize, direction, depth);
             }
 
             function springDimensions(direction) {
@@ -1382,25 +1411,37 @@
             function drawSpikeTile(x, y, tileSize, directionValue) {
                 const direction = normalizeSpikeDirection(directionValue);
                 const hitbox = spikeHitbox(x, y, tileSize, direction);
+                const half = tileSize / 2;
                 overlayCtx.beginPath();
                 if (direction === "down") {
-                    overlayCtx.moveTo(hitbox.x + 1, hitbox.y + 1);
-                    overlayCtx.lineTo(hitbox.x + hitbox.w / 2, hitbox.y + hitbox.h - 1);
-                    overlayCtx.lineTo(hitbox.x + hitbox.w - 1, hitbox.y + 1);
+                    overlayCtx.moveTo(x, y);
+                    overlayCtx.lineTo(x + half / 2, hitbox.y + hitbox.h);
+                    overlayCtx.lineTo(x + half, y);
+                    overlayCtx.moveTo(x + half, y);
+                    overlayCtx.lineTo(x + half + half / 2, hitbox.y + hitbox.h);
+                    overlayCtx.lineTo(x + tileSize, y);
                 } else if (direction === "left") {
-                    overlayCtx.moveTo(hitbox.x + hitbox.w - 1, hitbox.y + 1);
-                    overlayCtx.lineTo(hitbox.x + 1, hitbox.y + hitbox.h / 2);
-                    overlayCtx.lineTo(hitbox.x + hitbox.w - 1, hitbox.y + hitbox.h - 1);
+                    overlayCtx.moveTo(x + tileSize, y);
+                    overlayCtx.lineTo(hitbox.x, y + half / 2);
+                    overlayCtx.lineTo(x + tileSize, y + half);
+                    overlayCtx.moveTo(x + tileSize, y + half);
+                    overlayCtx.lineTo(hitbox.x, y + half + half / 2);
+                    overlayCtx.lineTo(x + tileSize, y + tileSize);
                 } else if (direction === "right") {
-                    overlayCtx.moveTo(hitbox.x + 1, hitbox.y + 1);
-                    overlayCtx.lineTo(hitbox.x + hitbox.w - 1, hitbox.y + hitbox.h / 2);
-                    overlayCtx.lineTo(hitbox.x + 1, hitbox.y + hitbox.h - 1);
+                    overlayCtx.moveTo(x, y);
+                    overlayCtx.lineTo(hitbox.x + hitbox.w, y + half / 2);
+                    overlayCtx.lineTo(x, y + half);
+                    overlayCtx.moveTo(x, y + half);
+                    overlayCtx.lineTo(hitbox.x + hitbox.w, y + half + half / 2);
+                    overlayCtx.lineTo(x, y + tileSize);
                 } else {
-                    overlayCtx.moveTo(hitbox.x + 1, hitbox.y + hitbox.h - 1);
-                    overlayCtx.lineTo(hitbox.x + hitbox.w / 2, hitbox.y + 1);
-                    overlayCtx.lineTo(hitbox.x + hitbox.w - 1, hitbox.y + hitbox.h - 1);
+                    overlayCtx.moveTo(x, y + tileSize);
+                    overlayCtx.lineTo(x + half / 2, hitbox.y);
+                    overlayCtx.lineTo(x + half, y + tileSize);
+                    overlayCtx.moveTo(x + half, y + tileSize);
+                    overlayCtx.lineTo(x + half + half / 2, hitbox.y);
+                    overlayCtx.lineTo(x + tileSize, y + tileSize);
                 }
-                overlayCtx.closePath();
                 overlayCtx.fill();
                 overlayCtx.stroke();
             }
@@ -1528,6 +1569,41 @@
                 overlayCtx.moveTo(x + 2, y + 5);
                 overlayCtx.lineTo(x + stonePlatformSize - 2, y + 5);
                 overlayCtx.stroke();
+                overlayCtx.restore();
+            }
+
+            function drawFallingBlock(block, alpha) {
+                const width = fallingBlockWidth(block);
+                const height = fallingBlockHeight(block);
+                overlayCtx.save();
+                overlayCtx.globalAlpha = alpha;
+                overlayCtx.fillRect(block.x, block.y, width, height);
+                overlayCtx.strokeRect(block.x + 0.5, block.y + 0.5, width - 1, height - 1);
+                overlayCtx.beginPath();
+                for (let gridX = block.x + stonePlatformSize; gridX < block.x + width; gridX += stonePlatformSize) {
+                    overlayCtx.moveTo(gridX + 0.5, block.y + 1);
+                    overlayCtx.lineTo(gridX + 0.5, block.y + height - 1);
+                }
+                for (let gridY = block.y + stonePlatformSize; gridY < block.y + height; gridY += stonePlatformSize) {
+                    overlayCtx.moveTo(block.x + 1, gridY + 0.5);
+                    overlayCtx.lineTo(block.x + width - 1, gridY + 0.5);
+                }
+                overlayCtx.moveTo(block.x + 3, block.y + 3);
+                overlayCtx.lineTo(block.x + width - 3, block.y + 3);
+                overlayCtx.moveTo(block.x + width / 2, block.y + 5);
+                overlayCtx.lineTo(block.x + width / 2, block.y + height - 5);
+                overlayCtx.moveTo(block.x + width / 2 - 4, block.y + height - 9);
+                overlayCtx.lineTo(block.x + width / 2, block.y + height - 5);
+                overlayCtx.lineTo(block.x + width / 2 + 4, block.y + height - 9);
+                overlayCtx.stroke();
+                if (normalizeFallingBlockTrigger(block.trigger) === "playerBelow") {
+                    overlayCtx.globalAlpha = alpha * 0.68;
+                    overlayCtx.beginPath();
+                    const y = Math.max(block.y + height, Number(block.maxY) || block.y + height);
+                    overlayCtx.moveTo(block.x + width / 2 + 0.5, block.y + height);
+                    overlayCtx.lineTo(block.x + width / 2 + 0.5, y);
+                    overlayCtx.stroke();
+                }
                 overlayCtx.restore();
             }
 
@@ -1845,10 +1921,92 @@
                 };
             }
 
+            function normalizeFallingBlockTrigger(value) {
+                const raw = String(value || "").trim().toLowerCase();
+                return raw === "playerbelow" || raw === "player_below" || raw === "below" || raw === "under" ? "playerBelow" : "grab";
+            }
+
             function normalizedMechBlockSize(value, fallback) {
                 const size = Number(value);
                 if (!Number.isFinite(size) || size <= 0) return fallback;
                 return Math.max(stonePlatformSize, Math.round(size / stonePlatformSize) * stonePlatformSize);
+            }
+
+            function fallingBlockWidth(block) {
+                return normalizedMechBlockSize(block && block.w, defaultFallingBlockWidth);
+            }
+
+            function fallingBlockHeight(block) {
+                return normalizedMechBlockSize(block && block.h, defaultFallingBlockHeight);
+            }
+
+            function clampFallingBlockPosition(point, widthValue, heightValue) {
+                const width = fallingBlockWidth({ w: widthValue });
+                const height = fallingBlockHeight({ h: heightValue });
+                if (!image) {
+                    return { x: Math.round(point.x), y: Math.round(point.y) };
+                }
+                const snappedX = Math.floor(point.x / stonePlatformSize) * stonePlatformSize;
+                const snappedY = Math.floor(point.y / stonePlatformSize) * stonePlatformSize;
+                return {
+                    x: Math.round(Math.max(0, Math.min(image.width - width, snappedX))),
+                    y: Math.round(Math.max(0, Math.min(image.height - height, snappedY))),
+                };
+            }
+
+            function makeFallingBlock(point) {
+                const width = fallingBlockWidth(point);
+                const height = fallingBlockHeight(point);
+                const position = clampFallingBlockPosition(point, width, height);
+                const defaultTrigger = isPrologueBackgroundPath(currentBackground && currentBackground.image) ? "playerBelow" : "grab";
+                return {
+                    x: position.x,
+                    y: position.y,
+                    w: width,
+                    h: height,
+                    maxY: Number.isFinite(point.maxY) ? point.maxY : position.y + height,
+                    trigger: normalizeFallingBlockTrigger(point.trigger || defaultTrigger),
+                };
+            }
+
+            function fallingBlockRectFromPoints(a, b) {
+                const start = clampMechGridPoint(a);
+                const end = clampMechGridPoint(b);
+                const x = Math.min(start.x, end.x);
+                const y = Math.min(start.y, end.y);
+                const maxX = Math.max(start.x, end.x);
+                const maxY = Math.max(start.y, end.y);
+                return makeFallingBlock({
+                    x,
+                    y,
+                    w: maxX - x + stonePlatformSize,
+                    h: maxY - y + stonePlatformSize,
+                    trigger: isPrologueBackgroundPath(currentBackground && currentBackground.image) ? "playerBelow" : "grab",
+                });
+            }
+
+            function findFallingBlockAt(point) {
+                for (let index = fallingBlocks.length - 1; index >= 0; index -= 1) {
+                    const block = fallingBlocks[index];
+                    if (
+                        point.x >= block.x &&
+                        point.x < block.x + fallingBlockWidth(block) &&
+                        point.y >= block.y &&
+                        point.y < block.y + fallingBlockHeight(block)
+                    ) {
+                        return index;
+                    }
+                }
+                return -1;
+            }
+
+            function upsertFallingBlock(block) {
+                const existing = findFallingBlockAt({ x: block.x + 1, y: block.y + 1 });
+                if (existing >= 0) {
+                    fallingBlocks[existing] = block;
+                } else {
+                    fallingBlocks.push(block);
+                }
             }
 
             function mechBlockWidth(block) {
@@ -2328,6 +2486,17 @@
                     redraw();
                     return;
                 }
+                if (modeSelect.value === "fallingBlock") {
+                    const point = eventToPixel(event);
+                    const existing = findFallingBlockAt(point);
+                    if (eraseMode) {
+                        if (existing >= 0) fallingBlocks.splice(existing, 1);
+                    } else if (existing >= 0 && event.type === "pointerdown") {
+                        fallingBlocks[existing] = makeFallingBlock(fallingBlocks[existing]);
+                    }
+                    redraw();
+                    return;
+                }
                 if (modeSelect.value === "mechBlock") {
                     const point = eventToPixel(event);
                     const existingKey = findMechBlockAt(point);
@@ -2633,15 +2802,17 @@
                         })),
                     ],
                 };
-                if (isPrologueBackgroundPath(currentBackground.image)) {
-                    annotation.fallingBlocks = prologueFallingBlocks.map((block) => ({
+                annotation.fallingBlocks = fallingBlocks
+                    .map((block) => makeFallingBlock(block))
+                    .sort((a, b) => a.y - b.y || a.x - b.x)
+                    .map((block) => ({
                         x: block.x,
                         y: block.y,
-                        w: block.w,
-                        h: block.h,
+                        w: fallingBlockWidth(block),
+                        h: fallingBlockHeight(block),
                         maxY: block.maxY,
+                        trigger: normalizeFallingBlockTrigger(block.trigger),
                     }));
-                }
                 return annotation;
             }
 
@@ -2716,6 +2887,9 @@
                 } else if (modeSelect.value === "stonePlatform") {
                     if (!confirm("Clear all stone platforms for this background?")) return;
                     stonePlatforms.clear();
+                } else if (modeSelect.value === "fallingBlock") {
+                    if (!confirm("Clear all falling blocks for this background?")) return;
+                    fallingBlocks = [];
                 } else if (modeSelect.value === "mechBlock") {
                     if (!confirm("Clear all mech blocks for this background?")) return;
                     mechBlocks.clear();
@@ -2781,7 +2955,9 @@
                 dragLineStart = null;
                 drawingBirdPath = modeSelect.value === "birdNpc" && event.metaKey && !eraseMode;
                 overlay.setPointerCapture(event.pointerId);
-                if (modeSelect.value === "mechBlock" && !eraseMode && !event.shiftKey && !findMechBlockAt(hoverPixel)) {
+                if (modeSelect.value === "fallingBlock" && !eraseMode && findFallingBlockAt(hoverPixel) < 0) {
+                    dragStartPixel = hoverPixel;
+                } else if (modeSelect.value === "mechBlock" && !eraseMode && !event.shiftKey && !findMechBlockAt(hoverPixel)) {
                     dragStartPixel = hoverPixel;
                 } else if (modeSelect.value === "trafficBlock" && !eraseMode && !event.shiftKey && !findTrafficBlockAt(hoverPixel)) {
                     dragStartPixel = hoverPixel;
@@ -2804,7 +2980,10 @@
                 }
             });
             overlay.addEventListener("pointerup", (event) => {
-                if (modeSelect.value === "mechBlock" && dragStartPixel && !eraseMode) {
+                if (modeSelect.value === "fallingBlock" && dragStartPixel && !eraseMode) {
+                    upsertFallingBlock(fallingBlockRectFromPoints(dragStartPixel, eventToPixel(event)));
+                    redraw();
+                } else if (modeSelect.value === "mechBlock" && dragStartPixel && !eraseMode) {
                     upsertMechBlock(mechBlockRectFromPoints(dragStartPixel, eventToPixel(event)));
                     redraw();
                 } else if (modeSelect.value === "trafficBlock" && dragStartPixel && !eraseMode) {

@@ -6,6 +6,7 @@ const gameplay_scene = @import("../room/gameplay_scene.zig");
 const math = @import("../core/math.zig");
 const player_death_vfx = @import("death_vfx.zig");
 const player_mod = @import("state.zig");
+const player_sfx = @import("sfx.zig");
 const video = @import("../core/video.zig");
 
 const Camera = camera_mod.Camera;
@@ -51,9 +52,11 @@ var intro_offset_y: i32 = 0;
 var intro_first_frame: u16 = 0;
 var intro_frame_count: u16 = 0;
 var intro_total_frames: u8 = 0;
+var burst_palette: player_death_vfx.BurstPalette = .red;
 
 pub fn begin(player: Player, camera: Camera, cause: Cause, room_index: usize) void {
     chapter_systems.handlePlayerDeathStart(room_index);
+    player_sfx.playDeath();
     origin_x = player.x + (player_body_width / 2) * fixed_one;
     origin_y = player.y + (player_body_height / 2) * fixed_one;
     player_x = player.x;
@@ -61,6 +64,7 @@ pub fn begin(player: Player, camera: Camera, cause: Cause, room_index: usize) vo
     player_facing_left = player.facing_left;
     intro_offset_x = 0;
     intro_offset_y = 0;
+    burst_palette = burstPaletteForPlayer(player);
     if (cause == .fall_down) {
         intro_first_frame = 0;
         intro_frame_count = 0;
@@ -87,12 +91,13 @@ pub fn begin(player: Player, camera: Camera, cause: Cause, room_index: usize) vo
 pub fn startRespawnBurst(player: Player) void {
     origin_x = player.x + (player_body_width / 2) * fixed_one;
     origin_y = player.y + (player_body_height / 2) * fixed_one;
+    burst_palette = burstPaletteForPlayer(player);
     gameplay_scene.hidePlayerObjects();
 }
 
 pub fn drawDeath(camera: Camera, death_timer: u8) void {
     const elapsed: u8 = death_frames - death_timer;
-    player_death_vfx.drawDeath(camera, elapsed, origin_x, origin_y, .{
+    player_death_vfx.drawDeath(camera, elapsed, origin_x, origin_y, burst_palette, .{
         .first_frame = intro_first_frame,
         .frame_count = intro_frame_count,
         .total_frames = intro_total_frames,
@@ -105,7 +110,7 @@ pub fn drawDeath(camera: Camera, death_timer: u8) void {
 }
 
 pub fn drawRespawn(camera: Camera, respawn_burst_timer: u8) void {
-    player_death_vfx.drawRespawn(camera, origin_x, origin_y, respawn_burst_timer);
+    player_death_vfx.drawRespawn(camera, origin_x, origin_y, respawn_burst_timer, burst_palette);
 }
 
 pub fn hideObjects() void {
@@ -125,6 +130,10 @@ fn introScreenCenterOffset(player: Player, camera: Camera) IntroMotion {
         .x = @intCast(@divTrunc(@as(i32, to_center_x) * travel, max_component)),
         .y = @intCast(@divTrunc(@as(i32, to_center_y) * travel, max_component)),
     };
+}
+
+fn burstPaletteForPlayer(player: Player) player_death_vfx.BurstPalette {
+    return if (player.dashes == 0) .blue else .red;
 }
 
 fn selectIntro(player: Player, cause: Cause, preferred_motion: ?IntroMotion) Intro {

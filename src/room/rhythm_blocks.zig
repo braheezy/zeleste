@@ -3,13 +3,13 @@ const gba = @import("gba");
 const camera_mod = @import("../world/camera.zig");
 const collision = @import("../world/collision.zig");
 const dynamic_object_slots = @import("dynamic_object_slots.zig");
+const falling_blocks = @import("falling_blocks.zig");
 const level = @import("../generated_rooms.zig");
 const math = @import("../core/math.zig");
 const mech_blocks = @import("mech_blocks.zig");
 const oam = @import("../core/oam.zig");
 const player_mod = @import("../player/state.zig");
 const room_data = @import("../world/room_data.zig");
-const traffic_blocks = @import("traffic_blocks.zig");
 
 const Camera = camera_mod.Camera;
 const Player = player_mod.State;
@@ -195,11 +195,11 @@ pub fn usedObjectCount() usize {
 }
 
 fn firstObject() usize {
-    return dynamic_object_slots.first_object + mech_blocks.usedObjectCount() + traffic_blocks.usedObjectCount();
+    return dynamic_object_slots.first_object + falling_blocks.usedObjectCount() + mech_blocks.usedObjectCount();
 }
 
 fn objectCapacity() usize {
-    const used = mech_blocks.usedObjectCount() + traffic_blocks.usedObjectCount();
+    const used = falling_blocks.usedObjectCount() + mech_blocks.usedObjectCount();
     if (used >= dynamic_object_slots.object_capacity) return 0;
     return dynamic_object_slots.object_capacity - used;
 }

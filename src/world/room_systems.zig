@@ -1,24 +1,18 @@
 const gba = @import("gba");
 const background = @import("background.zig");
 const camera_mod = @import("camera.zig");
+const chapter_entities = @import("../chapters/entities.zig");
 const chapter_systems = @import("../chapters/systems.zig");
-const breakable_walls = @import("../room/breakable_walls.zig");
 const collision = @import("collision.zig");
 const dash_effects = @import("../player/dash_effects.zig");
-const disappearing_platforms = @import("../room/disappearing_platforms.zig");
 const dust = @import("../effects/dust.zig");
 const foreground_stamps = @import("../room/foreground_stamps.zig");
 const gameplay_scene = @import("../room/gameplay_scene.zig");
 const hair = @import("../player/hair.zig");
 const level = @import("../generated_rooms.zig");
 const math = @import("../core/math.zig");
-const mech_blocks = @import("../room/mech_blocks.zig");
 const player_mod = @import("../player/state.zig");
-const rhythm_blocks = @import("../room/rhythm_blocks.zig");
 const room_data = @import("room_data.zig");
-const springs = @import("../room/springs.zig");
-const strawberries = @import("../room/strawberries.zig");
-const traffic_blocks = @import("../room/traffic_blocks.zig");
 
 const Camera = camera_mod.Camera;
 const Player = player_mod.State;
@@ -32,13 +26,7 @@ const player_body_height = player_mod.body_height;
 var foreground_anim_counter: u16 = 0;
 
 pub fn load(room_index: usize, reset_cutscenes: bool) void {
-    breakable_walls.load(room_index);
-    mech_blocks.load(room_index);
-    traffic_blocks.load(room_index);
-    rhythm_blocks.load(room_index);
-    disappearing_platforms.load(room_index);
-    springs.load(room_index);
-    strawberries.load(room_index);
+    chapter_entities.load(room_index);
     foreground_stamps.load(room_index);
     chapter_systems.loadBeforeObjectSprites(room_index, gameplay_scene.scene_slots);
     gameplay_scene.loadObjectSprites(room_index);
@@ -60,23 +48,16 @@ pub fn updateCutsceneEffects(room_index: usize, camera: Camera) void {
 }
 
 pub fn updateDynamicHazards(player: *Player, room_index: usize) ?PlayerDeathCause {
-    const mech_result = mech_blocks.update(player, room_index);
-    if (mech_result.killed_player) return .normal;
-    const traffic_result = traffic_blocks.update(player, room_index);
-    if (traffic_result.killed_player) return .normal;
-    rhythm_blocks.update(player);
+    if (chapter_entities.updateDynamicHazards(player, room_index)) |death_cause| return death_cause;
     return chapter_systems.updateDynamicHazards(player, room_index);
 }
 
 pub fn updatePlayerEntities(player: *Player, room_index: usize) void {
-    disappearing_platforms.update(player.*);
-    springs.update(player);
-    strawberries.update(player, room_index);
+    chapter_entities.updatePlayerEntities(player, room_index);
 }
 
 pub fn handlePlayerDeathStart(room_index: usize) void {
-    _ = room_index;
-    strawberries.clearCarried();
+    chapter_entities.handlePlayerDeathStart(room_index);
 }
 
 pub fn updateFallingBlocksDuringDeath(room_index: usize) void {

@@ -3,6 +3,11 @@ pub const Spawn = struct {
     y: i16,
 };
 
+pub const RespawnPoint = struct {
+    room_index: usize,
+    spawn: Spawn,
+};
+
 pub const SceneRect = struct {
     x: i16 = 0,
     y: i16 = 0,
@@ -112,7 +117,6 @@ pub const RoomBackground = struct {
     breakable_walls: []align(4) const u8,
     disappearing_platforms: []align(4) const u8,
     mech_blocks: []align(4) const u8,
-    traffic_blocks: []align(4) const u8,
     traffic_block_tiles: []align(4) const u8,
     traffic_block_palette: []align(4) const u8,
     rhythm_blocks: []align(4) const u8,

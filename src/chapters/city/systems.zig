@@ -3,6 +3,7 @@ const camera_mod = @import("../../world/camera.zig");
 const player_mod = @import("../../player/state.zig");
 const room_data = @import("../../world/room_data.zig");
 const object_slots = @import("../../room/object_slots.zig");
+const entities = @import("entities.zig");
 
 const Camera = camera_mod.Camera;
 const Player = player_mod.State;
@@ -51,7 +52,7 @@ pub fn updateDynamicHazards(player: *Player, room_index: usize) ?player_mod.Deat
 }
 
 pub fn updateDynamicHazardsDuringDeath(room_index: usize) void {
-    _ = room_index;
+    entities.updateDynamicHazardsDuringDeath(room_index);
 }
 
 pub fn actorFloorAt(room_index: usize, player_x: i16, player_y: i16) bool {

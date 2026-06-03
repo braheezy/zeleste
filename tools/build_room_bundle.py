@@ -20,28 +20,6 @@ TRAFFIC_LIGHT_FRAME_WIDTH = 8
 TRAFFIC_LIGHT_FRAME_COUNT = 3
 TRAFFIC_LIGHT_CELL_HEIGHT = 16
 TRAFFIC_LIGHT_TILE_COUNT = TRAFFIC_LIGHT_FRAME_COUNT * (TRAFFIC_LIGHT_CELL_HEIGHT // TRAFFIC_BLOCK_TILE_SIZE)
-TRAFFIC_BLOCK_EXACT_CROPS = {
-    (2, 6): [
-        [
-            [(0, 0), (1, 0)],
-            [(0, 1), (1, 1)],
-            [(0, 2), (1, 2)],
-            [(0, 3), (1, 3)],
-            [(0, 4), (1, 4)],
-            [(0, 6), (1, 6)],
-        ]
-    ],
-    (4, 2): [
-        [
-            [(16, 0), (17, 0), (18, 0), (19, 0)],
-            [(16, 1), (17, 1), (18, 1), (19, 1)],
-        ],
-        [
-            [(12, 0), (13, 0), (14, 0), (15, 0)],
-            [(12, 1), (13, 1), (14, 1), (15, 1)],
-        ],
-    ],
-}
 TRAFFIC_BLOCK_TEMPLATE_CROPS = {
     "top_left": [(16, 0), (6, 2), (12, 0)],
     "top": [(17, 0), (19, 0), (20, 0), (21, 0), (13, 2)],
@@ -120,10 +98,14 @@ def strawberry_type_name(value: int) -> str:
 
 
 def source_mech_blocks(data: dict) -> list[dict]:
-    return list(data.get("mechBlocks") or []) + list(data.get("movingPlatformMechBlocks") or [])
+    return (
+        list(data.get("mechBlocks") or [])
+        + list(data.get("movingPlatformMechBlocks") or [])
+        + source_legacy_mech_block_annotations(data)
+    )
 
 
-def source_traffic_blocks(data: dict) -> list[dict]:
+def source_legacy_mech_block_annotations(data: dict) -> list[dict]:
     return [block for block in source_traffic_block_annotations(data) if not rhythm_block_candidate(block)]
 
 
@@ -149,7 +131,7 @@ def source_rhythm_blocks(data: dict) -> list[dict]:
 
 
 def source_runtime_erased_blocks(data: dict) -> list[dict]:
-    return source_mech_blocks(data) + source_traffic_blocks(data) + source_rhythm_blocks(data)
+    return source_mech_blocks(data) + source_rhythm_blocks(data)
 
 
 def rhythm_block_color(block: dict) -> str | None:
@@ -255,6 +237,15 @@ def room_id_from_background(path: Path) -> str:
 
 def is_prologue_background(path: Path) -> bool:
     return "prologue_a" in path.parts
+
+
+def falling_block_trigger(block: dict, background_png: Path) -> str:
+    raw = str(block.get("trigger") or block.get("triggerMode") or block.get("activation") or "").strip().lower()
+    if raw in {"grab", "hold", "climb", "wallgrab", "wall_grab"}:
+        return "grab"
+    if raw in {"below", "playerbelow", "player_below", "under", "prologue"}:
+        return "playerBelow"
+    return "playerBelow" if is_prologue_background(background_png) else "grab"
 
 
 def unique_points(points: list[dict]) -> list[dict]:
@@ -473,6 +464,51 @@ def crop_tile(image: Image, cell_x: int, cell_y: int) -> list[tuple[int, int, in
     return pixels
 
 
+def traffic_block_asset_size(path: Path) -> tuple[int, int] | None:
+    parts = path.stem.split("x", 1)
+    if len(parts) != 2 or not parts[0].isdigit() or not parts[1].isdigit():
+        return None
+    columns = int(parts[0])
+    rows = int(parts[1])
+    if columns <= 0 or rows <= 0:
+        return None
+    return columns, rows
+
+
+def image_tiles(image: Image) -> list[list[tuple[int, int, int, int]]]:
+    tiles = []
+    for tile_y in range(image.height // TRAFFIC_BLOCK_TILE_SIZE):
+        for tile_x in range(image.width // TRAFFIC_BLOCK_TILE_SIZE):
+            pixels = []
+            x0 = tile_x * TRAFFIC_BLOCK_TILE_SIZE
+            y0 = tile_y * TRAFFIC_BLOCK_TILE_SIZE
+            for y in range(TRAFFIC_BLOCK_TILE_SIZE):
+                for x in range(TRAFFIC_BLOCK_TILE_SIZE):
+                    pixels.append(image_color_at(image, x0 + x, y0 + y))
+            tiles.append(pixels)
+    return tiles
+
+
+def load_exact_traffic_block_templates(
+    input_dir: Path,
+) -> dict[tuple[int, int], list[list[list[tuple[int, int, int, int]]]]]:
+    exact_templates: dict[tuple[int, int], list[list[list[tuple[int, int, int, int]]]]] = {}
+    for path in sorted(input_dir.glob("*.png")):
+        size = traffic_block_asset_size(path)
+        if size is None:
+            continue
+        columns, rows = size
+        image = read_png_rgba(path)
+        expected_width = columns * TRAFFIC_BLOCK_TILE_SIZE
+        expected_height = rows * TRAFFIC_BLOCK_TILE_SIZE
+        if image.width != expected_width or image.height != expected_height:
+            raise ValueError(
+                f"{path} must be {expected_width}x{expected_height}px for a {columns}x{rows} traffic block asset"
+            )
+        exact_templates.setdefault(size, []).append(image_tiles(image))
+    return exact_templates
+
+
 def load_traffic_block_templates() -> tuple[
     dict[str, list[list[tuple[int, int, int, int]]]],
     dict[tuple[int, int], list[list[list[tuple[int, int, int, int]]]]],
@@ -493,10 +529,7 @@ def load_traffic_block_templates() -> tuple[
         name: [crop_tile(block_source, cell_x, cell_y) for cell_x, cell_y in crops]
         for name, crops in TRAFFIC_BLOCK_TEMPLATE_CROPS.items()
     }
-    exact_templates = {
-        size: [[crop_tile(block_source, cell_x, cell_y) for row in variant for cell_x, cell_y in row] for variant in variants]
-        for size, variants in TRAFFIC_BLOCK_EXACT_CROPS.items()
-    }
+    exact_templates = load_exact_traffic_block_templates(input_dir)
     return templates, exact_templates, light_source
 
 
@@ -662,17 +695,15 @@ def pack_traffic_block_tiles(
     output_dir: Path,
     background_png: Path,
     rgb_bits: int,
-) -> tuple[list[dict], list[dict], int]:
+) -> tuple[list[dict], int]:
     source_mechs = source_mech_blocks(data)
-    source_blocks = source_traffic_blocks(data)
     templates, exact_templates, light_source = load_traffic_block_templates()
     palette = traffic_object_palette(templates, exact_templates, light_source, rgb_bits)
     palette_binary = b"".join(rgba_to_rgb555(color).to_bytes(2, "little") for color in palette)
 
     packed_mechs = []
-    packed_blocks = []
     tile_binary = bytearray()
-    if source_mechs or source_blocks:
+    if source_mechs:
         write_traffic_light_tiles(tile_binary, light_source, palette, rgb_bits)
 
     image_width, image_height = png_size(background_png)
@@ -726,11 +757,10 @@ def pack_traffic_block_tiles(
             )
 
     pack_blocks(source_mechs, packed_mechs, 0)
-    pack_blocks(source_blocks, packed_blocks, len(packed_mechs))
 
     (output_dir / "traffic_block_tiles.bin").write_bytes(bytes(tile_binary))
     (output_dir / "traffic_block_palette.bin").write_bytes(palette_binary)
-    return packed_mechs, packed_blocks, len(tile_binary) // 32
+    return packed_mechs, len(tile_binary) // 32
 
 def traffic_occupied_pixels(image: Image, blocks: list[dict]) -> set[tuple[int, int]]:
     occupied: set[tuple[int, int]] = set()
@@ -1093,7 +1123,7 @@ def build_collision(annotations_json: Path, output_dir: Path, background_png: Pa
             elif kind in ("spike", "hazard"):
                 collision[y * width_tiles + x] = spike_collision_value(tile)
 
-    source_blocks = data.get("fallingBlocks", []) if is_prologue_background(background_png) else []
+    source_blocks = data.get("fallingBlocks") or []
     for block in source_blocks:
         block_x0 = int(block.get("x", 0)) // tile_size
         block_y0 = int(block.get("y", 0)) // tile_size
@@ -1115,16 +1145,6 @@ def build_collision(annotations_json: Path, output_dir: Path, background_png: Pa
 
     source_mechs = source_mech_blocks(data)
     for block in source_mechs:
-        block_x0 = int(block.get("x", 0)) // tile_size
-        block_y0 = int(block.get("y", 0)) // tile_size
-        block_x1 = (int(block.get("x", 0)) + int(block.get("w", tile_size)) + tile_size - 1) // tile_size
-        block_y1 = (int(block.get("y", 0)) + int(block.get("h", tile_size)) + tile_size - 1) // tile_size
-        for y in range(max(0, block_y0), min(height_tiles, block_y1)):
-            for x in range(max(0, block_x0), min(width_tiles, block_x1)):
-                collision[y * width_tiles + x] = 0
-
-    source_traffic = source_traffic_blocks(data)
-    for block in source_traffic:
         block_x0 = int(block.get("x", 0)) // tile_size
         block_y0 = int(block.get("y", 0)) // tile_size
         block_x1 = (int(block.get("x", 0)) + int(block.get("w", tile_size)) + tile_size - 1) // tile_size
@@ -1172,13 +1192,16 @@ def build_collision(annotations_json: Path, output_dir: Path, background_png: Pa
         w = max(0, min(255, int(block.get("w", tile_size))))
         h = max(0, min(255, int(block.get("h", tile_size))))
         max_y = int(block.get("maxY", y))
-        falling_blocks.append({"x": x, "y": y, "w": w, "h": h, "maxY": max_y})
+        trigger = falling_block_trigger(block, background_png)
+        flags = 1 if trigger == "grab" else 0
+        falling_blocks.append({"x": x, "y": y, "w": w, "h": h, "maxY": max_y, "trigger": trigger})
         falling_binary.extend(x.to_bytes(2, "little", signed=True))
         falling_binary.extend(y.to_bytes(2, "little", signed=True))
         falling_binary.append(w)
         falling_binary.append(h)
         falling_binary.extend(max_y.to_bytes(2, "little", signed=True))
-        falling_binary.extend((0).to_bytes(2, "little"))
+        falling_binary.append(flags)
+        falling_binary.append(0)
     (output_dir / "falling_blocks.bin").write_bytes(bytes(falling_binary))
     (output_dir / "falling_blocks.json").write_text(
         json.dumps(
@@ -1221,7 +1244,7 @@ def build_collision(annotations_json: Path, output_dir: Path, background_png: Pa
         + "\n"
     )
 
-    packed_mech_visuals, traffic_blocks, traffic_tile_count = pack_traffic_block_tiles(data, output_dir, background_png, rgb_bits)
+    packed_mech_visuals, traffic_tile_count = pack_traffic_block_tiles(data, output_dir, background_png, rgb_bits)
 
     mech_blocks = []
     mech_binary = bytearray()
@@ -1270,41 +1293,6 @@ def build_collision(annotations_json: Path, output_dir: Path, background_png: Pa
                 "recordBytes": 12,
                 "binary": "mech_blocks.bin",
                 "blocks": mech_blocks,
-            },
-            indent=2,
-        )
-        + "\n"
-    )
-
-    traffic_binary = bytearray()
-    traffic_binary.extend((0).to_bytes(2, "little"))
-    for block in traffic_blocks:
-        x = int(block["x"])
-        y = int(block["y"])
-        w = max(1, min(255, int(block["w"])))
-        h = max(1, min(255, int(block["h"])))
-        target_x = int(block["targetX"])
-        target_y = int(block["targetY"])
-        tile_offset = max(0, min(65535, int(block["tileOffset"])))
-        traffic_binary.extend(x.to_bytes(2, "little", signed=True))
-        traffic_binary.extend(y.to_bytes(2, "little", signed=True))
-        traffic_binary.extend(target_x.to_bytes(2, "little", signed=True))
-        traffic_binary.extend(target_y.to_bytes(2, "little", signed=True))
-        traffic_binary.append(w)
-        traffic_binary.append(h)
-        traffic_binary.extend(tile_offset.to_bytes(2, "little"))
-    traffic_binary[0:2] = len(traffic_blocks).to_bytes(2, "little")
-    (output_dir / "traffic_blocks.bin").write_bytes(bytes(traffic_binary))
-    (output_dir / "traffic_blocks.json").write_text(
-        json.dumps(
-            {
-                "count": len(traffic_blocks),
-                "recordBytes": 12,
-                "binary": "traffic_blocks.bin",
-                "tiles": "traffic_block_tiles.bin",
-                "palette": "traffic_block_palette.bin",
-                "tileCount": traffic_tile_count,
-                "blocks": traffic_blocks,
             },
             indent=2,
         )
@@ -1606,8 +1594,6 @@ def build_collision(annotations_json: Path, output_dir: Path, background_png: Pa
         "disappearingPlatformCount": len(stone_platforms),
         "mechBlocks": "mech_blocks.bin",
         "mechBlockCount": len(mech_blocks),
-        "trafficBlocks": "traffic_blocks.bin",
-        "trafficBlockCount": len(traffic_blocks),
         "trafficBlockTiles": "traffic_block_tiles.bin",
         "trafficBlockTileCount": traffic_tile_count,
         "trafficBlockPalette": "traffic_block_palette.bin",
@@ -1720,7 +1706,6 @@ def main() -> int:
             "breakableWalls": "breakable_walls.bin",
             "disappearingPlatforms": "disappearing_platforms.bin",
             "mechBlocks": "mech_blocks.bin",
-            "trafficBlocks": "traffic_blocks.bin",
             "trafficBlockTiles": "traffic_block_tiles.bin",
             "trafficBlockPalette": "traffic_block_palette.bin",
             "rhythmBlocks": "rhythm_blocks.bin",

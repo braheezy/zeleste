@@ -1,5 +1,6 @@
 const gba = @import("gba");
 const assets = @import("../../core/assets.zig");
+const audio = @import("../../core/audio.zig");
 const camera_mod = @import("../../world/camera.zig");
 const collision = @import("../../world/collision.zig");
 const dust = @import("../../effects/dust.zig");
@@ -43,6 +44,7 @@ const world_x: i16 = 64;
 const world_y: i16 = 126;
 const ending_early_shake_frames: u8 = 12;
 const ending_gap_chunks = 3;
+const collapse_keep_behind_px: i16 = 40;
 const max_chunks = 128;
 const max_objects = 30;
 const first_object = foreground_stamps.behind_first_object;
@@ -158,7 +160,7 @@ pub fn update(player: *Player, active_room: bool) void {
         switch (chunk.state) {
             .inactive, .gone => {},
             .solid => {
-                if (sequence_started and chunk.x + chunk_width < player_center_x - 56) {
+                if (sequence_started and chunk.x + chunk_width < player_center_x - collapse_keep_behind_px) {
                     chunk.state = .gone;
                 } else {
                     live_chunks += 1;
@@ -175,6 +177,10 @@ pub fn update(player: *Player, active_room: bool) void {
                 }
             },
             .falling => {
+                if (sequence_started and chunk.x + chunk_width < player_center_x - collapse_keep_behind_px) {
+                    chunk.state = .gone;
+                    continue;
+                }
                 live_chunks += 1;
                 chunk.vy = approach(chunk.vy, fall_max_speed, fall_gravity);
                 chunk.y += chunk.vy;
@@ -461,6 +467,7 @@ fn triggerChunk(index: usize, delay: u8) void {
 fn beginSequence() void {
     if (sequence_started) return;
     sequence_started = true;
+    audio.playPrologueBridgeMusic();
 }
 
 fn collapseShakeActive(active_room: bool) bool {

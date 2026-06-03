@@ -24,6 +24,7 @@ const Spawn = room_data.Spawn;
 
 const rooms = level.rooms;
 const prologue_end_room_index = level.roomIndexFor(level.chapter_index, "3") orelse rooms.len;
+var room_wires_hidden_for_collapse: bool = false;
 
 pub fn resetPaletteState() void {
     granny_cutscene.resetPaletteState();
@@ -52,6 +53,7 @@ pub fn loadAfterObjectSprites(room_index: usize, reset_cutscenes: bool) void {
     bird_npc.load(room_index);
     tiny_birds.load(room_index);
     room_wires.load(room_index, bridge.active());
+    room_wires_hidden_for_collapse = false;
     if (reset_cutscenes) {
         granny_cutscene.resetOnRoomLoad(room_index);
     }
@@ -190,6 +192,14 @@ pub fn drawSceneEffects(camera: Camera, room_index: usize, slots: SceneSlots) vo
 
 pub fn drawRoomOverlays(camera: Camera, room_index: usize) void {
     _ = room_index;
+    if (bridge.sequenceStarted()) {
+        if (!room_wires_hidden_for_collapse) {
+            room_wires.hideObjects(bridge.active());
+            room_wires_hidden_for_collapse = true;
+        }
+        return;
+    }
+    room_wires_hidden_for_collapse = false;
     room_wires.draw(camera, bridge.active());
 }
 

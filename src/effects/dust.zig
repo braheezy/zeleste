@@ -82,7 +82,7 @@ pub fn spawnWallSlide(player: Player, wall_dir: i16) void {
 pub fn spawnSnowFromBlock(x: i16, y: i32, w: u8) void {
     const base_y = fixedToPixel(y) + 2;
     const width: u16 = @max(@as(u16, w), 1);
-    const count: u8 = 7;
+    const count: u8 = if (w <= 8) 2 else 7;
     var index: u8 = 0;
     while (index < count) : (index += 1) {
         const slot = nextParticleIndex();

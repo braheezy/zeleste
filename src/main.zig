@@ -7,6 +7,7 @@ export var save_type_sram linksection(".data") = [_:0]u8{ 'S', 'R', 'A', 'M', '_
 pub const RoomBackground = game.RoomBackground;
 pub const ParallaxLayer = game.ParallaxLayer;
 pub const Spawn = game.Spawn;
+pub const RespawnPoint = game.RespawnPoint;
 pub const SceneRect = game.SceneRect;
 pub const ExitDirection = game.ExitDirection;
 pub const ExitLine = game.ExitLine;

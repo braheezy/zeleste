@@ -8,11 +8,11 @@ const overworld_placeholder = @import("../world/overworld_placeholder.zig");
 const room_data = @import("../world/room_data.zig");
 const title_menu = @import("title_menu.zig");
 
-const Spawn = room_data.Spawn;
+const RespawnPoint = room_data.RespawnPoint;
 
 pub const StartSelection = struct {
     room_index: usize,
-    respawn: Spawn,
+    respawn: RespawnPoint,
 };
 
 pub fn run() StartSelection {
@@ -28,7 +28,10 @@ pub fn run() StartSelection {
     };
     return .{
         .room_index = room_index,
-        .respawn = level.rooms[room_index].spawn,
+        .respawn = .{
+            .room_index = room_index,
+            .spawn = level.rooms[room_index].spawn,
+        },
     };
 }
 

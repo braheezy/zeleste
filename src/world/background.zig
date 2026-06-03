@@ -1,5 +1,5 @@
 const gba = @import("gba");
-const breakable_walls = @import("../room/breakable_walls.zig");
+const chapter_entities = @import("../chapters/entities.zig");
 const camera = @import("camera.zig");
 const room_data = @import("room_data.zig");
 const video = @import("../core/video.zig");
@@ -290,7 +290,7 @@ pub fn logicalRoomMapEntry(room: room_data.RoomBackground, x: i16, y: i16) u16 {
 }
 
 fn visibleRoomMapEntry(room_index: usize, room: room_data.RoomBackground, x: i16, y: i16) u16 {
-    if (breakable_walls.bgTileBroken(room_index, x, y)) return 0;
+    if (chapter_entities.bgTileBroken(room_index, x, y)) return 0;
     return logicalRoomMapEntry(room, x, y);
 }
 

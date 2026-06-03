@@ -40,7 +40,7 @@ const EndLevelTransition = struct {
 
 const Camera = camera_mod.Camera;
 const Player = player_mod.State;
-const Spawn = room_data.Spawn;
+const RespawnPoint = room_data.RespawnPoint;
 
 const fixed_one = math.fixed_one;
 const fixedToPixel = math.fixedToPixel;
@@ -124,7 +124,7 @@ pub fn startEndLevelTransition(player: *Player, camera: Camera) void {
     };
 }
 
-pub fn updateTransitionIfActive(player: *Player, camera: *Camera, room_index: *usize, respawn: *Spawn, input: gba.input.BufferedKeysState) bool {
+pub fn updateTransitionIfActive(player: *Player, camera: *Camera, room_index: *usize, respawn: *RespawnPoint, input: gba.input.BufferedKeysState) bool {
     if (end_level_transition.phase == .inactive) return false;
     updateEndLevelTransition(player, camera, room_index, respawn, input);
     return true;
@@ -147,7 +147,7 @@ fn holdPlayerForBridgeEnding(player: *Player) void {
     }
 }
 
-fn updateEndLevelTransition(player: *Player, camera: *Camera, room_index: *usize, respawn: *Spawn, input: gba.input.BufferedKeysState) void {
+fn updateEndLevelTransition(player: *Player, camera: *Camera, room_index: *usize, respawn: *RespawnPoint, input: gba.input.BufferedKeysState) void {
     const active_room_index = room_index.*;
     switch (end_level_transition.phase) {
         .inactive => {},
@@ -251,7 +251,7 @@ fn loadOverworldScreen() void {
     overworld_placeholder.loadScreen();
 }
 
-fn startGameplayFromOverworld(target_room: usize, player: *Player, camera: *Camera, room_index: *usize, respawn: *Spawn) void {
+fn startGameplayFromOverworld(target_room: usize, player: *Player, camera: *Camera, room_index: *usize, respawn: *RespawnPoint) void {
     room_loader.hideGameplayDisplayForLoad();
     frame.sync();
 
@@ -261,11 +261,14 @@ fn startGameplayFromOverworld(target_room: usize, player: *Player, camera: *Came
     } else {
         audio.playPrologueMusic();
     }
-    respawn.* = rooms[target_room].spawn;
-    _ = save.commitSessionCheckpoint(target_room, respawn.*);
+    respawn.* = .{
+        .room_index = target_room,
+        .spawn = rooms[target_room].spawn,
+    };
+    _ = save.commitSessionCheckpoint(respawn.room_index, respawn.spawn);
     room_loader.loadGameplayRoom(target_room, .transition);
     room_systems.clearTransientEffects();
-    player.* = room_transition.spawnPlayer(target_room);
+    player.* = room_transition.spawnPlayerAt(respawn.spawn);
     player.hair_initialized = false;
     hair.update(player, endingHoldActive());
     camera.* = updateCamera(player.*, target_room);
