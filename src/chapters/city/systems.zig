@@ -10,14 +10,18 @@ const Player = player_mod.State;
 const Spawn = room_data.Spawn;
 const SceneSlots = object_slots.SceneSlots;
 
-pub fn resetPaletteState() void {}
+pub fn resetPaletteState() void {
+    entities.resetPaletteState();
+}
 
 pub fn loadBeforeObjectSprites(room_index: usize, slots: SceneSlots) void {
     _ = room_index;
     _ = slots;
 }
 
-pub fn loadObjectGraphics() void {}
+pub fn loadObjectGraphics(room_index: usize) void {
+    _ = room_index;
+}
 
 pub fn invalidateObjectTileCaches() void {}
 
@@ -27,15 +31,14 @@ pub fn loadAfterObjectSprites(room_index: usize, reset_cutscenes: bool) void {
 }
 
 pub fn updateCutscenes(player: *Player, input: gba.input.BufferedKeysState, room_index: usize) bool {
-    _ = player;
     _ = input;
-    _ = room_index;
-    return false;
+    return entities.updateCutscenes(player, room_index);
 }
 
 pub fn updateCutsceneEffects(room_index: usize, camera: Camera) void {
     _ = room_index;
     _ = camera;
+    entities.updateImpactEffects();
 }
 
 pub fn updateActors(player: *Player, room_index: usize, camera: Camera, anim_counter: u16) void {
@@ -117,7 +120,7 @@ pub fn handlePlayerDeathStart(room_index: usize) void {
 
 pub fn cameraShakeOffset(room_index: usize) ?Spawn {
     _ = room_index;
-    return null;
+    return entities.cameraShakeOffset();
 }
 
 pub fn windSnowSuppressed(room_index: usize) bool {

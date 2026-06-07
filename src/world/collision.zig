@@ -72,15 +72,28 @@ pub fn spikeHitAt(room: anytype, x: i16, y: i16, width: i16, height: i16, speed_
             if (spikeDirection(collision_value)) |direction| {
                 const spike_left: i16 = @as(i16, @intCast(tile_x)) * 8;
                 const spike_top: i16 = @as(i16, @intCast(tile_y)) * 8;
-                if (!movingWithSpike(direction, speed_x, speed_y) and
-                    spikeHitboxTouchesRect(direction, rect_left, rect_top, rect_right, rect_bottom, spike_left, spike_top))
-                {
+                if (spikeTileHitAt(direction, rect_left, rect_top, rect_right, rect_bottom, spike_left, spike_top, speed_x, speed_y)) {
                     return .{ .direction = direction };
                 }
             }
         }
     }
     return null;
+}
+
+pub fn spikeTileHitAt(
+    direction: SpikeDirection,
+    rect_left: i16,
+    rect_top: i16,
+    rect_right: i16,
+    rect_bottom: i16,
+    tile_left: i16,
+    tile_top: i16,
+    speed_x: i32,
+    speed_y: i32,
+) bool {
+    return !movingWithSpike(direction, speed_x, speed_y) and
+        spikeHitboxTouchesRect(direction, rect_left, rect_top, rect_right, rect_bottom, tile_left, tile_top);
 }
 
 fn spikeDirection(collision_value: u8) ?SpikeDirection {

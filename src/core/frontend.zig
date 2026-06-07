@@ -6,6 +6,7 @@ const frame = @import("frame.zig");
 const level = @import("../generated_rooms.zig");
 const overworld_placeholder = @import("../world/overworld_placeholder.zig");
 const room_data = @import("../world/room_data.zig");
+const save = @import("save.zig");
 const title_menu = @import("title_menu.zig");
 
 const RespawnPoint = room_data.RespawnPoint;
@@ -26,6 +27,7 @@ pub fn run() StartSelection {
         .city => city.flow.firstRoomIndex() orelse level.start_room_index,
         .none => level.start_room_index,
     };
+    save.beginChapterRunForRoom(room_index);
     return .{
         .room_index = room_index,
         .respawn = .{

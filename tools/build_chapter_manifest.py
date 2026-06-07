@@ -22,6 +22,10 @@ SYNTHETIC_CITY_EXITS = [
     {"source": "city_12", "direction": "right", "target": "city_12a", "x1": 415, "y1": 160, "x2": 415, "y2": 184},
 ]
 
+CITY_ROOM_RGB_BITS = {
+    "6b": 2,
+}
+
 
 def png_size(path: Path) -> tuple[int, int]:
     header = path.read_bytes()[:24]
@@ -45,6 +49,18 @@ def natural_key(value: str) -> tuple:
 
 def annotation_path_for_image(image: Path) -> Path:
     return image.with_name(f"{image.stem}_annotations.json")
+
+
+def is_room_source_image(path: Path) -> bool:
+    stem = path.stem
+    helper_suffixes = (
+        "-plx",
+        "-overlay",
+        "_overlay",
+        "-hidden-cover",
+        "_hidden_cover",
+    )
+    return not stem.endswith(helper_suffixes)
 
 
 def read_annotation(image: Path) -> dict:
@@ -157,7 +173,7 @@ def city_exit_edge(source: str, direction: str, target: str, x1: int, y1: int, x
 
 def collect_city_rooms(city_dir: Path) -> list[dict]:
     images = sorted(
-        [path for path in city_dir.glob("*.png") if not path.stem.endswith("-plx")],
+        [path for path in city_dir.glob("*.png") if is_room_source_image(path)],
         key=lambda path: natural_key(path.stem),
     )
     city_ids = {image.stem for image in images}
@@ -175,7 +191,7 @@ def collect_city_rooms(city_dir: Path) -> list[dict]:
             "image": str(image.resolve()),
             "worldX": 0,
             "worldY": 0,
-            "rgbBits": 3,
+            "rgbBits": CITY_ROOM_RGB_BITS.get(room_id, 3),
             "_width": width,
             "_height": height,
             "_edges": {},

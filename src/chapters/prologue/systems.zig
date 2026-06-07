@@ -35,8 +35,8 @@ pub fn loadBeforeObjectSprites(room_index: usize, slots: SceneSlots) void {
     funny_cars.load(room_index, slots.actor_platform_first_object);
 }
 
-pub fn loadObjectGraphics() void {
-    falling_blocks.loadGraphics();
+pub fn loadObjectGraphics(room_index: usize) void {
+    falling_blocks.loadGraphics(room_index);
     chimney_smoke.loadPalette();
     granny_npc.loadPalette();
     funny_cars.loadGraphics();

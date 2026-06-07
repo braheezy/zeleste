@@ -6,6 +6,7 @@ const video = @import("../core/video.zig");
 
 const invalid_room_index = ~@as(usize, 0);
 const max_wire_chunks = 48;
+const max_hidden_cover_groups = 64;
 
 pub const static_wire_bg_color_index: u8 = 250;
 const static_wire_bg_max_tiles = max_wire_chunks * 4;
@@ -18,6 +19,8 @@ var parallax_stream_tile_x: i16 = -32768;
 var parallax_stream_tile_y: i16 = -32768;
 var parallax_tile_offset: u16 = 0;
 var static_wire_bg_tiles: [static_wire_bg_max_tiles]gba.display.Tile8Bpp align(4) = [_]gba.display.Tile8Bpp{gba.display.Tile8Bpp.init([_]u8{0} ** 64)} ** static_wire_bg_max_tiles;
+var hidden_cover_group_count: usize = 0;
+var hidden_cover_revealed: [max_hidden_cover_groups]bool = [_]bool{false} ** max_hidden_cover_groups;
 
 pub fn resetRoomStream() void {
     bg_stream_room_index = invalid_room_index;
@@ -40,6 +43,12 @@ pub fn loadParallax(room: room_data.RoomBackground) void {
     clearParallaxMap();
     resetParallaxStream();
     gba.display.ctrl.bg1 = false;
+    resetHiddenCoverState(room);
+    if (hasHiddenCoverLayer(room)) {
+        loadHiddenCoverLayer(room);
+        gba.display.ctrl.bg1 = true;
+        return;
+    }
     if (room.parallax) |parallax| {
         gba.mem.memcpy16(&gba.display.bg_palette.colors[@as(usize, 15) * 16], @ptrCast(parallax.palette.ptr), 16);
         const tile_count = parallax.tiles.len / 32;
@@ -54,6 +63,13 @@ pub fn loadParallax(room: room_data.RoomBackground) void {
 }
 
 pub fn updateParallax(room_index: usize, room: room_data.RoomBackground, view: camera.Camera) void {
+    if (hasHiddenCoverLayer(room)) {
+        streamHiddenCoverBackground(room_index, room, view.x, view.y);
+        gba.display.bg_scroll[1] = .init(@intCast(view.x), @intCast(view.y));
+        gba.display.ctrl.bg1 = true;
+        return;
+    }
+
     const maybe_parallax = room.parallax;
     if (maybe_parallax == null) {
         gba.display.ctrl.bg1 = false;
@@ -68,6 +84,47 @@ pub fn updateParallax(room_index: usize, room: room_data.RoomBackground, view: c
     streamParallaxBackground(room_index, parallax, scroll_x, scroll_y);
     gba.display.bg_scroll[1] = .init(@intCast(scroll_x), @intCast(scroll_y));
     gba.display.ctrl.bg1 = true;
+}
+
+pub fn hasForegroundLayer(room: room_data.RoomBackground) bool {
+    return hasHiddenCoverLayer(room) or room.parallax != null;
+}
+
+pub fn updateHiddenCovers(room_index: usize, room: room_data.RoomBackground, player_left: i16, player_top: i16, player_right: i16, player_bottom: i16) void {
+    _ = room_index;
+    if (!hasHiddenCoverLayer(room) or hidden_cover_group_count == 0) return;
+    if (player_right <= 0 or player_bottom <= 0 or player_left >= room.width_pixels or player_top >= room.height_pixels) return;
+
+    const left_px = @max(@as(i16, 0), player_left);
+    const top_px = @max(@as(i16, 0), player_top);
+    const right_px = @min(room.width_pixels - 1, player_right - 1);
+    const bottom_px = @min(room.height_pixels - 1, player_bottom - 1);
+    if (right_px < left_px or bottom_px < top_px) return;
+
+    const start_tile_x = @divTrunc(left_px, 8);
+    const end_tile_x = @divTrunc(right_px, 8);
+    const start_tile_y = @divTrunc(top_px, 8);
+    const end_tile_y = @divTrunc(bottom_px, 8);
+    var revealed_any = false;
+    var tile_y = start_tile_y;
+    while (tile_y <= end_tile_y) : (tile_y += 1) {
+        var tile_x = start_tile_x;
+        while (tile_x <= end_tile_x) : (tile_x += 1) {
+            const ux: usize = @intCast(tile_x);
+            const uy: usize = @intCast(tile_y);
+            const tile_offset = uy * room.width_tiles + ux;
+            if (tile_offset >= room.hidden_cover_groups.len) continue;
+            const group_byte = room.hidden_cover_groups[tile_offset];
+            if (group_byte == 0) continue;
+            const group: usize = @intCast(group_byte - 1);
+            if (group >= hidden_cover_group_count or hidden_cover_revealed[group]) continue;
+            hidden_cover_revealed[group] = true;
+            revealed_any = true;
+        }
+    }
+    if (revealed_any) {
+        resetParallaxStream();
+    }
 }
 
 pub fn streamRoomBackground(room_index: usize, room: room_data.RoomBackground, view: camera.Camera) void {
@@ -89,21 +146,35 @@ pub fn streamRoomBackground(room_index: usize, room: room_data.RoomBackground, v
     const delta_y = tile_y - bg_stream_tile_y;
     if (delta_x == 0 and delta_y == 0) return;
 
-    if (delta_x < -1 or delta_x > 1 or delta_y < -1 or delta_y > 1) {
+    const hardware_width: i16 = @intCast(video.bg_hardware_width_tiles);
+    const hardware_height: i16 = @intCast(video.bg_hardware_height_tiles);
+    if (delta_x <= -hardware_width or delta_x >= hardware_width or delta_y <= -hardware_height or delta_y >= hardware_height) {
         streamRoomBackgroundFull(room_index, room, tile_x, tile_y);
         return;
     }
 
     if (delta_x > 0) {
-        streamRoomBackgroundColumn(room, tile_x + @as(i16, @intCast(video.bg_hardware_width_tiles - 1)), tile_y);
+        var stream_x = bg_stream_tile_x + 1;
+        while (stream_x <= tile_x) : (stream_x += 1) {
+            streamRoomBackgroundColumn(room, stream_x + hardware_width - 1, tile_y);
+        }
     } else if (delta_x < 0) {
-        streamRoomBackgroundColumn(room, tile_x, tile_y);
+        var stream_x = bg_stream_tile_x - 1;
+        while (stream_x >= tile_x) : (stream_x -= 1) {
+            streamRoomBackgroundColumn(room, stream_x, tile_y);
+        }
     }
 
     if (delta_y > 0) {
-        streamRoomBackgroundRow(room, tile_x, tile_y + @as(i16, @intCast(video.bg_hardware_height_tiles - 1)));
+        var stream_y = bg_stream_tile_y + 1;
+        while (stream_y <= tile_y) : (stream_y += 1) {
+            streamRoomBackgroundRow(room, tile_x, stream_y + hardware_height - 1);
+        }
     } else if (delta_y < 0) {
-        streamRoomBackgroundRow(room, tile_x, tile_y);
+        var stream_y = bg_stream_tile_y - 1;
+        while (stream_y >= tile_y) : (stream_y -= 1) {
+            streamRoomBackgroundRow(room, tile_x, stream_y);
+        }
     }
 
     bg_stream_tile_x = tile_x;
@@ -294,6 +365,141 @@ fn visibleRoomMapEntry(room_index: usize, room: room_data.RoomBackground, x: i16
     return logicalRoomMapEntry(room, x, y);
 }
 
+fn loadHiddenCoverLayer(room: room_data.RoomBackground) void {
+    gba.mem.memcpy16(&gba.display.bg_palette.colors[@as(usize, 15) * 16], @ptrCast(room.hidden_cover_palette.ptr), 16);
+    const tile_count = room.hidden_cover_tiles.len / 32;
+    const tiles: [*]align(2) const gba.display.Tile4Bpp = @ptrCast(room.hidden_cover_tiles.ptr);
+    const charblock3_start_bytes: usize = 3 * 16 * 1024;
+    const used_bg_bytes = room.tiles.len;
+    const tile_offset_bytes = if (used_bg_bytes > charblock3_start_bytes) used_bg_bytes - charblock3_start_bytes else 0;
+    parallax_tile_offset = @intCast((tile_offset_bytes + 31) / 32);
+    gba.display.memcpyTiles4Bpp(video.parallax_charblock, parallax_tile_offset, tiles[0..tile_count]);
+}
+
+fn resetHiddenCoverState(room: room_data.RoomBackground) void {
+    hidden_cover_group_count = if (room.hidden_covers.len >= 2)
+        @min(@as(usize, room_data.readU16Le(room.hidden_covers, 0)), max_hidden_cover_groups)
+    else
+        0;
+    for (&hidden_cover_revealed) |*revealed| {
+        revealed.* = false;
+    }
+}
+
+fn hasHiddenCoverLayer(room: room_data.RoomBackground) bool {
+    return room.hidden_cover_tiles.len != 0 and
+        room.hidden_cover_map.len != 0 and
+        room.hidden_cover_groups.len != 0 and
+        room.hidden_cover_palette.len >= 32;
+}
+
+fn streamHiddenCoverBackground(room_index: usize, room: room_data.RoomBackground, scroll_x: i16, scroll_y: i16) void {
+    const tile_x = @divTrunc(scroll_x, 8);
+    const tile_y = @divTrunc(scroll_y, 8);
+    if (parallax_stream_room_index != room_index) {
+        streamHiddenCoverBackgroundFull(room_index, room, tile_x, tile_y);
+        return;
+    }
+
+    const delta_x = tile_x - parallax_stream_tile_x;
+    const delta_y = tile_y - parallax_stream_tile_y;
+    if (delta_x == 0 and delta_y == 0) return;
+    const hardware_width: i16 = @intCast(video.parallax_hardware_width_tiles);
+    const hardware_height: i16 = @intCast(video.parallax_hardware_height_tiles);
+    if (delta_x <= -hardware_width or delta_x >= hardware_width or delta_y <= -hardware_height or delta_y >= hardware_height) {
+        streamHiddenCoverBackgroundFull(room_index, room, tile_x, tile_y);
+        return;
+    }
+
+    if (delta_x > 0) {
+        var stream_x = parallax_stream_tile_x + 1;
+        while (stream_x <= tile_x) : (stream_x += 1) {
+            streamHiddenCoverBackgroundColumn(room, stream_x + hardware_width - 1, tile_y);
+        }
+    } else if (delta_x < 0) {
+        var stream_x = parallax_stream_tile_x - 1;
+        while (stream_x >= tile_x) : (stream_x -= 1) {
+            streamHiddenCoverBackgroundColumn(room, stream_x, tile_y);
+        }
+    }
+
+    if (delta_y > 0) {
+        var stream_y = parallax_stream_tile_y + 1;
+        while (stream_y <= tile_y) : (stream_y += 1) {
+            streamHiddenCoverBackgroundRow(room, tile_x, stream_y + hardware_height - 1);
+        }
+    } else if (delta_y < 0) {
+        var stream_y = parallax_stream_tile_y - 1;
+        while (stream_y >= tile_y) : (stream_y -= 1) {
+            streamHiddenCoverBackgroundRow(room, tile_x, stream_y);
+        }
+    }
+
+    parallax_stream_room_index = room_index;
+    parallax_stream_tile_x = tile_x;
+    parallax_stream_tile_y = tile_y;
+}
+
+fn streamHiddenCoverBackgroundFull(room_index: usize, room: room_data.RoomBackground, source_tile_x: i16, source_tile_y: i16) void {
+    const entries: [*]volatile gba.display.Screenblock.Entry = @ptrCast(&gba.display.screenblocks[video.parallax_screenblock].entries);
+    var dest_y: usize = 0;
+    while (dest_y < video.parallax_hardware_height_tiles) : (dest_y += 1) {
+        const src_y = source_tile_y + @as(i16, @intCast(dest_y));
+        var dest_x: usize = 0;
+        while (dest_x < video.parallax_hardware_width_tiles) : (dest_x += 1) {
+            const src_x = source_tile_x + @as(i16, @intCast(dest_x));
+            const raw_entry = logicalHiddenCoverMapEntry(room, src_x, src_y);
+            const adjusted_entry = adjustParallaxMapEntry(raw_entry);
+            const hardware_x = wrapTileIndex(src_x, video.parallax_hardware_width_tiles);
+            const hardware_y = wrapTileIndex(src_y, video.parallax_hardware_height_tiles);
+            entries[normalBgMapIndex(hardware_x, hardware_y, video.parallax_hardware_width_tiles)] = @bitCast(adjusted_entry);
+        }
+    }
+    parallax_stream_room_index = room_index;
+    parallax_stream_tile_x = source_tile_x;
+    parallax_stream_tile_y = source_tile_y;
+}
+
+fn streamHiddenCoverBackgroundColumn(room: room_data.RoomBackground, src_x: i16, source_tile_y: i16) void {
+    const entries: [*]volatile gba.display.Screenblock.Entry = @ptrCast(&gba.display.screenblocks[video.parallax_screenblock].entries);
+    const hardware_x = wrapTileIndex(src_x, video.parallax_hardware_width_tiles);
+    var offset_y: usize = 0;
+    while (offset_y < video.parallax_hardware_height_tiles) : (offset_y += 1) {
+        const src_y = source_tile_y + @as(i16, @intCast(offset_y));
+        const hardware_y = wrapTileIndex(src_y, video.parallax_hardware_height_tiles);
+        const raw_entry = logicalHiddenCoverMapEntry(room, src_x, src_y);
+        const adjusted_entry = adjustParallaxMapEntry(raw_entry);
+        entries[normalBgMapIndex(hardware_x, hardware_y, video.parallax_hardware_width_tiles)] = @bitCast(adjusted_entry);
+    }
+}
+
+fn streamHiddenCoverBackgroundRow(room: room_data.RoomBackground, source_tile_x: i16, src_y: i16) void {
+    const entries: [*]volatile gba.display.Screenblock.Entry = @ptrCast(&gba.display.screenblocks[video.parallax_screenblock].entries);
+    const hardware_y = wrapTileIndex(src_y, video.parallax_hardware_height_tiles);
+    var offset_x: usize = 0;
+    while (offset_x < video.parallax_hardware_width_tiles) : (offset_x += 1) {
+        const src_x = source_tile_x + @as(i16, @intCast(offset_x));
+        const hardware_x = wrapTileIndex(src_x, video.parallax_hardware_width_tiles);
+        const raw_entry = logicalHiddenCoverMapEntry(room, src_x, src_y);
+        const adjusted_entry = adjustParallaxMapEntry(raw_entry);
+        entries[normalBgMapIndex(hardware_x, hardware_y, video.parallax_hardware_width_tiles)] = @bitCast(adjusted_entry);
+    }
+}
+
+fn logicalHiddenCoverMapEntry(room: room_data.RoomBackground, x: i16, y: i16) u16 {
+    if (x < 0 or y < 0) return 0;
+    const ux: usize = @intCast(x);
+    const uy: usize = @intCast(y);
+    if (ux >= room.width_tiles or uy >= room.height_tiles) return 0;
+    const tile_offset = uy * room.width_tiles + ux;
+    if (tile_offset >= room.hidden_cover_groups.len) return 0;
+    const group: usize = @intCast(room.hidden_cover_groups[tile_offset]);
+    if (group != 0 and group - 1 < hidden_cover_group_count and hidden_cover_revealed[group - 1]) return 0;
+    const map_offset = tile_offset * 2;
+    if (map_offset + 1 >= room.hidden_cover_map.len) return 0;
+    return @as(u16, room.hidden_cover_map[map_offset]) | (@as(u16, room.hidden_cover_map[map_offset + 1]) << 8);
+}
+
 fn streamParallaxBackground(room_index: usize, parallax: room_data.ParallaxLayer, scroll_x: i16, scroll_y: i16) void {
     const tile_x = @divTrunc(scroll_x, 8);
     const tile_y = @divTrunc(scroll_y, 8);
@@ -305,21 +511,35 @@ fn streamParallaxBackground(room_index: usize, parallax: room_data.ParallaxLayer
     const delta_x = tile_x - parallax_stream_tile_x;
     const delta_y = tile_y - parallax_stream_tile_y;
     if (delta_x == 0 and delta_y == 0) return;
-    if (delta_x < -1 or delta_x > 1 or delta_y < -1 or delta_y > 1) {
+    const hardware_width: i16 = @intCast(video.parallax_hardware_width_tiles);
+    const hardware_height: i16 = @intCast(video.parallax_hardware_height_tiles);
+    if (delta_x <= -hardware_width or delta_x >= hardware_width or delta_y <= -hardware_height or delta_y >= hardware_height) {
         streamParallaxBackgroundFull(room_index, parallax, tile_x, tile_y);
         return;
     }
 
     if (delta_x > 0) {
-        streamParallaxBackgroundColumn(parallax, tile_x + @as(i16, @intCast(video.parallax_hardware_width_tiles - 1)), tile_y);
+        var stream_x = parallax_stream_tile_x + 1;
+        while (stream_x <= tile_x) : (stream_x += 1) {
+            streamParallaxBackgroundColumn(parallax, stream_x + hardware_width - 1, tile_y);
+        }
     } else if (delta_x < 0) {
-        streamParallaxBackgroundColumn(parallax, tile_x, tile_y);
+        var stream_x = parallax_stream_tile_x - 1;
+        while (stream_x >= tile_x) : (stream_x -= 1) {
+            streamParallaxBackgroundColumn(parallax, stream_x, tile_y);
+        }
     }
 
     if (delta_y > 0) {
-        streamParallaxBackgroundRow(parallax, tile_x, tile_y + @as(i16, @intCast(video.parallax_hardware_height_tiles - 1)));
+        var stream_y = parallax_stream_tile_y + 1;
+        while (stream_y <= tile_y) : (stream_y += 1) {
+            streamParallaxBackgroundRow(parallax, tile_x, stream_y + hardware_height - 1);
+        }
     } else if (delta_y < 0) {
-        streamParallaxBackgroundRow(parallax, tile_x, tile_y);
+        var stream_y = parallax_stream_tile_y - 1;
+        while (stream_y >= tile_y) : (stream_y -= 1) {
+            streamParallaxBackgroundRow(parallax, tile_x, stream_y);
+        }
     }
 
     parallax_stream_room_index = room_index;
@@ -385,6 +605,10 @@ fn logicalParallaxMapEntry(parallax: room_data.ParallaxLayer, x: i16, y: i16) u1
 
 fn adjustParallaxMapEntry(entry: u16) u16 {
     return (entry & 0xFC00) | (((entry & 0x03FF) + parallax_tile_offset) & 0x03FF);
+}
+
+fn rectsOverlap(a_left: i16, a_top: i16, a_right: i16, a_bottom: i16, b_left: i16, b_top: i16, b_right: i16, b_bottom: i16) bool {
+    return a_right > b_left and a_left < b_right and a_bottom > b_top and a_top < b_bottom;
 }
 
 pub fn clearParallaxMap() void {

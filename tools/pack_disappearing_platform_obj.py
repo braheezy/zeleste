@@ -12,6 +12,7 @@ from split_foreground_tileset import read_png_rgba
 
 
 OUTLINE_COLOR = (203, 219, 252, 255)
+BOTTOM_OUTLINE_COLOR = (0, 0, 0, 255)
 
 
 def rgba_to_rgb555(color: tuple[int, int, int, int]) -> int:
@@ -47,10 +48,14 @@ def main() -> int:
         if color[3] != 0:
             colors[color] += 1
 
-    palette_opaque = [color for color, _ in colors.most_common() if color != OUTLINE_COLOR]
-    palette = [(0, 0, 0, 0)] + palette_opaque[:14]
-    while len(palette) < 15:
+    palette_opaque = [
+        color for color, _ in colors.most_common()
+        if color != OUTLINE_COLOR and color != BOTTOM_OUTLINE_COLOR
+    ]
+    palette = [(0, 0, 0, 0)] + palette_opaque[:13]
+    while len(palette) < 14:
         palette.append((0, 0, 0, 255))
+    palette.append(BOTTOM_OUTLINE_COLOR)
     palette.append(OUTLINE_COLOR)
     palette_index = {color: index for index, color in enumerate(palette)}
 
@@ -66,11 +71,15 @@ def main() -> int:
 
     tile_count = image.width // 8
     tiles = bytearray()
+    bottom_outline_index = palette_index[BOTTOM_OUTLINE_COLOR]
     for tile_x in range(tile_count):
         tile_pixels = []
         for y in range(8):
             for x in range(8):
-                tile_pixels.append(pixel_index(tile_x * 8 + x, y))
+                if y == 7:
+                    tile_pixels.append(bottom_outline_index)
+                else:
+                    tile_pixels.append(pixel_index(tile_x * 8 + x, y))
         write_tile_4bpp(tiles, tile_pixels)
 
     args.output_dir.mkdir(parents=True, exist_ok=True)

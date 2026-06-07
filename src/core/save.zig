@@ -7,7 +7,7 @@ const room_data = @import("../world/room_data.zig");
 const Spawn = room_data.Spawn;
 
 const magic = [_]u8{ 'Z', 'E', 'L', 'E', 'S', 'A', 'V', '1' };
-const version: u16 = 1;
+const version: u16 = 2;
 const copy_size: usize = 4096;
 const copy_count: usize = 2;
 pub const slot_count: usize = 3;
@@ -34,13 +34,17 @@ const slot_strawberry_count_offset: usize = 28;
 const slot_strawberry_oneups_offset: usize = 30;
 const slot_strawberry_score_offset: usize = 32;
 const slot_strawberry_flags_offset: usize = 36;
-const slot_player_name_offset: usize = slot_strawberry_flags_offset + collectibles.flag_word_count * 4;
+const slot_cassette_flags_offset: usize = slot_strawberry_flags_offset + collectibles.flag_word_count * 4;
+const slot_player_name_offset: usize = slot_cassette_flags_offset + collectibles.cassette_flag_word_count * 4;
 pub const player_name_len: usize = 8;
 
 const default_player_name = [_]u8{ 'M', 'A', 'D', 'E', 'L', 'I', 'N', 'E' };
 
 const fnv_offset_basis: u32 = 2166136261;
 const fnv_prime: u32 = 16777619;
+const strawberry_record_bytes: usize = 8;
+const cassette_record_bytes: usize = 8;
+pub const max_chapter_area_count: usize = 3;
 
 const SaveSlot = struct {
     exists: bool = false,
@@ -56,6 +60,7 @@ const SaveSlot = struct {
     strawberry_one_ups: u16 = 0,
     strawberry_score: u32 = 0,
     strawberry_flags: [collectibles.flag_word_count]u32 = [_]u32{0} ** collectibles.flag_word_count,
+    cassette_flags: [collectibles.cassette_flag_word_count]u32 = [_]u32{0} ** collectibles.cassette_flag_word_count,
     player_name: [player_name_len]u8 = default_player_name,
 };
 
@@ -69,9 +74,28 @@ pub const SlotSummary = struct {
     unlocked_chapters: u32,
     completed_chapters: u32,
     strawberry_count: u16,
+    cassette_count: u16,
     strawberry_one_ups: u16,
     strawberry_score: u32,
     player_name: [player_name_len]u8,
+};
+
+pub const CollectibleCount = struct {
+    collected: u16 = 0,
+    total: u16 = 0,
+};
+
+pub const ChapterStats = struct {
+    strawberries: CollectibleCount = .{},
+    cassettes: CollectibleCount = .{},
+    future: CollectibleCount = .{},
+};
+
+pub const ChapterAreaSummary = struct {
+    label: []const u8 = "",
+    checkpoint_room_index: usize = 0,
+    unlocked: bool = false,
+    strawberries: CollectibleCount = .{},
 };
 
 const LoadedCopy = struct {
@@ -130,7 +154,6 @@ pub fn resumeSpawn(default_spawn: Spawn) Spawn {
 }
 
 pub fn commitSession(room_index: usize, respawn: Spawn) void {
-    if (!persistence_enabled) return;
     ensureInitialized();
     var slot = activeSlotPtr();
     slot.exists = true;
@@ -150,7 +173,6 @@ pub fn commitSessionCheckpoint(room_index: usize, respawn: Spawn) bool {
 }
 
 pub fn commitProgress() void {
-    if (!persistence_enabled) return;
     ensureInitialized();
     var slot = activeSlotPtr();
     slot.exists = true;
@@ -158,18 +180,24 @@ pub fn commitProgress() void {
     writeNextCopy();
 }
 
+pub fn beginChapterRunForRoom(room_index: usize) void {
+    ensureInitialized();
+    _ = room_index;
+    collectibles.beginChapterRun();
+}
+
+pub fn noteDeathInRoom(_: usize) void {
+    noteDeath();
+}
+
 pub fn noteDeath() void {
-    if (!persistence_enabled) return;
     ensureInitialized();
     var slot = activeSlotPtr();
     slot.exists = true;
     if (slot.total_deaths != 0xffffffff) slot.total_deaths += 1;
-    snapshotCollectibles(slot);
-    writeNextCopy();
 }
 
 pub fn tickPlaytime() void {
-    if (!persistence_enabled) return;
     if (!initialized) return;
     var slot = activeSlotPtr();
     if (!slot.exists) return;
@@ -177,7 +205,6 @@ pub fn tickPlaytime() void {
 }
 
 pub fn finishChapter(chapter: u8) void {
-    if (!persistence_enabled) return;
     ensureInitialized();
     var slot = activeSlotPtr();
     slot.exists = true;
@@ -189,7 +216,6 @@ pub fn finishChapter(chapter: u8) void {
 }
 
 pub fn unlockChapter(chapter: u8) void {
-    if (!persistence_enabled) return;
     ensureInitialized();
     var slot = activeSlotPtr();
     slot.exists = true;
@@ -199,7 +225,6 @@ pub fn unlockChapter(chapter: u8) void {
 }
 
 pub fn clearActiveSession() void {
-    if (!persistence_enabled) return;
     ensureInitialized();
     var slot = activeSlotPtr();
     slot.has_session = false;
@@ -208,11 +233,20 @@ pub fn clearActiveSession() void {
 }
 
 pub fn selectSlot(slot_index: u8) void {
-    if (!persistence_enabled) return;
     if (slot_index >= slot_count) return;
     ensureInitialized();
     active_slot = slot_index;
     restoreActiveSlotCollectibles();
+    writeNextCopy();
+}
+
+pub fn deleteSlot(slot_index: usize) void {
+    if (slot_index >= slot_count) return;
+    ensureInitialized();
+    slots[slot_index] = .{};
+    if (slot_index == active_slot) {
+        collectibles.resetSession();
+    }
     writeNextCopy();
 }
 
@@ -232,12 +266,27 @@ pub fn slotExists(slot_index: usize) bool {
     return slots[slot_index].exists;
 }
 
+pub fn activeChapterStats(chapter: u8) ChapterStats {
+    ensureInitialized();
+    return chapterStatsForSlot(activeSlot(), chapter);
+}
+
+pub fn activeChapterAreaCount(chapter: u8) usize {
+    return chapterAreaDefs(chapter).len;
+}
+
+pub fn activeChapterAreaSummary(chapter: u8, area_index: usize) ChapterAreaSummary {
+    ensureInitialized();
+    const defs = chapterAreaDefs(chapter);
+    if (area_index >= defs.len) return .{};
+    return chapterAreaSummaryForSlot(activeSlot(), chapter, area_index, defs[area_index]);
+}
+
 pub fn setActivePlayerName(name: []const u8) void {
     setSlotPlayerName(active_slot, name);
 }
 
 pub fn setSlotPlayerName(slot_index: usize, name: []const u8) void {
-    if (!persistence_enabled) return;
     ensureInitialized();
     if (slot_index >= slot_count) return;
     slots[slot_index].player_name = normalizedPlayerName(name);
@@ -261,18 +310,17 @@ pub fn isChapterUnlocked(chapter: u8) bool {
 }
 
 pub fn isSessionCheckpointRoom(room_index: usize) bool {
-    if (room_index == level.start_room_index) return true;
     if (room_index >= level.room_ids.len) return false;
 
     const room_id = level.room_ids[room_index];
-    if (bytesEqual(room_id, "city_1")) return true;
+    // Prologue saves when the chapter exits. City only updates the saved
+    // respawn at explicit checkpoint screens.
     if (bytesEqual(room_id, "city_6")) return true;
     if (bytesEqual(room_id, "city_9b")) return true;
     return false;
 }
 
 pub fn commitSerial() u32 {
-    if (!persistence_enabled) return 0;
     return commit_serial;
 }
 
@@ -299,6 +347,7 @@ fn summaryForSlot(slot: SaveSlot) SlotSummary {
         .unlocked_chapters = slot.unlocked_chapters,
         .completed_chapters = slot.completed_chapters,
         .strawberry_count = slot.strawberry_count,
+        .cassette_count = collectibles.countCassetteFlags(&slot.cassette_flags),
         .strawberry_one_ups = slot.strawberry_one_ups,
         .strawberry_score = slot.strawberry_score,
         .player_name = slot.player_name,
@@ -327,10 +376,12 @@ fn restoreActiveSlotCollectibles() void {
         return;
     }
     collectibles.restoreStrawberries(&slot.strawberry_flags, slot.strawberry_count, slot.strawberry_score, slot.strawberry_one_ups);
+    collectibles.restoreCassettes(&slot.cassette_flags);
 }
 
 fn snapshotCollectibles(slot: *SaveSlot) void {
     collectibles.copyStrawberryFlags(&slot.strawberry_flags);
+    collectibles.copyCassetteFlags(&slot.cassette_flags);
     slot.strawberry_count = collectibles.collectedStrawberries();
     slot.strawberry_score = collectibles.strawberryScore();
     slot.strawberry_one_ups = collectibles.strawberryOneUps();
@@ -352,6 +403,139 @@ fn chapterForRoom(room_index: usize) u8 {
 fn chapterBit(chapter: u8) u32 {
     if (chapter >= 31) return 0;
     return @as(u32, 1) << @intCast(chapter);
+}
+
+const ChapterAreaDef = struct {
+    label: []const u8,
+    start_room_id: []const u8,
+    end_room_id_exclusive: ?[]const u8 = null,
+};
+
+const prologue_area_defs = [_]ChapterAreaDef{
+    .{ .label = "PROLOGUE", .start_room_id = "-1" },
+};
+
+const city_area_defs = [_]ChapterAreaDef{
+    .{ .label = "START", .start_room_id = "city_1", .end_room_id_exclusive = "city_6" },
+    .{ .label = "CROSSING", .start_room_id = "city_6", .end_room_id_exclusive = "city_9b" },
+    .{ .label = "CHASM", .start_room_id = "city_9b" },
+};
+
+fn chapterAreaDefs(chapter: u8) []const ChapterAreaDef {
+    return switch (chapter) {
+        0 => &prologue_area_defs,
+        1 => &city_area_defs,
+        else => &.{},
+    };
+}
+
+fn chapterStatsForSlot(slot: *const SaveSlot, chapter: u8) ChapterStats {
+    var stats: ChapterStats = .{};
+    var room_index: usize = 0;
+    while (room_index < level.rooms.len) : (room_index += 1) {
+        if (!roomBelongsToChapter(room_index, chapter)) continue;
+        addCollectibleCount(&stats.strawberries, strawberryCountForRoom(slot, room_index));
+        addCollectibleCount(&stats.cassettes, cassetteCountForRoom(slot, room_index));
+    }
+    return stats;
+}
+
+fn chapterAreaSummaryForSlot(slot: *const SaveSlot, chapter: u8, area_index: usize, def: ChapterAreaDef) ChapterAreaSummary {
+    const start = roomIndexForId(def.start_room_id) orelse return .{ .label = def.label };
+    const end = if (def.end_room_id_exclusive) |room_id| roomIndexForId(room_id) orelse level.rooms.len else level.rooms.len;
+    const bounded_end = @min(@max(end, start), level.rooms.len);
+
+    var strawberries: CollectibleCount = .{};
+    var room_index = start;
+    while (room_index < bounded_end) : (room_index += 1) {
+        if (!roomBelongsToChapter(room_index, chapter)) continue;
+        addCollectibleCount(&strawberries, strawberryCountForRoom(slot, room_index));
+    }
+
+    return .{
+        .label = def.label,
+        .checkpoint_room_index = start,
+        .unlocked = areaUnlocked(slot, chapter, area_index, start),
+        .strawberries = strawberries,
+    };
+}
+
+fn addCollectibleCount(total: *CollectibleCount, value: CollectibleCount) void {
+    total.collected += value.collected;
+    total.total += value.total;
+}
+
+fn strawberryCountForRoom(slot: *const SaveSlot, room_index: usize) CollectibleCount {
+    const data = level.rooms[room_index].strawberries;
+    if (data.len < 2) return .{};
+    const annotated_count = room_data.readU16Le(data, 0);
+    var result: CollectibleCount = .{};
+    var source_offset: usize = 2;
+    var local_index: usize = 0;
+    while (local_index < annotated_count and source_offset + strawberry_record_bytes <= data.len) : ({
+        local_index += 1;
+        source_offset += strawberry_record_bytes;
+    }) {
+        if (data[source_offset + 4] == 0 or data[source_offset + 5] == 0) continue;
+        result.total += 1;
+        const global_id = collectibles.strawberryId(room_index, local_index) orelse continue;
+        if (slotStrawberryCollected(slot, global_id)) result.collected += 1;
+    }
+    return result;
+}
+
+fn cassetteCountForRoom(slot: *const SaveSlot, room_index: usize) CollectibleCount {
+    const data = level.rooms[room_index].cassettes;
+    if (data.len < 2) return .{};
+    const annotated_count = room_data.readU16Le(data, 0);
+    var result: CollectibleCount = .{};
+    var source_offset: usize = 2;
+    var local_index: usize = 0;
+    while (local_index < annotated_count and source_offset + cassette_record_bytes <= data.len) : ({
+        local_index += 1;
+        source_offset += cassette_record_bytes;
+    }) {
+        if (data[source_offset + 4] == 0 or data[source_offset + 5] == 0) continue;
+        result.total += 1;
+        const global_id = collectibles.cassetteId(room_index, local_index) orelse continue;
+        if (slotCassetteCollected(slot, global_id)) result.collected += 1;
+    }
+    return result;
+}
+
+fn slotStrawberryCollected(slot: *const SaveSlot, id: u16) bool {
+    const word_index: usize = @as(usize, id) / collectibles.flags_per_word;
+    const shift: u5 = @intCast(@as(usize, id) & (collectibles.flags_per_word - 1));
+    return word_index < slot.strawberry_flags.len and
+        (slot.strawberry_flags[word_index] & (@as(u32, 1) << shift)) != 0;
+}
+
+fn slotCassetteCollected(slot: *const SaveSlot, id: u16) bool {
+    const word_index: usize = @as(usize, id) / collectibles.flags_per_word;
+    const shift: u5 = @intCast(@as(usize, id) & (collectibles.flags_per_word - 1));
+    return word_index < slot.cassette_flags.len and
+        (slot.cassette_flags[word_index] & (@as(u32, 1) << shift)) != 0;
+}
+
+fn areaUnlocked(slot: *const SaveSlot, chapter: u8, area_index: usize, start_room_index: usize) bool {
+    if ((slot.unlocked_chapters & chapterBit(chapter)) == 0 and (slot.completed_chapters & chapterBit(chapter)) == 0) return false;
+    if (area_index == 0) return true;
+    if ((slot.completed_chapters & chapterBit(chapter)) != 0) return true;
+    return slot.has_session and slot.current_chapter == chapter and slot.current_room_index >= start_room_index;
+}
+
+fn roomBelongsToChapter(room_index: usize, chapter: u8) bool {
+    if (room_index >= level.room_ids.len) return false;
+    const room_id = level.room_ids[room_index];
+    return switch (chapter) {
+        0 => !startsWith(room_id, "city_"),
+        1 => startsWith(room_id, "city_"),
+        else => false,
+    };
+}
+
+fn roomIndexForId(room_id: []const u8) ?usize {
+    return level.roomIndexFor(level.chapter_index, room_id);
 }
 
 fn bytesEqual(a: []const u8, b: []const u8) bool {
@@ -423,14 +607,20 @@ fn readSlot(base: usize) SaveSlot {
     while (word_index < collectibles.flag_word_count) : (word_index += 1) {
         slot.strawberry_flags[word_index] = readU32(base + slot_strawberry_flags_offset + word_index * 4);
     }
+
+    word_index = 0;
+    while (word_index < collectibles.cassette_flag_word_count) : (word_index += 1) {
+        slot.cassette_flags[word_index] = readU32(base + slot_cassette_flags_offset + word_index * 4);
+    }
+
     readPlayerName(base, &slot.player_name);
     return slot;
 }
 
 fn writeNextCopy() void {
-    if (!persistence_enabled) return;
     generation +%= 1;
     commit_serial +%= 1;
+    if (!persistence_enabled) return;
     loaded_copy_index = (loaded_copy_index + 1) % copy_count;
     const base = loaded_copy_index * copy_size;
 
@@ -475,6 +665,11 @@ fn writeSlot(base: usize, slot: SaveSlot) void {
     var word_index: usize = 0;
     while (word_index < collectibles.flag_word_count) : (word_index += 1) {
         writeU32(base + slot_strawberry_flags_offset + word_index * 4, slot.strawberry_flags[word_index]);
+    }
+
+    word_index = 0;
+    while (word_index < collectibles.cassette_flag_word_count) : (word_index += 1) {
+        writeU32(base + slot_cassette_flags_offset + word_index * 4, slot.cassette_flags[word_index]);
     }
 
     var name_index: usize = 0;

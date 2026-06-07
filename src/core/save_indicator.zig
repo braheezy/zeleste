@@ -17,18 +17,26 @@ const first_object_index = 4;
 const object_count = 4;
 const base_tile: u10 = 784;
 const palette_bank: u4 = 14;
-const frame_ticks: u8 = 4;
-const hold_frames: u8 = 12;
+const frame_ticks: u8 = 8;
+const hold_frames: u8 = 30;
 const screen_margin: i16 = 3;
 const visible_frames: u8 = @intCast(meta.frame_count * frame_ticks + hold_frames);
 
 var observed_commit_serial: u32 = 0;
 var timer: u8 = 0;
+var palette_loaded = false;
+var loaded_frame: u16 = 0xffff;
 
 pub fn reset() void {
     observed_commit_serial = save.commitSerial();
     timer = 0;
+    invalidateGraphics();
     hideObjects();
+}
+
+pub fn invalidateGraphics() void {
+    palette_loaded = false;
+    loaded_frame = 0xffff;
 }
 
 pub fn update() void {
@@ -65,14 +73,18 @@ fn currentFrame() u16 {
 }
 
 fn loadPalette() void {
+    if (palette_loaded) return;
     gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(&palette_data), 16);
+    palette_loaded = true;
 }
 
 fn loadFrame(frame: u16) void {
+    if (loaded_frame == frame) return;
     const byte_offset = @as(usize, frame) * @as(usize, meta.tiles_per_frame) * 32;
     const byte_len = @as(usize, meta.tiles_per_frame) * 32;
     const frame_bytes = tiles_data[byte_offset .. byte_offset + byte_len];
     gba.display.memcpyObjectTiles4Bpp(base_tile, @ptrCast(@alignCast(frame_bytes)));
+    loaded_frame = frame;
 }
 
 fn drawChunk(chunk: usize, x: i16, y: i16, size: gba.display.Object.Size, tile_offset: u10) void {

@@ -1,22 +1,29 @@
 const camera_mod = @import("../../world/camera.zig");
 const breakable_walls = @import("../../room/breakable_walls.zig");
+const cassettes = @import("../../room/cassettes.zig");
+const collision = @import("../../world/collision.zig");
 const disappearing_platforms = @import("../../room/disappearing_platforms.zig");
 const dust = @import("../../effects/dust.zig");
 const falling_blocks = @import("../../room/falling_blocks.zig");
 const mech_blocks = @import("../../room/mech_blocks.zig");
 const player_mod = @import("../../player/state.zig");
+const dash_refills = @import("../../room/dash_refills.zig");
 const rhythm_blocks = @import("../../room/rhythm_blocks.zig");
 const springs = @import("../../room/springs.zig");
 const strawberries = @import("../../room/strawberries.zig");
+const room_data = @import("../../world/room_data.zig");
 
 const Camera = camera_mod.Camera;
 const Player = player_mod.State;
 const PlayerDeathCause = player_mod.DeathCause;
+const Spawn = room_data.Spawn;
 
 pub const FloorSurface = enum {
     asphalt,
     dirt,
 };
+
+pub const BreakableWallImpact = breakable_walls.DashImpact;
 
 pub fn load(room_index: usize) void {
     breakable_walls.load(room_index);
@@ -26,24 +33,40 @@ pub fn load(room_index: usize) void {
     disappearing_platforms.load(room_index);
     springs.load(room_index);
     strawberries.load(room_index);
+    cassettes.load(room_index);
+    dash_refills.load(room_index);
 }
 
 pub fn hideInactiveObjects() void {
+    breakable_walls.hideObjects();
     falling_blocks.hideObjects();
     mech_blocks.hideObjects();
     rhythm_blocks.hideObjects();
     disappearing_platforms.hideObjects();
     springs.hideObjects();
     strawberries.hideObjects();
+    cassettes.hideObjects();
+    dash_refills.hideObjects();
     strawberries.clearCarried();
 }
 
-pub fn loadObjectGraphics() void {
-    falling_blocks.loadGraphics();
+pub fn loadObjectGraphics(room_index: usize) void {
+    breakable_walls.loadGraphics();
+    falling_blocks.loadGraphics(room_index);
     mech_blocks.loadGraphics();
     rhythm_blocks.loadGraphics();
     disappearing_platforms.loadGraphics();
     strawberries.loadGraphics();
+    cassettes.loadGraphics();
+    dash_refills.loadGraphics();
+}
+
+pub fn resetPaletteState() void {
+    cassettes.resetPaletteState();
+}
+
+pub fn updateCutscenes(player: *Player, room_index: usize) bool {
+    return cassettes.updateCutscene(player, room_index);
 }
 
 pub fn updateDynamicHazards(player: *Player, room_index: usize) ?PlayerDeathCause {
@@ -53,7 +76,7 @@ pub fn updateDynamicHazards(player: *Player, room_index: usize) ?PlayerDeathCaus
 
     const mech_result = mech_blocks.update(player, room_index);
     if (mech_result.killed_player) return .normal;
-    rhythm_blocks.update(player);
+    if (rhythm_blocks.update(player)) return .normal;
     return null;
 }
 
@@ -61,10 +84,34 @@ pub fn updatePlayerEntities(player: *Player, room_index: usize) void {
     disappearing_platforms.update(player.*);
     springs.update(player);
     strawberries.update(player, room_index);
+    cassettes.update(player, room_index);
+    dash_refills.update(player);
 }
 
-pub fn handlePlayerDeathStart() void {
+pub fn handlePlayerDeathStart(room_index: usize) void {
     strawberries.clearCarried();
+    cassettes.abortReturn(room_index);
+}
+
+pub fn updateImpactEffects() void {
+    breakable_walls.updateImpactShake();
+}
+
+pub fn cameraShakeOffset() ?Spawn {
+    const breakable_shake = breakable_walls.impactShakeOffset();
+    const refill_shake = dash_refills.cameraShakeOffset();
+    if (breakable_shake == null and refill_shake == null) return null;
+
+    var offset: Spawn = .{ .x = 0, .y = 0 };
+    if (breakable_shake) |shake| {
+        offset.x += shake.x;
+        offset.y += shake.y;
+    }
+    if (refill_shake) |shake| {
+        offset.x += shake.x;
+        offset.y += shake.y;
+    }
+    return offset;
 }
 
 pub fn updateDynamicHazardsDuringDeath(room_index: usize) void {
@@ -81,7 +128,12 @@ pub fn dynamicSolidRectAt(x: i16, y: i16, width: i16, height: i16) bool {
     return false;
 }
 
-pub fn tryBreakDashCollision(player: *Player, room_index: usize) bool {
+pub fn dynamicSpikeHitAt(x: i16, y: i16, width: i16, height: i16, speed_x: i32, speed_y: i32) ?collision.SpikeHit {
+    if (falling_blocks.spikeHitAt(x, y, width, height, speed_x, speed_y)) |hit| return hit;
+    return mech_blocks.spikeHitAt(x, y, width, height, speed_x, speed_y);
+}
+
+pub fn tryBreakDashCollision(player: *Player, room_index: usize) ?BreakableWallImpact {
     return breakable_walls.tryBreakDashCollision(player, room_index);
 }
 
@@ -94,6 +146,7 @@ pub fn floorSurfaceAtPlayer(player: Player) ?FloorSurface {
 }
 
 pub fn drawDynamicSolids(camera: Camera) void {
+    breakable_walls.draw(camera);
     falling_blocks.draw(camera);
     mech_blocks.draw(camera);
     rhythm_blocks.draw(camera);
@@ -103,6 +156,8 @@ pub fn drawDynamicSolids(camera: Camera) void {
 pub fn drawPlayerEntities(camera: Camera, anim_counter: u16) void {
     springs.draw(camera);
     strawberries.draw(camera, anim_counter);
+    cassettes.draw(camera, anim_counter);
+    dash_refills.draw(camera, anim_counter);
 }
 
 pub fn bgTileBroken(room_index: usize, x: i16, y: i16) bool {

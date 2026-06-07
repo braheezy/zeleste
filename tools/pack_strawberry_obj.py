@@ -132,6 +132,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--name", default="strawberry")
     args = parser.parse_args()
 
     frames = load_frames(args.input)
@@ -148,20 +149,20 @@ def main() -> int:
     for name, animation_frames in frames.items():
         palette = collect_palette if name == "collect" else berry_palette
         tiles, animation_manifest = pack_animation(name, animation_frames, palette)
-        (args.output_dir / f"strawberry_{name}_tiles.bin").write_bytes(tiles)
+        (args.output_dir / f"{args.name}_{name}_tiles.bin").write_bytes(tiles)
         manifest["animations"][name] = animation_manifest
 
-    (args.output_dir / "strawberry_palette.bin").write_bytes(
+    (args.output_dir / f"{args.name}_palette.bin").write_bytes(
         b"".join(rgba_to_rgb555(color).to_bytes(2, "little") for color in berry_palette)
     )
-    (args.output_dir / "strawberry_collect_palette.bin").write_bytes(
+    (args.output_dir / f"{args.name}_collect_palette.bin").write_bytes(
         b"".join(rgba_to_rgb555(color).to_bytes(2, "little") for color in collect_palette)
     )
-    (args.output_dir / "strawberry.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    (args.output_dir / f"{args.name}.json").write_text(json.dumps(manifest, indent=2) + "\n")
     berry_opaque = sum(1 for color in berry_palette if color[3] != 0)
     collect_opaque = sum(1 for color in collect_palette if color[3] != 0)
     print(
-        f"packed strawberry animations: idle={len(frames['idle'])}, flap={len(frames['flap'])}, "
+        f"packed {args.name} animations: idle={len(frames['idle'])}, flap={len(frames['flap'])}, "
         f"collect={len(frames['collect'])}, berry={berry_opaque} opaque colors, collect={collect_opaque} opaque colors"
     )
     return 0

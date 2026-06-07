@@ -3,6 +3,7 @@ const gba = @import("gba");
 const assets = @import("assets.zig");
 const background = @import("../world/background.zig");
 const frame = @import("frame.zig");
+const ui_sfx = @import("ui_sfx.zig");
 const video = @import("video.zig");
 
 const tiles_data align(4) = assets.title_screen_tiles_data;
@@ -38,7 +39,10 @@ pub fn showAndWait() void {
     while (true) {
         input.poll();
         if (!input.isPressed(.A)) confirm_released = true;
-        if (confirm_released and input.isJustPressed(.A)) return;
+        if (confirm_released and input.isJustPressed(.A)) {
+            ui_sfx.titleFirstInput();
+            return;
+        }
 
         tick = (tick + 1) % blink_period_frames;
         const next_prompt_visible = tick < blink_visible_frames;

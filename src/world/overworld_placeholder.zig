@@ -3,6 +3,8 @@ const assets = @import("../core/assets.zig");
 const background = @import("background.zig");
 const oam = @import("../core/oam.zig");
 const save = @import("../core/save.zig");
+const text = @import("../core/text.zig");
+const ui_sfx = @import("../core/ui_sfx.zig");
 const video = @import("../core/video.zig");
 
 const page0_tiles_data align(4) = assets.overworld_page0_tiles_data;
@@ -20,6 +22,7 @@ const bg_hardware_width_tiles = video.bg_hardware_width_tiles;
 const bg_hardware_height_tiles = video.bg_hardware_height_tiles;
 const width_tiles = 30;
 const height_tiles = 20;
+const screen_tile_count = width_tiles * height_tiles;
 
 pub const Selection = enum(u8) {
     none,
@@ -35,7 +38,15 @@ const icon_first_object: usize = 0;
 const cursor_object: usize = icon_first_object + icon_meta.max_icons_per_page;
 const cursor_base_tile: u10 = 1000;
 const cursor_palette_bank: u4 = 15;
+const panel_text: u8 = 250;
+const panel_muted: u8 = 251;
+const panel_fill: u8 = 252;
+const panel_border: u8 = 253;
+const panel_shadow: u8 = 254;
+const panel_accent: u8 = 255;
 
+var screen_tiles: [screen_tile_count]gba.display.Tile8Bpp align(4) =
+    [_]gba.display.Tile8Bpp{gba.display.Tile8Bpp.init([_]u8{0} ** 64)} ** screen_tile_count;
 var cursor_tiles: [4]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** 4;
 var selected_page: u8 = 0;
 var selected_chapter: ?u8 = null;
@@ -94,29 +105,57 @@ pub fn update(input: gba.input.BufferedKeysState) Selection {
 
     const horizontal: i16 = @intCast(input.getAxisHorizontal());
     if (horizontal < 0 and previous_horizontal >= 0) {
-        changed = moveAlongPath(-1) or changed;
+        if (moveAlongPath(-1)) {
+            ui_sfx.worldIconRoll(-1);
+            changed = true;
+        }
     } else if (horizontal > 0 and previous_horizontal <= 0) {
-        changed = moveAlongPath(1) or changed;
+        if (moveAlongPath(1)) {
+            ui_sfx.worldIconRoll(1);
+            changed = true;
+        }
     }
     previous_horizontal = horizontal;
 
     const vertical: i16 = @intCast(input.getAxisVertical());
     if (vertical < 0 and previous_vertical >= 0) {
-        changed = moveAlongPath(1) or changed;
+        if (moveAlongPath(1)) {
+            ui_sfx.worldIconRoll(1);
+            changed = true;
+        }
     } else if (vertical > 0 and previous_vertical <= 0) {
-        changed = moveAlongPath(-1) or changed;
+        if (moveAlongPath(-1)) {
+            ui_sfx.worldIconRoll(-1);
+            changed = true;
+        }
     }
     previous_vertical = vertical;
 
-    if (input.isJustPressed(.L)) changed = previousPage() or changed;
-    if (input.isJustPressed(.R)) changed = nextPage() or changed;
+    if (input.isJustPressed(.L)) {
+        if (previousPage()) {
+            ui_sfx.worldPageFlip(-1);
+            changed = true;
+        }
+    }
+    if (input.isJustPressed(.R)) {
+        if (nextPage()) {
+            ui_sfx.worldPageFlip(1);
+            changed = true;
+        }
+    }
 
     if (changed) drawObjects();
 
     const confirm_down = input.isPressed(.A) or input.isPressed(.start);
     if (!confirm_down) confirm_released = true;
     if (confirm_released and (input.isJustPressed(.A) or input.isJustPressed(.start))) {
-        return currentSelection();
+        const selection = currentSelection();
+        if (selection == .none) {
+            ui_sfx.buttonInvalid();
+            return .none;
+        }
+        ui_sfx.worldChapterSelect();
+        return selection;
     }
 
     return .none;
@@ -125,13 +164,19 @@ pub fn update(input: gba.input.BufferedKeysState) Selection {
 fn loadPage(page: u8) void {
     if (page == 0) {
         gba.mem.memcpy(gba.display.bg_palette, @ptrCast(&page0_palette_data), page0_palette_data.len);
-        gba.display.memcpyBackgroundTiles8Bpp(0, @ptrCast(&page0_tiles_data));
-        drawMap(page0_map_data[0..]);
     } else {
         gba.mem.memcpy(gba.display.bg_palette, @ptrCast(&page1_palette_data), page1_palette_data.len);
-        gba.display.memcpyBackgroundTiles8Bpp(0, @ptrCast(&page1_tiles_data));
-        drawMap(page1_map_data[0..]);
     }
+    loadPanelPaletteColors();
+}
+
+fn loadPanelPaletteColors() void {
+    gba.display.bg_palette.colors[panel_text] = gba.ColorRgb555.rgb(29, 30, 31);
+    gba.display.bg_palette.colors[panel_muted] = gba.ColorRgb555.rgb(17, 21, 26);
+    gba.display.bg_palette.colors[panel_fill] = gba.ColorRgb555.rgb(2, 5, 10);
+    gba.display.bg_palette.colors[panel_border] = gba.ColorRgb555.rgb(14, 19, 26);
+    gba.display.bg_palette.colors[panel_shadow] = gba.ColorRgb555.rgb(0, 1, 4);
+    gba.display.bg_palette.colors[panel_accent] = gba.ColorRgb555.rgb(31, 24, 12);
 }
 
 fn loadIcons() void {
@@ -245,6 +290,8 @@ fn chapterArrayIndex(chapter: u8) ?usize {
 }
 
 fn drawObjects() void {
+    renderPageWithPanel();
+
     var object_index: usize = 0;
     while (object_index < icon_meta.max_icons_per_page) : (object_index += 1) {
         oam.hideObject(icon_first_object + object_index);
@@ -276,6 +323,212 @@ fn drawChapterIcon(object_index: usize, chapter: icon_meta.Chapter) void {
         .priority = 0,
         .palette = chapter.palette_bank,
     });
+}
+
+fn renderPageWithPanel() void {
+    if (selected_page == 0) {
+        buildScreenTiles(page0_tiles_data[0..], page0_map_data[0..]);
+    } else {
+        buildScreenTiles(page1_tiles_data[0..], page1_map_data[0..]);
+    }
+    drawChapterPanel();
+    drawSequentialMap();
+    gba.display.memcpyBackgroundTiles8Bpp(0, &screen_tiles);
+}
+
+fn buildScreenTiles(tiles_data: []const u8, map_data: []const u8) void {
+    var tile_y: usize = 0;
+    while (tile_y < height_tiles) : (tile_y += 1) {
+        var tile_x: usize = 0;
+        while (tile_x < width_tiles) : (tile_x += 1) {
+            const map_offset = (tile_y * width_tiles + tile_x) * 2;
+            const raw_entry = @as(u16, map_data[map_offset]) |
+                (@as(u16, map_data[map_offset + 1]) << 8);
+            copySourceTile(tile_y * width_tiles + tile_x, raw_entry, tiles_data);
+        }
+    }
+}
+
+fn copySourceTile(destination_tile: usize, raw_entry: u16, tiles_data: []const u8) void {
+    const source_tile = @as(usize, raw_entry & 0x03ff);
+    const flip_x = (raw_entry & 0x0400) != 0;
+    const flip_y = (raw_entry & 0x0800) != 0;
+    const source_offset = source_tile * 64;
+
+    var y: usize = 0;
+    while (y < 8) : (y += 1) {
+        var x: usize = 0;
+        while (x < 8) : (x += 1) {
+            const source_x = if (flip_x) 7 - x else x;
+            const source_y = if (flip_y) 7 - y else y;
+            screen_tiles[destination_tile].data_8[y * 8 + x] =
+                tiles_data[source_offset + source_y * 8 + source_x];
+        }
+    }
+}
+
+fn drawSequentialMap() void {
+    const entries: [*]volatile gba.display.Screenblock.Entry = @ptrCast(&gba.display.screenblocks[bg_screenblock].entries);
+    var index: usize = 0;
+    while (index < bg_hardware_width_tiles * bg_hardware_height_tiles) : (index += 1) {
+        entries[index] = @bitCast(@as(u16, 0));
+    }
+
+    var y: usize = 0;
+    while (y < height_tiles) : (y += 1) {
+        var x: usize = 0;
+        while (x < width_tiles) : (x += 1) {
+            const tile_index: u16 = @intCast(y * width_tiles + x);
+            entries[background.normalBgMapIndex(x, y, bg_hardware_width_tiles)] = @bitCast(tile_index);
+        }
+    }
+}
+
+fn drawChapterPanel() void {
+    const chapter = selected_chapter orelse return;
+    const stats = save.activeChapterStats(chapter);
+    const summary = save.slotSummary(save.activeSlotIndex());
+
+    const x: i16 = 8;
+    const y: i16 = 8;
+    drawPanelBox(x, y, 224, 64);
+
+    text.drawSmallLine(setPixel, video.screen_width, chapterTitle(chapter), x + 8, y + 6, panel_text);
+    text.drawSmallLine(setPixel, video.screen_width, "TIME", x + 8, y + 16, panel_muted);
+    drawTimeValue(summary.playtime_frames, x + 28, y + 16, panel_text);
+    text.drawSmallLine(setPixel, video.screen_width, "DEATHS", x + 78, y + 16, panel_muted);
+    drawNumber(summary.total_deaths, x + 104, y + 16, panel_text);
+
+    text.drawSmallLine(setPixel, video.screen_width, "BERRIES", x + 8, y + 27, panel_muted);
+    drawRatio(stats.strawberries, x + 40, y + 27, panel_text);
+    text.drawSmallLine(setPixel, video.screen_width, "TAPE", x + 82, y + 27, panel_muted);
+    drawRatio(stats.cassettes, x + 104, y + 27, panel_text);
+    text.drawSmallLine(setPixel, video.screen_width, "FUTURE --", x + 144, y + 27, panel_muted);
+
+    text.drawSmallLine(setPixel, video.screen_width, "CHECKPOINTS", x + 8, y + 38, panel_accent);
+    const area_count = @min(save.activeChapterAreaCount(chapter), save.max_chapter_area_count);
+    var area_index: usize = 0;
+    while (area_index < area_count) : (area_index += 1) {
+        const area = save.activeChapterAreaSummary(chapter, area_index);
+        drawCheckpointRow(area, x + 8 + @as(i16, @intCast(area_index)) * 70, y + 50);
+    }
+}
+
+fn drawCheckpointRow(area: save.ChapterAreaSummary, x: i16, y: i16) void {
+    const color = if (area.unlocked) panel_text else panel_muted;
+    text.drawSmallLine(setPixel, video.screen_width, area.label, x, y, color);
+    drawRatio(area.strawberries, x, y + 7, color);
+}
+
+fn chapterTitle(chapter: u8) []const u8 {
+    return switch (chapter) {
+        0 => "PROLOGUE",
+        1 => "CHAPTER 1 CITY",
+        else => "CHAPTER",
+    };
+}
+
+fn drawPanelBox(x: i16, y: i16, w: i16, h: i16) void {
+    drawRect(x + 2, y + 2, w, h, panel_shadow);
+    drawRect(x, y, w, h, panel_border);
+    drawRect(x + 1, y + 1, w - 2, h - 2, panel_fill);
+    drawRect(x + 1, y + 1, w - 2, 1, panel_accent);
+}
+
+fn drawRatio(value: save.CollectibleCount, x: i16, y: i16, color: u8) void {
+    var buffer: [10]u8 = undefined;
+    var len = appendDecimal(value.collected, &buffer, 0);
+    buffer[len] = '/';
+    len += 1;
+    len += appendDecimal(value.total, &buffer, len);
+    text.drawSmallLine(setPixel, video.screen_width, buffer[0..len], x, y, color);
+}
+
+fn drawNumber(value: u32, x: i16, y: i16, color: u8) void {
+    var buffer: [10]u8 = undefined;
+    const len = appendDecimal(value, &buffer, 0);
+    text.drawSmallLine(setPixel, video.screen_width, buffer[0..len], x, y, color);
+}
+
+fn drawTimeValue(playtime_frames: u32, x: i16, y: i16, color: u8) void {
+    var buffer: [8]u8 = undefined;
+    const len = timeLabel(playtime_frames, &buffer);
+    text.drawSmallLine(setPixel, video.screen_width, buffer[0..len], x, y, color);
+}
+
+fn timeLabel(playtime_frames: u32, out: *[8]u8) usize {
+    const total_seconds = playtime_frames / 60;
+    const seconds: u8 = @intCast(total_seconds % 60);
+    const total_minutes = total_seconds / 60;
+    const minutes: u8 = @intCast(total_minutes % 60);
+    var hours = total_minutes / 60;
+    if (hours > 99) hours = 99;
+
+    var len: usize = 0;
+    if (hours != 0) {
+        len += appendDecimal(@intCast(hours), out, len);
+        out[len] = ':';
+        len += 1;
+        appendTwoDigits(minutes, out, &len);
+        out[len] = ':';
+        len += 1;
+        appendTwoDigits(seconds, out, &len);
+    } else {
+        len += appendDecimal(minutes, out, len);
+        out[len] = ':';
+        len += 1;
+        appendTwoDigits(seconds, out, &len);
+    }
+    return len;
+}
+
+fn appendDecimal(value: u32, out: []u8, start: usize) usize {
+    var temp = value;
+    if (temp == 0) {
+        out[start] = '0';
+        return 1;
+    }
+
+    var reversed: [10]u8 = undefined;
+    var len: usize = 0;
+    while (temp != 0 and len < reversed.len) : (len += 1) {
+        reversed[len] = '0' + @as(u8, @intCast(temp % 10));
+        temp /= 10;
+    }
+
+    var index: usize = 0;
+    while (index < len and start + index < out.len) : (index += 1) {
+        out[start + index] = reversed[len - 1 - index];
+    }
+    return index;
+}
+
+fn appendTwoDigits(value: u8, out: *[8]u8, len: *usize) void {
+    out[len.*] = '0' + value / 10;
+    len.* += 1;
+    out[len.*] = '0' + value % 10;
+    len.* += 1;
+}
+
+fn drawRect(x: i16, y: i16, w: i16, h: i16, color: u8) void {
+    var yy: i16 = 0;
+    while (yy < h) : (yy += 1) {
+        var xx: i16 = 0;
+        while (xx < w) : (xx += 1) {
+            setPixel(x + xx, y + yy, color);
+        }
+    }
+}
+
+fn setPixel(x: i16, y: i16, color: u8) void {
+    if (x < 0 or y < 0 or x >= video.screen_width or y >= video.screen_height) return;
+    const ux: usize = @intCast(x);
+    const uy: usize = @intCast(y);
+    const tile_x = ux / 8;
+    const tile_y = uy / 8;
+    const tile_index = tile_y * width_tiles + tile_x;
+    const pixel_index = (uy & 7) * 8 + (ux & 7);
+    screen_tiles[tile_index].data_8[pixel_index] = color;
 }
 
 fn drawMap(map_data: []const u8) void {

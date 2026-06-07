@@ -68,14 +68,26 @@ pub fn playCityMusic() void {
     playMusic(sound_ids.mod_02_first_steps);
 }
 
+pub fn playCityCassetteMusic() void {
+    playMusic(sound_ids.mod_02_first_steps_8bit);
+}
+
 pub fn stopMusic() void {
     current_music = no_music;
     prologue_music_mode = .none;
     mm.mas.mmStop();
 }
 
+pub fn stopSoundEffects() void {
+    mm.sfx.effectCancelAll();
+}
+
 pub fn playSoundEffect(sound_id: u16) mm.Sfxhand {
     if (!hasFreeEffectChannel()) return 0;
+    return mm.sfx.effect(sound_id);
+}
+
+pub fn playImportantSoundEffect(sound_id: u16) mm.Sfxhand {
     return mm.sfx.effect(sound_id);
 }
 
@@ -127,6 +139,7 @@ fn playPrologue(mode: PrologueMusicMode) void {
 
     const module_id = sound_ids.mod_01_prologue;
     const was_playing = current_music == module_id and mm.mas.mmActive() != 0;
+    if (was_playing and prologue_music_mode == mode) return;
     if (!was_playing) {
         current_music = module_id;
         startLooping(module_id);

@@ -41,6 +41,7 @@ pub fn build(b: *std.Build) void {
 
     build_soundbank.addArg(b.pathFromRoot("assets/audio/ost/01_prologue.xm"));
     build_soundbank.addArg(b.pathFromRoot("assets/audio/ost/02_first_steps.xm"));
+    build_soundbank.addArg(b.pathFromRoot("assets/audio/ost/02_first_steps_8bit.xm"));
     for (soundbank_sfx_files) |file| {
         build_soundbank.addArg(b.pathFromRoot(file));
     }
@@ -81,6 +82,7 @@ pub fn build(b: *std.Build) void {
     addCacheInputDir(b, build_level, "assets/chapters/prologue_a");
     addCacheInputDir(b, build_level, "assets/chapters/1_city");
     addCacheInputDir(b, build_level, "assets/animations/conveyor_belt_platform");
+    addCacheInputDir(b, build_level, "assets/spikes");
     addCacheOutputDir(b, build_level, "src/generated/assets/chapters");
     addCacheOutput(b, build_level, "src/generated_rooms.zig");
     finishCachedPythonCommand(b, build_level, "tools/build_level_assets.py");
@@ -95,6 +97,80 @@ pub fn build(b: *std.Build) void {
     build_level.addArg("0");
     build_level.step.dependOn(&build_room_manifest.step);
     assets_step.dependOn(&build_level.step);
+
+    const pack_smashable_ice = beginCachedPythonCommand(b, "smashable_ice", "tools/pack_smashable_ice_obj.py");
+    addCacheInput(b, pack_smashable_ice, "assets/smashable-ice.png");
+    addCacheInputPath(pack_smashable_ice, b.pathFromRoot("src/generated/assets/chapters/prologue_city_5/bg_palette.bin"));
+    addCacheOutput(b, pack_smashable_ice, "src/generated/assets/entities/smashable_ice/smashable_ice_tiles.bin");
+    addCacheOutput(b, pack_smashable_ice, "src/generated/assets/entities/smashable_ice/smashable_ice_palette.bin");
+    addCacheOutput(b, pack_smashable_ice, "src/generated/assets/entities/smashable_ice/smashable_ice_preview.png");
+    addCacheOutput(b, pack_smashable_ice, "src/generated/assets/entities/smashable_ice/smashable_ice.json");
+    finishCachedPythonCommand(b, pack_smashable_ice, "tools/pack_smashable_ice_obj.py");
+    pack_smashable_ice.addArg("--input");
+    pack_smashable_ice.addArg(b.pathFromRoot("assets/smashable-ice.png"));
+    pack_smashable_ice.addArg("--room-palette");
+    pack_smashable_ice.addArg(b.pathFromRoot("src/generated/assets/chapters/prologue_city_5/bg_palette.bin"));
+    pack_smashable_ice.addArg("--output-dir");
+    pack_smashable_ice.addArg(b.pathFromRoot("src/generated/assets/entities/smashable_ice"));
+    pack_smashable_ice.step.dependOn(&build_level.step);
+    assets_step.dependOn(&pack_smashable_ice.step);
+
+    const pack_smashable_ice_6c = beginCachedPythonCommand(b, "smashable_ice_6c", "tools/pack_smashable_ice_obj.py");
+    addCacheInput(b, pack_smashable_ice_6c, "assets/6c-smashable-wall.png");
+    addCacheInputPath(pack_smashable_ice_6c, b.pathFromRoot("src/generated/assets/chapters/prologue_city_6c/bg_palette.bin"));
+    addCacheOutput(b, pack_smashable_ice_6c, "src/generated/assets/entities/smashable_ice_6c/smashable_ice_6c_tiles.bin");
+    addCacheOutput(b, pack_smashable_ice_6c, "src/generated/assets/entities/smashable_ice_6c/smashable_ice_6c_palette.bin");
+    addCacheOutput(b, pack_smashable_ice_6c, "src/generated/assets/entities/smashable_ice_6c/smashable_ice_6c_preview.png");
+    addCacheOutput(b, pack_smashable_ice_6c, "src/generated/assets/entities/smashable_ice_6c/smashable_ice_6c.json");
+    finishCachedPythonCommand(b, pack_smashable_ice_6c, "tools/pack_smashable_ice_obj.py");
+    pack_smashable_ice_6c.addArg("--input");
+    pack_smashable_ice_6c.addArg(b.pathFromRoot("assets/6c-smashable-wall.png"));
+    pack_smashable_ice_6c.addArg("--room-palette");
+    pack_smashable_ice_6c.addArg(b.pathFromRoot("src/generated/assets/chapters/prologue_city_6c/bg_palette.bin"));
+    pack_smashable_ice_6c.addArg("--output-dir");
+    pack_smashable_ice_6c.addArg(b.pathFromRoot("src/generated/assets/entities/smashable_ice_6c"));
+    pack_smashable_ice_6c.addArg("--name");
+    pack_smashable_ice_6c.addArg("smashable_ice_6c");
+    pack_smashable_ice_6c.step.dependOn(&build_level.step);
+    assets_step.dependOn(&pack_smashable_ice_6c.step);
+
+    const pack_smashable_ice_7z = beginCachedPythonCommand(b, "smashable_ice_7z", "tools/pack_smashable_ice_obj.py");
+    addCacheInput(b, pack_smashable_ice_7z, "assets/7z-smashable-wall.png");
+    addCacheInputPath(pack_smashable_ice_7z, b.pathFromRoot("src/generated/assets/chapters/prologue_city_7z/bg_palette.bin"));
+    addCacheOutput(b, pack_smashable_ice_7z, "src/generated/assets/entities/smashable_ice_7z/smashable_ice_7z_tiles.bin");
+    addCacheOutput(b, pack_smashable_ice_7z, "src/generated/assets/entities/smashable_ice_7z/smashable_ice_7z_palette.bin");
+    addCacheOutput(b, pack_smashable_ice_7z, "src/generated/assets/entities/smashable_ice_7z/smashable_ice_7z_preview.png");
+    addCacheOutput(b, pack_smashable_ice_7z, "src/generated/assets/entities/smashable_ice_7z/smashable_ice_7z.json");
+    finishCachedPythonCommand(b, pack_smashable_ice_7z, "tools/pack_smashable_ice_obj.py");
+    pack_smashable_ice_7z.addArg("--input");
+    pack_smashable_ice_7z.addArg(b.pathFromRoot("assets/7z-smashable-wall.png"));
+    pack_smashable_ice_7z.addArg("--room-palette");
+    pack_smashable_ice_7z.addArg(b.pathFromRoot("src/generated/assets/chapters/prologue_city_7z/bg_palette.bin"));
+    pack_smashable_ice_7z.addArg("--output-dir");
+    pack_smashable_ice_7z.addArg(b.pathFromRoot("src/generated/assets/entities/smashable_ice_7z"));
+    pack_smashable_ice_7z.addArg("--name");
+    pack_smashable_ice_7z.addArg("smashable_ice_7z");
+    pack_smashable_ice_7z.step.dependOn(&build_level.step);
+    assets_step.dependOn(&pack_smashable_ice_7z.step);
+
+    const pack_smashable_dirt = beginCachedPythonCommand(b, "smashable_dirt", "tools/pack_smashable_ice_obj.py");
+    addCacheInput(b, pack_smashable_dirt, "assets/smashable-dirt.png");
+    addCacheInputPath(pack_smashable_dirt, b.pathFromRoot("src/generated/assets/chapters/prologue_city_6/bg_palette.bin"));
+    addCacheOutput(b, pack_smashable_dirt, "src/generated/assets/entities/smashable_dirt/smashable_dirt_tiles.bin");
+    addCacheOutput(b, pack_smashable_dirt, "src/generated/assets/entities/smashable_dirt/smashable_dirt_palette.bin");
+    addCacheOutput(b, pack_smashable_dirt, "src/generated/assets/entities/smashable_dirt/smashable_dirt_preview.png");
+    addCacheOutput(b, pack_smashable_dirt, "src/generated/assets/entities/smashable_dirt/smashable_dirt.json");
+    finishCachedPythonCommand(b, pack_smashable_dirt, "tools/pack_smashable_ice_obj.py");
+    pack_smashable_dirt.addArg("--input");
+    pack_smashable_dirt.addArg(b.pathFromRoot("assets/smashable-dirt.png"));
+    pack_smashable_dirt.addArg("--room-palette");
+    pack_smashable_dirt.addArg(b.pathFromRoot("src/generated/assets/chapters/prologue_city_6/bg_palette.bin"));
+    pack_smashable_dirt.addArg("--output-dir");
+    pack_smashable_dirt.addArg(b.pathFromRoot("src/generated/assets/entities/smashable_dirt"));
+    pack_smashable_dirt.addArg("--name");
+    pack_smashable_dirt.addArg("smashable_dirt");
+    pack_smashable_dirt.step.dependOn(&build_level.step);
+    assets_step.dependOn(&pack_smashable_dirt.step);
 
     const build_overworld = beginCachedPythonCommand(b, "overworld_bg", "tools/convert_room_tilemap_8bpp.py");
     addCacheInput(b, build_overworld, "assets/overworld.png");
@@ -187,6 +263,23 @@ pub fn build(b: *std.Build) void {
     build_file_select.addArg(b.pathFromRoot("src/generated/assets/ui/file_select_metadata.json"));
     build_file_select.step.dependOn(&prepare_file_select.step);
     assets_step.dependOn(&build_file_select.step);
+
+    const pack_file_select_portraits = beginCachedPythonCommand(b, "file_select_portraits", "tools/pack_file_select_portraits.py");
+    addCacheInput(b, pack_file_select_portraits, "assets/portraits/tiny-madeline.png");
+    addCacheOutput(b, pack_file_select_portraits, "src/generated/assets/ui/file_select_portraits_pixels.bin");
+    addCacheOutput(b, pack_file_select_portraits, "src/generated/assets/ui/file_select_portraits_palette.bin");
+    addCacheOutput(b, pack_file_select_portraits, "src/generated/assets/ui/file_select_portraits_meta.zig");
+    finishCachedPythonCommand(b, pack_file_select_portraits, "tools/pack_file_select_portraits.py");
+    pack_file_select_portraits.addArg("--input");
+    pack_file_select_portraits.addArg(b.pathFromRoot("assets/portraits/tiny-madeline.png"));
+    pack_file_select_portraits.addArg("--pixels-output");
+    pack_file_select_portraits.addArg(b.pathFromRoot("src/generated/assets/ui/file_select_portraits_pixels.bin"));
+    pack_file_select_portraits.addArg("--palette-output");
+    pack_file_select_portraits.addArg(b.pathFromRoot("src/generated/assets/ui/file_select_portraits_palette.bin"));
+    pack_file_select_portraits.addArg("--meta-output");
+    pack_file_select_portraits.addArg(b.pathFromRoot("src/generated/assets/ui/file_select_portraits_meta.zig"));
+    pack_file_select_portraits.step.dependOn(&ensure_generated_assets_dir.step);
+    assets_step.dependOn(&pack_file_select_portraits.step);
 
     const build_title_screen = beginCachedPythonCommand(b, "title_screen", "tools/convert_room_tilemap_8bpp.py");
     addCacheInput(b, build_title_screen, "assets/title2.png");
@@ -393,6 +486,18 @@ pub fn build(b: *std.Build) void {
     pack_strawberry.addArg(b.pathFromRoot("src/generated/assets/entities/strawberry"));
     assets_step.dependOn(&pack_strawberry.step);
 
+    const pack_ghostberry = beginCachedPythonCommand(b, "ghostberry", "tools/pack_strawberry_obj.py");
+    addCacheInputDir(b, pack_ghostberry, "assets/animations/ghostberry");
+    addCacheOutputDir(b, pack_ghostberry, "src/generated/assets/entities/ghostberry");
+    finishCachedPythonCommand(b, pack_ghostberry, "tools/pack_strawberry_obj.py");
+    pack_ghostberry.addArg("--input");
+    pack_ghostberry.addArg(b.pathFromRoot("assets/animations/ghostberry"));
+    pack_ghostberry.addArg("--output-dir");
+    pack_ghostberry.addArg(b.pathFromRoot("src/generated/assets/entities/ghostberry"));
+    pack_ghostberry.addArg("--name");
+    pack_ghostberry.addArg("ghostberry");
+    assets_step.dependOn(&pack_ghostberry.step);
+
     const pack_spring = beginCachedPythonCommand(b, "spring", "tools/pack_spring_obj.py");
     addCacheInputDir(b, pack_spring, "assets/animations/spring");
     addCacheOutput(b, pack_spring, "src/generated/assets/entities/spring/spring_tiles.bin");
@@ -404,6 +509,43 @@ pub fn build(b: *std.Build) void {
     pack_spring.addArg("--output-dir");
     pack_spring.addArg(b.pathFromRoot("src/generated/assets/entities/spring"));
     assets_step.dependOn(&pack_spring.step);
+
+    const pack_dash_refill = beginCachedPythonCommand(b, "dash_refill", "tools/pack_dash_refill_obj.py");
+    addCacheInputDir(b, pack_dash_refill, "assets/animations/refill");
+    addCacheOutput(b, pack_dash_refill, "src/generated/assets/entities/dash_refill/dash_refill_tiles.bin");
+    addCacheOutput(b, pack_dash_refill, "src/generated/assets/entities/dash_refill/dash_refill_palette.bin");
+    addCacheOutput(b, pack_dash_refill, "src/generated/assets/entities/dash_refill/dash_refill_meta.zig");
+    addCacheOutput(b, pack_dash_refill, "src/generated/assets/entities/dash_refill/dash_refill.json");
+    finishCachedPythonCommand(b, pack_dash_refill, "tools/pack_dash_refill_obj.py");
+    pack_dash_refill.addArg("--input-dir");
+    pack_dash_refill.addArg(b.pathFromRoot("assets/animations/refill"));
+    pack_dash_refill.addArg("--output-dir");
+    pack_dash_refill.addArg(b.pathFromRoot("src/generated/assets/entities/dash_refill"));
+    assets_step.dependOn(&pack_dash_refill.step);
+
+    const pack_cassette = beginCachedPythonCommand(b, "cassette", "tools/pack_cassette_obj.py");
+    addCacheInput(b, pack_cassette, "assets/casette-uncollected.png");
+    addCacheInput(b, pack_cassette, "assets/casette-collected.png");
+    addCacheInput(b, pack_cassette, "assets/animations/bubble/f0.png");
+    addCacheOutput(b, pack_cassette, "src/generated/assets/entities/cassette/cassette_uncollected_tiles.bin");
+    addCacheOutput(b, pack_cassette, "src/generated/assets/entities/cassette/cassette_collected_tiles.bin");
+    addCacheOutput(b, pack_cassette, "src/generated/assets/entities/cassette/cassette_bubble_tiles.bin");
+    addCacheOutput(b, pack_cassette, "src/generated/assets/entities/cassette/cassette_palette.bin");
+    addCacheOutput(b, pack_cassette, "src/generated/assets/entities/cassette/cassette_bubble_palette.bin");
+    addCacheOutput(b, pack_cassette, "src/generated/assets/entities/cassette/cassette_meta.zig");
+    addCacheOutput(b, pack_cassette, "src/generated/assets/entities/cassette/cassette.json");
+    addCacheOutput(b, pack_cassette, "src/generated/assets/entities/cassette/cassette_uncollected_preview.png");
+    addCacheOutput(b, pack_cassette, "src/generated/assets/entities/cassette/cassette_collected_preview.png");
+    finishCachedPythonCommand(b, pack_cassette, "tools/pack_cassette_obj.py");
+    pack_cassette.addArg("--uncollected");
+    pack_cassette.addArg(b.pathFromRoot("assets/casette-uncollected.png"));
+    pack_cassette.addArg("--collected");
+    pack_cassette.addArg(b.pathFromRoot("assets/casette-collected.png"));
+    pack_cassette.addArg("--bubble");
+    pack_cassette.addArg(b.pathFromRoot("assets/animations/bubble/f0.png"));
+    pack_cassette.addArg("--output-dir");
+    pack_cassette.addArg(b.pathFromRoot("src/generated/assets/entities/cassette"));
+    assets_step.dependOn(&pack_cassette.step);
 
     const pack_save_icon = beginCachedPythonCommand(b, "save_icon", "tools/pack_save_icon_obj.py");
     addCacheInput(b, pack_save_icon, "assets/save_icon.png");
@@ -476,6 +618,8 @@ pub fn build(b: *std.Build) void {
     pack_granny.addArg("--output-dir");
     pack_granny.addArg(b.pathFromRoot("src/generated/assets/granny"));
     assets_step.dependOn(&pack_granny.step);
+
+    exe.step.step.dependOn(assets_step);
 
     const mgba = b.addSystemCommand(&.{"/Applications/mGBA.app/Contents/MacOS/mGBA"});
     mgba.addArg("zig-out/zeleste.gba");
@@ -630,6 +774,43 @@ const soundbank_sfx_files = [_][]const u8{
     "assets/audio/raw/sfx/misc/strawberry_wingflap_01.wav",
     "assets/audio/raw/sfx/misc/strawberry_wingflap_02.wav",
     "assets/audio/raw/sfx/misc/strawberry_wingflap_03.wav",
+    "assets/audio/raw/sfx/misc/diamond_touch_01.wav",
+    "assets/audio/raw/sfx/misc/diamond_touch_02.wav",
+    "assets/audio/raw/sfx/misc/diamond_touch_03.wav",
+    "assets/audio/raw/sfx/misc/diamond_return_01.wav",
+    "assets/audio/raw/sfx/misc/diamond_return_02.wav",
+    "assets/audio/raw/sfx/misc/diamond_return_03.wav",
+    "assets/audio/raw/sfx/interface/ui_main_title_firstinput.wav",
+    "assets/audio/raw/sfx/interface/ui_main_button_select.wav",
+    "assets/audio/raw/sfx/interface/ui_main_button_back.wav",
+    "assets/audio/raw/sfx/interface/ui_main_button_invalid.wav",
+    "assets/audio/raw/sfx/interface/ui_main_roll_up.wav",
+    "assets/audio/raw/sfx/interface/ui_main_roll_down.wav",
+    "assets/audio/raw/sfx/interface/ui_main_whoosh_savefile_in.wav",
+    "assets/audio/raw/sfx/interface/ui_main_whoosh_savefile_out.wav",
+    "assets/audio/raw/sfx/interface/ui_main_savefile_roll_01.wav",
+    "assets/audio/raw/sfx/interface/ui_main_savefile_roll_02.wav",
+    "assets/audio/raw/sfx/interface/ui_main_savefile_roll_03.wav",
+    "assets/audio/raw/sfx/interface/ui_main_savefile_delete.wav",
+    "assets/audio/raw/sfx/interface/ui_world_icon_roll_left.wav",
+    "assets/audio/raw/sfx/interface/ui_world_icon_roll_right.wav",
+    "assets/audio/raw/sfx/interface/ui_world_icon_flip_left.wav",
+    "assets/audio/raw/sfx/interface/ui_world_icon_flip_right.wav",
+    "assets/audio/raw/sfx/interface/ui_world_chapter_level_select.wav",
+    "assets/audio/raw/sfx/interface/ui_game_textbox_madeline_in.wav",
+    "assets/audio/raw/sfx/interface/ui_game_textbox_madeline_out.wav",
+    "assets/audio/raw/sfx/interface/ui_game_textbox_other_in.wav",
+    "assets/audio/raw/sfx/interface/ui_game_textbox_other_out.wav",
+    "assets/audio/raw/sfx/interface/ui_game_textadvance_madeline.wav",
+    "assets/audio/raw/sfx/interface/ui_game_textadvance_other.wav",
+    "assets/audio/raw/sfx/interface/ui_game_text_general.wav",
+    "assets/audio/raw/sfx/movers/fallingblock_prologue_shake.wav",
+    "assets/audio/raw/sfx/movers/fallingblock_prologue_release.wav",
+    "assets/audio/raw/sfx/movers/fallingblock_prologue_impact.wav",
+    "assets/audio/raw/sfx/movers/zipmover_a_touch_01_001.wav",
+    "assets/audio/raw/sfx/movers/zipmover_b_impact_01_001.wav",
+    "assets/audio/raw/sfx/movers/zipmover_c_return_01_001.wav",
+    "assets/audio/raw/sfx/movers/zipmover_d_reset_01_001.wav",
 };
 
 const StartArgs = struct {

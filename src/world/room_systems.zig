@@ -22,15 +22,35 @@ const fixedToPixel = math.fixedToPixel;
 const rooms = level.rooms;
 const player_body_width = player_mod.body_width;
 const player_body_height = player_mod.body_height;
+const spike_hurtbox_offset_x: i16 = 1;
+const spike_hurtbox_offset_y: i16 = 2;
+const spike_hurtbox_width: i16 = player_body_width - 2;
+const spike_hurtbox_height: i16 = 12;
 
 var foreground_anim_counter: u16 = 0;
 
 pub fn load(room_index: usize, reset_cutscenes: bool) void {
+    loadStaticState(room_index);
+    loadObjectSprites(room_index);
+    loadAfterObjectSprites(room_index, reset_cutscenes);
+    loadParallax(room_index);
+}
+
+pub fn loadStaticState(room_index: usize) void {
     chapter_entities.load(room_index);
     foreground_stamps.load(room_index);
     chapter_systems.loadBeforeObjectSprites(room_index, gameplay_scene.scene_slots);
+}
+
+pub fn loadObjectSprites(room_index: usize) void {
     gameplay_scene.loadObjectSprites(room_index);
+}
+
+pub fn loadAfterObjectSprites(room_index: usize, reset_cutscenes: bool) void {
     chapter_systems.loadAfterObjectSprites(room_index, reset_cutscenes);
+}
+
+pub fn loadParallax(room_index: usize) void {
     background.loadParallax(rooms[room_index]);
 }
 
@@ -54,6 +74,14 @@ pub fn updateDynamicHazards(player: *Player, room_index: usize) ?PlayerDeathCaus
 
 pub fn updatePlayerEntities(player: *Player, room_index: usize) void {
     chapter_entities.updatePlayerEntities(player, room_index);
+    background.updateHiddenCovers(
+        room_index,
+        rooms[room_index],
+        fixedToPixel(player.x),
+        fixedToPixel(player.y),
+        fixedToPixel(player.x) + player_body_width,
+        fixedToPixel(player.y) + player_body_height,
+    );
 }
 
 pub fn handlePlayerDeathStart(room_index: usize) void {
@@ -125,15 +153,42 @@ fn rangesOverlap(a_min: i16, a_max: i16, b_min: i16, b_max: i16) bool {
 }
 
 fn touchingSpike(player: Player, room_index: usize) ?collision.SpikeHit {
-    return collision.spikeHitAt(
+    const player_x = fixedToPixel(player.x) + spike_hurtbox_offset_x;
+    const player_y = fixedToPixel(player.y) + spike_hurtbox_offset_y;
+    const speed = spikeCheckSpeed(player);
+    if (collision.spikeHitAt(
         rooms[room_index],
-        fixedToPixel(player.x),
-        fixedToPixel(player.y),
-        player_body_width,
-        player_body_height,
-        player.vx,
-        player.vy,
+        player_x,
+        player_y,
+        spike_hurtbox_width,
+        spike_hurtbox_height,
+        speed.x,
+        speed.y,
+    )) |hit| return hit;
+    return chapter_entities.dynamicSpikeHitAt(
+        room_index,
+        player_x,
+        player_y,
+        spike_hurtbox_width,
+        spike_hurtbox_height,
+        speed.x,
+        speed.y,
     );
+}
+
+const SpikeCheckSpeed = struct {
+    x: i32,
+    y: i32,
+};
+
+fn spikeCheckSpeed(player: Player) SpikeCheckSpeed {
+    if (player.climb_ledge_timer > 0) {
+        return .{
+            .x = player.climb_ledge_target_x - player.x,
+            .y = player.climb_ledge_target_y - player.y,
+        };
+    }
+    return .{ .x = player.vx, .y = player.vy };
 }
 
 fn deathCauseForSpike(direction: collision.SpikeDirection) PlayerDeathCause {

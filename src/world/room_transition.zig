@@ -15,6 +15,8 @@ const pixelToFixed = math.pixelToFixed;
 const fixedToPixel = math.fixedToPixel;
 const absI16 = math.absI16;
 const clampI16 = math.clampI16;
+const readI16Le = room_data.readI16Le;
+const readU16Le = room_data.readU16Le;
 
 const rooms = level.rooms;
 const player_body_width = player_mod.body_width;
@@ -22,8 +24,8 @@ const player_body_height = player_mod.body_height;
 const transition_cooldown_frames = player_mod.room_transition_cooldown_frames;
 const exit_line_min_overlap_px: i16 = 4;
 const vertical_transition_overlap_px: i16 = 8;
-const entry_wall_restore_x_px: i16 = 10;
-const entry_wall_restore_y_px: i16 = 4;
+const entry_wall_restore_x_px: i16 = 14;
+const entry_wall_restore_y_px: i16 = 10;
 
 const EntryYBounds = struct {
     min: i16,
@@ -64,6 +66,62 @@ pub fn respawnForEntrySide(room_index: usize, entry_side: room_data.ExitDirectio
         .up => room.spawn_top,
         .down => room.spawn_bottom,
     };
+}
+
+pub fn respawnForEntry(room_index: usize, player: Player, entry_side: room_data.ExitDirection) Spawn {
+    return nearestRespawnPoint(room_index, fixedToPixel(player.x), fixedToPixel(player.y)) orelse
+        respawnForEntrySide(room_index, entry_side);
+}
+
+pub fn respawnPointAt(room_index: usize, point_index: usize) ?Spawn {
+    const data = rooms[room_index].respawn_points;
+    if (data.len < 2) return null;
+
+    const count = @min(@as(usize, readU16Le(data, 0)), (data.len - 2) / 4);
+    if (point_index >= count) return null;
+
+    const offset = 2 + point_index * 4;
+    return .{
+        .x = readI16Le(data, offset),
+        .y = readI16Le(data, offset + 2),
+    };
+}
+
+fn nearestRespawnPoint(room_index: usize, x: i16, y: i16) ?Spawn {
+    const data = rooms[room_index].respawn_points;
+    if (data.len < 2) return null;
+
+    const count = @min(@as(usize, readU16Le(data, 0)), (data.len - 2) / 4);
+    if (count == 0) return null;
+
+    var best = Spawn{
+        .x = readI16Le(data, 2),
+        .y = readI16Le(data, 4),
+    };
+    var best_distance = respawnDistanceSquared(best, x, y);
+    var index: usize = 1;
+    var offset: usize = 6;
+    while (index < count) : ({
+        index += 1;
+        offset += 4;
+    }) {
+        const candidate = Spawn{
+            .x = readI16Le(data, offset),
+            .y = readI16Le(data, offset + 2),
+        };
+        const distance = respawnDistanceSquared(candidate, x, y);
+        if (distance < best_distance) {
+            best = candidate;
+            best_distance = distance;
+        }
+    }
+    return best;
+}
+
+fn respawnDistanceSquared(spawn: Spawn, x: i16, y: i16) i32 {
+    const dx = @as(i32, spawn.x) - @as(i32, x);
+    const dy = @as(i32, spawn.y) - @as(i32, y);
+    return dx * dx + dy * dy;
 }
 
 pub fn trySwitch(player: *Player, input: gba.input.BufferedKeysState, room_index: *usize, entry_side: *room_data.ExitDirection) bool {
@@ -123,7 +181,7 @@ pub fn trySwitch(player: *Player, input: gba.input.BufferedKeysState, room_index
             return true;
         }
     }
-    if (player_y <= -vertical_transition_overlap_px and player.vy < 0 and !hasExitLine(room, .up)) {
+    if (player_y <= -vertical_transition_overlap_px and player.vy <= 0 and !hasExitLine(room, .up)) {
         if (room.up) |next_room| {
             if (!implicitEdgeTransitionAllowed(room_index.*, next_room, .up, player_x, player_y)) return false;
             const previous_room = room_index.*;
@@ -258,7 +316,7 @@ fn tryExitLineSwitch(
                 return true;
             },
             .up => {
-                if (player_y > -vertical_transition_overlap_px or player.vy >= 0) continue;
+                if (player_y > -vertical_transition_overlap_px or player.vy > 0) continue;
                 if (!lineRangeOverlapsBy(player_x, player_x + player_body_width, exit_line.x1, exit_line.x2, exit_line_min_overlap_px)) continue;
                 const previous_room = room_index.*;
                 const previous_player = player.*;
@@ -406,6 +464,7 @@ fn restoreEntryActionContact(player: *Player, room_index: usize, context: EntryA
     player.facing_left = context.wall_dir < 0;
     player.climbing = context.climbing;
     player.climb_dangling = context.climb_dangling;
+    player.climb_dir = if (context.climbing or context.climb_dangling) context.wall_dir else 0;
     player.wall_sliding = context.wall_sliding;
 }
 
@@ -414,10 +473,13 @@ fn restoreWallContactAfterEntry(player: *Player, room_index: usize, wall_dir: i1
 
     const start_x = fixedToPixel(player.x);
     const start_y = fixedToPixel(player.y);
+    if (tryRestoreWallContactAtX(player, room_index, wall_dir, start_x, start_y)) return;
     var x_offset: i16 = 1;
     while (x_offset <= entry_wall_restore_x_px) : (x_offset += 1) {
-        const candidate_x = start_x + wall_dir * x_offset;
-        if (tryRestoreWallContactAtX(player, room_index, wall_dir, candidate_x, start_y)) return;
+        const toward_wall_x = start_x + wall_dir * x_offset;
+        if (tryRestoreWallContactAtX(player, room_index, wall_dir, toward_wall_x, start_y)) return;
+        const away_from_wall_x = start_x - wall_dir * x_offset;
+        if (tryRestoreWallContactAtX(player, room_index, wall_dir, away_from_wall_x, start_y)) return;
     }
 }
 

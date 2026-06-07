@@ -211,6 +211,7 @@ fn bouncePlayer(player: *Player, spring: Spring) void {
     player.climb_grab_lockout_timer = 0;
     player.climbing = false;
     player.climb_dangling = false;
+    player.climb_dir = 0;
     player.wall_sliding = false;
     player.grounded = false;
     player.dust_suppress_timer = 4;

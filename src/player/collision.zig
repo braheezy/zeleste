@@ -154,6 +154,7 @@ fn tryResolvePlayerEmbeddingAt(player: *Player, room_index: usize, x: i16, y: i1
     player.climb_ledge_timer = 0;
     player.climbing = false;
     player.climb_dangling = false;
+    player.climb_dir = 0;
     player.wall_sliding = false;
     player.grounded = floorContactAt(x, y, room_index);
     return true;

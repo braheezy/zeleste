@@ -34,8 +34,8 @@ pub fn loadBeforeObjectSprites(room_index: usize, slots: SceneSlots) void {
 
 pub fn loadObjectGraphics(room_index: usize) void {
     switch (activeChapterForRoom(room_index)) {
-        .prologue => prologue.loadObjectGraphics(),
-        .city => city.systems.loadObjectGraphics(),
+        .prologue => prologue.loadObjectGraphics(room_index),
+        .city => city.systems.loadObjectGraphics(room_index),
     }
 }
 

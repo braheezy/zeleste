@@ -6,6 +6,7 @@ const dynamic_object_slots = @import("dynamic_object_slots.zig");
 const falling_blocks = @import("falling_blocks.zig");
 const level = @import("../generated_rooms.zig");
 const math = @import("../core/math.zig");
+const mover_sfx = @import("mover_sfx.zig");
 const oam = @import("../core/oam.zig");
 const player_mod = @import("../player/state.zig");
 const room_data = @import("../world/room_data.zig");
@@ -26,21 +27,26 @@ const rooms = level.rooms;
 
 pub const max_blocks = 8;
 
-const record_bytes = 12;
-const charge_frames: u8 = 6;
+const record_bytes = 18;
+const charge_frames: u8 = 15;
 const outbound_frames: u8 = 20;
 const pause_frames: u8 = 48;
 const return_frames: u8 = 96;
 const cooldown_frames: u8 = 10;
-const grab_trigger_frames: u8 = 8;
+const grab_trigger_frames: u8 = 6;
 const terminal_lift_boost_frames: u8 = 5;
+const tile_size: i16 = 8;
 const base_tile: u10 = 432;
 const max_tiles = 104;
 const light_frame_tiles: u10 = 2;
+const light_frame_width: i16 = 8;
+const light_visible_height: i16 = 12;
 const light_red_tile: u10 = 0;
 const light_yellow_tile: u10 = light_red_tile + light_frame_tiles;
 const light_green_tile: u10 = light_yellow_tile + light_frame_tiles;
 const palette_bank: u4 = 1;
+const screen_width: i16 = 240;
+const screen_height: i16 = 160;
 
 const State = enum(u8) {
     idle,
@@ -59,10 +65,14 @@ const MoveEase = enum {
 
 const Contact = struct {
     standing: bool = false,
-    holding: bool = false,
+    holding_dir: i16 = 0,
 
     fn any(self: Contact) bool {
-        return self.standing or self.holding;
+        return self.standing or self.holding_dir != 0;
+    }
+
+    fn holding(self: Contact) bool {
+        return self.holding_dir != 0;
     }
 };
 
@@ -82,6 +92,11 @@ const Block = struct {
     w: u8 = 0,
     h: u8 = 0,
     tile_offset: u16 = 0,
+    spike_tile_offset: u16 = 0,
+    spike_up_mask: u8 = 0,
+    spike_down_mask: u8 = 0,
+    spike_left_mask: u8 = 0,
+    spike_right_mask: u8 = 0,
     timer: u8 = 0,
     hold_frames: u8 = 0,
 };
@@ -123,6 +138,11 @@ pub fn load(room_index: usize) void {
         const w = data[source_offset + 8];
         const h = data[source_offset + 9];
         const tile_offset = readU16Le(data, source_offset + 10);
+        const spike_tile_offset = readU16Le(data, source_offset + 12);
+        const spike_up_mask = data[source_offset + 14];
+        const spike_down_mask = data[source_offset + 15];
+        const spike_left_mask = data[source_offset + 16];
+        const spike_right_mask = data[source_offset + 17];
         if (w == 0 or h == 0 or tile_offset >= max_tiles) continue;
 
         blocks[block_count] = .{
@@ -140,6 +160,11 @@ pub fn load(room_index: usize) void {
             .w = w,
             .h = h,
             .tile_offset = tile_offset,
+            .spike_tile_offset = spike_tile_offset,
+            .spike_up_mask = spike_up_mask,
+            .spike_down_mask = spike_down_mask,
+            .spike_left_mask = spike_left_mask,
+            .spike_right_mask = spike_right_mask,
         };
         block_count += 1;
     }
@@ -230,6 +255,25 @@ pub fn solidRectAt(x: i16, y: i16, width: i16, height: i16) bool {
     return false;
 }
 
+pub fn spikeHitAt(x: i16, y: i16, width: i16, height: i16, speed_x: i32, speed_y: i32) ?collision.SpikeHit {
+    const rect_left = x;
+    const rect_top = y;
+    const rect_right = x + width;
+    const rect_bottom = y + height;
+    var index: usize = 0;
+    while (index < block_count) : (index += 1) {
+        const block = blocks[index];
+        if (!block.active or !hasSpikes(block)) continue;
+        const block_x = fixedToPixel(block.x);
+        const block_y = fixedToPixel(block.y);
+        if (spikeMaskHit(block.spike_up_mask, .up, block_x, block_y - 8, true, rect_left, rect_top, rect_right, rect_bottom, speed_x, speed_y)) |hit| return hit;
+        if (spikeMaskHit(block.spike_down_mask, .down, block_x, block_y + @as(i16, @intCast(block.h)), true, rect_left, rect_top, rect_right, rect_bottom, speed_x, speed_y)) |hit| return hit;
+        if (spikeMaskHit(block.spike_left_mask, .left, block_x - 8, block_y, false, rect_left, rect_top, rect_right, rect_bottom, speed_x, speed_y)) |hit| return hit;
+        if (spikeMaskHit(block.spike_right_mask, .right, block_x + @as(i16, @intCast(block.w)), block_y, false, rect_left, rect_top, rect_right, rect_bottom, speed_x, speed_y)) |hit| return hit;
+    }
+    return null;
+}
+
 pub fn draw(camera: Camera) void {
     if (block_count == 0 and last_drawn_objects == 0) return;
 
@@ -287,12 +331,12 @@ fn objectCapacity() usize {
 
 fn updateTrigger(block: *Block, contact: Contact) void {
     if (block.state != .idle or !pathMoves(block.*)) {
-        block.hold_frames = if (contact.holding) block.hold_frames else 0;
+        block.hold_frames = if (contact.holding()) block.hold_frames else 0;
         return;
     }
 
     var trigger = contact.standing;
-    if (contact.holding and !contact.standing) {
+    if (contact.holding() and !contact.standing) {
         if (block.hold_frames < grab_trigger_frames) block.hold_frames += 1;
         trigger = block.hold_frames >= grab_trigger_frames;
     } else {
@@ -303,6 +347,7 @@ fn updateTrigger(block: *Block, contact: Contact) void {
     block.state = .charge;
     block.timer = 0;
     block.hold_frames = 0;
+    mover_sfx.zipmoverTouch();
 }
 
 fn advanceState(block: *Block) void {
@@ -317,6 +362,7 @@ fn advanceState(block: *Block) void {
                 block.timer = 0;
                 block.x = block.target_x;
                 block.y = block.target_y;
+                mover_sfx.zipmoverImpact();
             }
         },
         .pause => {
@@ -328,6 +374,7 @@ fn advanceState(block: *Block) void {
                 block.timer = 0;
                 block.x = block.start_x;
                 block.y = block.start_y;
+                mover_sfx.zipmoverReset();
             }
         },
         .cooldown => {
@@ -369,6 +416,7 @@ fn startReturn(block: *Block) void {
     block.move_from_y = block.y;
     block.move_to_x = block.start_x;
     block.move_to_y = block.start_y;
+    mover_sfx.zipmoverReturn();
 }
 
 fn interpolateFixed(from: i32, to: i32, timer: u8, duration: u8, ease: MoveEase) i32 {
@@ -409,9 +457,21 @@ fn movePlayerOrCrush(
     fixed_dy: i32,
     contact: Contact,
 ) bool {
-    if (contact.any()) {
+    if (contact.standing) {
         player.x += fixed_dx;
         player.y += fixed_dy;
+        storeLiftBoost(player, fixed_dx, fixed_dy);
+        return playerCollidesWithStatic(player.*, room_index);
+    }
+
+    if (contact.holding()) {
+        player.x = pixelToFixed(if (contact.holding_dir > 0)
+            new_x - player_mod.body_width
+        else
+            new_x + @as(i16, @intCast(block.w)));
+        player.y += fixed_dy;
+        player.climb_dir = contact.holding_dir;
+        player.facing_left = contact.holding_dir < 0;
         storeLiftBoost(player, fixed_dx, fixed_dy);
         return playerCollidesWithStatic(player.*, room_index);
     }
@@ -448,7 +508,7 @@ fn playerCollidesWithStaticAt(room_index: usize, x: i16, y: i16) bool {
 fn playerContactAt(player: Player, block: Block, block_x: i16, block_y: i16) Contact {
     return .{
         .standing = playerStandingOnBlock(player, block, block_x, block_y),
-        .holding = playerHoldingBlock(player, block, block_x, block_y),
+        .holding_dir = playerHoldingBlockDir(player, block, block_x, block_y),
     };
 }
 
@@ -462,8 +522,8 @@ fn playerStandingOnBlock(player: Player, block: Block, block_x: i16, block_y: i1
         player_bottom <= block_y + 2;
 }
 
-fn playerHoldingBlock(player: Player, block: Block, block_x: i16, block_y: i16) bool {
-    if (!player.climbing and !player.climb_dangling) return false;
+fn playerHoldingBlockDir(player: Player, block: Block, block_x: i16, block_y: i16) i16 {
+    if (!player.climbing and !player.climb_dangling) return 0;
 
     const player_left = fixedToPixel(player.x);
     const player_right = player_left + player_mod.body_width;
@@ -471,10 +531,17 @@ fn playerHoldingBlock(player: Player, block: Block, block_x: i16, block_y: i16) 
     const player_bottom = player_top + player_mod.body_height;
     const block_right = block_x + @as(i16, @intCast(block.w));
     const block_bottom = block_y + @as(i16, @intCast(block.h));
+    const side_slop: i16 = 4;
     const vertical_overlap = player_bottom > block_y + 1 and player_top < block_bottom - 1;
-    const left_contact = player_right >= block_x - 1 and player_right <= block_x + 2;
-    const right_contact = player_left <= block_right + 1 and player_left >= block_right - 2;
-    return vertical_overlap and (left_contact or right_contact);
+    if (!vertical_overlap) return 0;
+
+    const left_contact = player_right >= block_x - side_slop and player_right <= block_x + side_slop;
+    const right_contact = player_left <= block_right + side_slop and player_left >= block_right - side_slop;
+    if (player.climb_dir > 0 and left_contact) return 1;
+    if (player.climb_dir < 0 and right_contact) return -1;
+    if (left_contact) return 1;
+    if (right_contact) return -1;
+    return 0;
 }
 
 fn moveOverlappingPlayerOrCrush(
@@ -560,9 +627,9 @@ fn objectCountFor(block: Block) usize {
                 return columns * rows + light_count;
             }
         }
-        return count + light_count;
+        return count + light_count + spikeCountFor(block);
     }
-    return columns * rows + light_count;
+    return columns * rows + light_count + spikeCountFor(block);
 }
 
 fn drawBlock(block: Block, camera: Camera, first_object: usize, object_offset: *usize, capacity: usize) void {
@@ -570,9 +637,23 @@ fn drawBlock(block: Block, camera: Camera, first_object: usize, object_offset: *
     const shake_y: i16 = if (block.state == .pause and (block.timer & 7) == 0) 1 else 0;
     const block_x = fixedToPixel(block.x);
     const block_y = fixedToPixel(block.y);
+    const screen_x = block_x + shake_x - camera.x;
+    const screen_y = block_y + shake_y - camera.y;
     const columns = tileColumns(block);
     const rows = tileRows(block);
     var body_drawn = false;
+
+    if (object_offset.* < capacity) {
+        if (drawObject(
+            first_object + object_offset.*,
+            screen_x + centeredOffset(block.w, light_frame_width),
+            screen_y,
+            lightTileForState(block.state),
+            .size_8x16,
+        )) {
+            object_offset.* += 1;
+        }
+    }
 
     if (columns != 0 and fullWidthChunksSupported(columns)) {
         var row: usize = 0;
@@ -581,14 +662,15 @@ fn drawBlock(block: Block, camera: Camera, first_object: usize, object_offset: *
             const maybe_chunk = fullWidthChunk(columns, remaining);
             if (maybe_chunk == null) break;
             const chunk = maybe_chunk.?;
-            drawObject(
+            if (drawObject(
                 first_object + object_offset.*,
-                block_x + shake_x - camera.x,
-                block_y + @as(i16, @intCast(row * 8)) + shake_y - camera.y,
+                screen_x,
+                screen_y + @as(i16, @intCast(row * 8)),
                 @as(u10, @intCast(block.tile_offset + @as(u16, @intCast(row * columns)))),
                 chunk.size,
-            );
-            object_offset.* += 1;
+            )) {
+                object_offset.* += 1;
+            }
             row += chunk.height_tiles;
         }
         body_drawn = row >= rows;
@@ -599,31 +681,120 @@ fn drawBlock(block: Block, camera: Camera, first_object: usize, object_offset: *
         while (row < rows and object_offset.* < capacity) : (row += 1) {
             var col: usize = 0;
             while (col < columns and object_offset.* < capacity) : (col += 1) {
-                drawObject(
+                if (drawObject(
                     first_object + object_offset.*,
-                    block_x + @as(i16, @intCast(col * 8)) + shake_x - camera.x,
-                    block_y + @as(i16, @intCast(row * 8)) + shake_y - camera.y,
+                    screen_x + @as(i16, @intCast(col * 8)),
+                    screen_y + @as(i16, @intCast(row * 8)),
                     @as(u10, @intCast(block.tile_offset + @as(u16, @intCast(row * columns + col)))),
                     .size_8x8,
-                );
-                object_offset.* += 1;
+                )) {
+                    object_offset.* += 1;
+                }
             }
         }
     }
 
-    if (object_offset.* < capacity) {
-        drawObject(
-            first_object + object_offset.*,
-            block_x + @as(i16, @intCast(@divTrunc(@as(i32, block.w), 2) - 4)) + shake_x - camera.x,
-            block_y + shake_y - camera.y,
-            lightTileForState(block.state),
-            .size_8x16,
-        );
-        object_offset.* += 1;
+    drawSpikes(block, camera, first_object, object_offset, capacity, block_x + shake_x, block_y + shake_y);
+}
+
+fn hasSpikes(block: Block) bool {
+    return block.spike_up_mask != 0 or
+        block.spike_down_mask != 0 or
+        block.spike_left_mask != 0 or
+        block.spike_right_mask != 0;
+}
+
+fn spikeCountFor(block: Block) usize {
+    return countMask(block.spike_up_mask) +
+        countMask(block.spike_down_mask) +
+        countMask(block.spike_left_mask) +
+        countMask(block.spike_right_mask);
+}
+
+fn countMask(mask: u8) usize {
+    var count: usize = 0;
+    var bits = mask;
+    while (bits != 0) {
+        count += @as(usize, bits & 1);
+        bits >>= 1;
+    }
+    return count;
+}
+
+fn spikeMaskHit(
+    mask: u8,
+    direction: collision.SpikeDirection,
+    base_x: i16,
+    base_y: i16,
+    horizontal: bool,
+    rect_left: i16,
+    rect_top: i16,
+    rect_right: i16,
+    rect_bottom: i16,
+    speed_x: i32,
+    speed_y: i32,
+) ?collision.SpikeHit {
+    var bit: u4 = 0;
+    while (bit < 8) : (bit += 1) {
+        if ((mask & (@as(u8, 1) << @as(u3, @intCast(bit)))) == 0) continue;
+        const offset: i16 = @as(i16, @intCast(@as(u16, bit) * 8));
+        const tile_x = base_x + if (horizontal) offset else 0;
+        const tile_y = base_y + if (horizontal) 0 else offset;
+        if (spikeCoveredByStaticSolid(tile_x, tile_y)) continue;
+        if (collision.spikeTileHitAt(direction, rect_left, rect_top, rect_right, rect_bottom, tile_x, tile_y, speed_x, speed_y)) {
+            return .{ .direction = direction };
+        }
+    }
+    return null;
+}
+
+fn drawSpikes(block: Block, camera: Camera, first_object: usize, object_offset: *usize, capacity: usize, block_x: i16, block_y: i16) void {
+    if (!hasSpikes(block) or block.spike_tile_offset >= max_tiles) return;
+
+    var spike_tile = block.spike_tile_offset;
+    drawSpikeMask(block.spike_up_mask, block_x, block_y - 8, true, camera, first_object, object_offset, capacity, &spike_tile);
+    drawSpikeMask(block.spike_down_mask, block_x, block_y + @as(i16, @intCast(block.h)), true, camera, first_object, object_offset, capacity, &spike_tile);
+    drawSpikeMask(block.spike_left_mask, block_x - 8, block_y, false, camera, first_object, object_offset, capacity, &spike_tile);
+    drawSpikeMask(block.spike_right_mask, block_x + @as(i16, @intCast(block.w)), block_y, false, camera, first_object, object_offset, capacity, &spike_tile);
+}
+
+fn drawSpikeMask(
+    mask: u8,
+    base_x: i16,
+    base_y: i16,
+    horizontal: bool,
+    camera: Camera,
+    first_object: usize,
+    object_offset: *usize,
+    capacity: usize,
+    spike_tile: *u16,
+) void {
+    var bit: u4 = 0;
+    while (bit < 8) : (bit += 1) {
+        if ((mask & (@as(u8, 1) << @as(u3, @intCast(bit)))) == 0) continue;
+        if (object_offset.* >= capacity or spike_tile.* >= max_tiles) return;
+        const offset: i16 = @as(i16, @intCast(@as(u16, bit) * 8));
+        const x = base_x + if (horizontal) offset else 0;
+        const y = base_y + if (horizontal) 0 else offset;
+        if (!spikeCoveredByStaticSolid(x, y) and drawObject(first_object + object_offset.*, x - camera.x, y - camera.y, @intCast(spike_tile.*), .size_8x8)) {
+            object_offset.* += 1;
+        }
+        spike_tile.* += 1;
     }
 }
 
-fn drawObject(object_index: usize, x: i16, y: i16, tile_offset: u10, size: gba.display.Object.Size) void {
+fn spikeCoveredByStaticSolid(x: i16, y: i16) bool {
+    return collision.solidRectAt(rooms[active_room_index], x, y, tile_size, tile_size);
+}
+
+fn centeredOffset(size: u8, child_size: i16) i16 {
+    return @as(i16, @intCast(@divTrunc(@as(i32, size) - @as(i32, child_size), 2)));
+}
+
+fn drawObject(object_index: usize, x: i16, y: i16, tile_offset: u10, size: gba.display.Object.Size) bool {
+    const dimensions = objectDimensions(size);
+    if (!visible(x, y, dimensions.width, dimensions.height)) return false;
+
     gba.display.objects[object_index] = gba.display.Object.init(.{
         .size = size,
         .x = objX(x),
@@ -632,6 +803,34 @@ fn drawObject(object_index: usize, x: i16, y: i16, tile_offset: u10, size: gba.d
         .priority = 1,
         .palette = palette_bank,
     });
+    return true;
+}
+
+fn visible(x: i16, y: i16, width: i16, height: i16) bool {
+    return x < screen_width and y < screen_height and x + width > 0 and y + height > 0;
+}
+
+fn objectDimensions(size: gba.display.Object.Size) struct { width: i16, height: i16 } {
+    return switch (size.shape) {
+        .square => switch (size.shape_size) {
+            .size_2 => .{ .width = 8, .height = 8 },
+            .size_4 => .{ .width = 16, .height = 16 },
+            .size_16 => .{ .width = 32, .height = 32 },
+            .size_64 => .{ .width = 64, .height = 64 },
+        },
+        .wide => switch (size.shape_size) {
+            .size_2 => .{ .width = 16, .height = 8 },
+            .size_4 => .{ .width = 32, .height = 8 },
+            .size_16 => .{ .width = 32, .height = 16 },
+            .size_64 => .{ .width = 64, .height = 32 },
+        },
+        .tall => switch (size.shape_size) {
+            .size_2 => .{ .width = 8, .height = 16 },
+            .size_4 => .{ .width = 8, .height = 32 },
+            .size_16 => .{ .width = 16, .height = 32 },
+            .size_64 => .{ .width = 32, .height = 64 },
+        },
+    };
 }
 
 fn lightTileForState(state: State) u10 {

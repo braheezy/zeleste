@@ -78,9 +78,16 @@ def read_png_rgba(path: Path) -> Image:
             width, height, bit_depth, color_type, compression, filter_method, interlace = struct.unpack(
                 ">IIBBBBB", payload
             )
-            if bit_depth != 8 or color_type not in (2, 3, 6) or compression != 0 or filter_method != 0 or interlace != 0:
+            indexed_depth = color_type == 3 and bit_depth in (1, 2, 4, 8)
+            truecolor_depth = color_type in (2, 6) and bit_depth == 8
+            if (
+                not (indexed_depth or truecolor_depth)
+                or compression != 0
+                or filter_method != 0
+                or interlace != 0
+            ):
                 raise ValueError(
-                    f"{path} must be non-interlaced 8-bit RGB, RGBA, or indexed-color PNG; "
+                    f"{path} must be non-interlaced 8-bit RGB/RGBA or 1/2/4/8-bit indexed-color PNG; "
                     f"got bit_depth={bit_depth}, color_type={color_type}, interlace={interlace}"
                 )
         elif kind == b"PLTE":
@@ -106,7 +113,7 @@ def read_png_rgba(path: Path) -> Image:
 
     raw = zlib.decompress(bytes(compressed))
     source_bpp = 4 if color_type == 6 else (3 if color_type == 2 else 1)
-    source_stride = width * source_bpp
+    source_stride = (width * bit_depth + 7) // 8 if color_type == 3 else width * source_bpp
     recon_rows = bytearray(height * source_stride)
     src = 0
 
@@ -149,10 +156,21 @@ def read_png_rgba(path: Path) -> Image:
         return Image(width, height, bytes(out))
 
     out = bytearray(width * height * 4)
-    for index, palette_index in enumerate(recon_rows):
-        if palette_index >= len(palette):
-            raise ValueError(f"{path} references palette index {palette_index}, but PLTE has {len(palette)} entries")
-        out[index * 4 : index * 4 + 4] = bytes(palette[palette_index])
+    out_index = 0
+    for y in range(height):
+        row = recon_rows[y * source_stride : (y + 1) * source_stride]
+        for x in range(width):
+            if bit_depth == 8:
+                palette_index = row[x]
+            else:
+                bit_offset = x * bit_depth
+                byte = row[bit_offset // 8]
+                shift = 8 - bit_depth - (bit_offset % 8)
+                palette_index = (byte >> shift) & ((1 << bit_depth) - 1)
+            if palette_index >= len(palette):
+                raise ValueError(f"{path} references palette index {palette_index}, but PLTE has {len(palette)} entries")
+            out[out_index * 4 : out_index * 4 + 4] = bytes(palette[palette_index])
+            out_index += 1
     return Image(width, height, bytes(out))
 
 

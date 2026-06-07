@@ -32,20 +32,30 @@ const sweat_climb_frame_count = 6;
 
 var loaded_frame: u16 = 0xffff;
 var loaded_sweat_frame: u16 = 0xffff;
+var loaded_palette_mode: PaletteMode = .invalid;
+
+const PaletteMode = enum {
+    invalid,
+    normal,
+    fatigue,
+};
 
 pub fn invalidate() void {
     loaded_frame = 0xffff;
     loaded_sweat_frame = 0xffff;
+    loaded_palette_mode = .invalid;
 }
 
 pub fn loadPalettes() void {
     gba.mem.memcpy(gba.display.obj_palette, &player_palette_data, player_palette_data.len);
     gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, sweat_palette_bank) * 16], @ptrCast(&sweat_palette_data), 16);
+    loaded_palette_mode = .normal;
 }
 
 pub fn loadNormalPalette() void {
     const base_palette: [*]align(2) const gba.ColorRgb555 = @ptrCast(&player_palette_data);
     gba.mem.memcpy16(&gba.display.obj_palette.colors[0], base_palette, 16);
+    loaded_palette_mode = .normal;
 }
 
 pub fn hideObjects() void {
@@ -115,8 +125,12 @@ fn loadSweatFrame(frame: u16) void {
 
 fn updatePalette(player: Player, foreground_anim_counter: u16) void {
     const base_palette: [*]align(2) const gba.ColorRgb555 = @ptrCast(&player_palette_data);
-    if (!fatigueFlashVisible(player, foreground_anim_counter)) {
+    const desired_mode: PaletteMode = if (fatigueFlashVisible(player, foreground_anim_counter)) .fatigue else .normal;
+    if (loaded_palette_mode == desired_mode) return;
+
+    if (desired_mode == .normal) {
         gba.mem.memcpy16(&gba.display.obj_palette.colors[0], base_palette, 16);
+        loaded_palette_mode = .normal;
         return;
     }
 
@@ -125,6 +139,7 @@ fn updatePalette(player: Player, foreground_anim_counter: u16) void {
     while (index < 16) : (index += 1) {
         gba.display.obj_palette.colors[index] = redFatigueTint(base_palette[index]);
     }
+    loaded_palette_mode = .fatigue;
 }
 
 fn fatigueFlashVisible(player: Player, foreground_anim_counter: u16) bool {

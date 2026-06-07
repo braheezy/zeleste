@@ -33,6 +33,11 @@ const flap_tiles_data align(4) = assets.strawberry_flap_tiles_data;
 const collect_tiles_data align(4) = assets.strawberry_collect_tiles_data;
 const palette_data align(4) = assets.strawberry_palette_data;
 const collect_palette_data align(4) = assets.strawberry_collect_palette_data;
+const ghost_idle_tiles_data align(4) = assets.ghostberry_idle_tiles_data;
+const ghost_flap_tiles_data align(4) = assets.ghostberry_flap_tiles_data;
+const ghost_collect_tiles_data align(4) = assets.ghostberry_collect_tiles_data;
+const ghost_palette_data align(4) = assets.ghostberry_palette_data;
+const ghost_collect_palette_data align(4) = assets.ghostberry_collect_palette_data;
 
 const rooms = level.rooms;
 
@@ -70,6 +75,10 @@ const collect_slot_count = 2;
 const collect_cell_width: i16 = 32;
 const collect_cell_height: i16 = 16;
 
+const ghost_idle_base_tile: u10 = 664;
+const ghost_flap_base_tile: u10 = ghost_idle_base_tile + idle_tiles_per_frame;
+const ghost_collect_base_tile: u10 = ghost_flap_base_tile + flap_tiles_per_frame;
+
 const invalid_frame: u16 = 0xffff;
 
 const Kind = enum(u8) {
@@ -83,8 +92,15 @@ const Animation = enum {
     collect,
 };
 
+const PaletteVariant = enum {
+    invalid,
+    normal,
+    ghost,
+};
+
 const Berry = struct {
     active: bool = false,
+    ghost: bool = false,
     global_id: u16 = 0,
     center_x: i16 = 0,
     center_y: i16 = 0,
@@ -98,6 +114,7 @@ const Berry = struct {
 
 const Carried = struct {
     active: bool = false,
+    ghost: bool = false,
     global_id: u16 = 0,
     source_room: usize = 0,
     x: i32 = 0,
@@ -107,6 +124,7 @@ const Carried = struct {
 
 const CollectEffect = struct {
     active: bool = false,
+    ghost: bool = false,
     x: i32 = 0,
     y: i32 = 0,
     timer: u8 = 0,
@@ -126,6 +144,11 @@ var wingflap_variant: u8 = 0;
 var loaded_idle_frame: u16 = invalid_frame;
 var loaded_flap_frame: u16 = invalid_frame;
 var loaded_collect_frames: [collect_slot_count]u16 = [_]u16{invalid_frame} ** collect_slot_count;
+var loaded_ghost_idle_frame: u16 = invalid_frame;
+var loaded_ghost_flap_frame: u16 = invalid_frame;
+var loaded_ghost_collect_frames: [collect_slot_count]u16 = [_]u16{invalid_frame} ** collect_slot_count;
+var loaded_main_palette: PaletteVariant = .invalid;
+var loaded_collect_palette: PaletteVariant = .invalid;
 var last_drawn_objects: usize = 0;
 
 pub fn load(room_index: usize) void {
@@ -152,7 +175,9 @@ pub fn load(room_index: usize) void {
         source_offset += record_bytes;
     }) {
         const global_id = collectibles.strawberryId(room_index, source_index) orelse continue;
-        if (collectibles.isStrawberryCollected(global_id) or isCarried(global_id)) continue;
+        if (isCarried(global_id)) continue;
+        const collected_before_run = collectibles.wasStrawberryCollectedBeforeRun(global_id);
+        if (!collected_before_run and collectibles.isStrawberryCollected(global_id)) continue;
 
         const w = data[source_offset + 4];
         const h = data[source_offset + 5];
@@ -160,6 +185,7 @@ pub fn load(room_index: usize) void {
 
         loaded[loaded_count] = .{
             .active = true,
+            .ghost = collected_before_run,
             .global_id = global_id,
             .center_x = readI16Le(data, source_offset),
             .center_y = readI16Le(data, source_offset + 2),
@@ -174,8 +200,10 @@ pub fn load(room_index: usize) void {
 
 pub fn loadGraphics() void {
     if (!hasVisibleSprites()) return;
-    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(&palette_data), 16);
-    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, collect_palette_bank) * 16], @ptrCast(&collect_palette_data), 16);
+    loaded_main_palette = .invalid;
+    loaded_collect_palette = .invalid;
+    loadMainPalette(mainPaletteVariant());
+    loadCollectPalette(collectPaletteVariant());
     invalidateFrames();
 }
 
@@ -193,6 +221,8 @@ pub fn update(player: *Player, room_index: usize) void {
 
 pub fn draw(camera: Camera, anim_counter: u16) void {
     if (!hasVisibleSprites() and last_drawn_objects == 0) return;
+    loadMainPalette(mainPaletteVariant());
+    loadCollectPalette(collectPaletteVariant());
 
     var object_offset: usize = 0;
 
@@ -205,7 +235,7 @@ pub fn draw(camera: Camera, anim_counter: u16) void {
         if (!berry.active) continue;
         const animation: Animation = if (berry.kind == .flying) .flap else .idle;
         const frame = if (animation == .flap) flap_frame else idle_frame;
-        if (drawBerryObject(first_object + object_offset, berry.center_x, berry.center_y, animation, frame, camera)) {
+        if (drawBerryObject(first_object + object_offset, berry.center_x, berry.center_y, animation, frame, berry.ghost, camera)) {
             object_offset += 1;
         }
     }
@@ -214,7 +244,7 @@ pub fn draw(camera: Camera, anim_counter: u16) void {
     while (index < carried_count and object_offset < object_capacity) : (index += 1) {
         const berry = carried[index];
         if (!berry.active) continue;
-        if (drawBerryObject(first_object + object_offset, fixedToPixel(berry.x), fixedToPixel(berry.y), .idle, idle_frame, camera)) {
+        if (drawBerryObject(first_object + object_offset, fixedToPixel(berry.x), fixedToPixel(berry.y), .idle, idle_frame, berry.ghost, camera)) {
             object_offset += 1;
         }
     }
@@ -224,7 +254,7 @@ pub fn draw(camera: Camera, anim_counter: u16) void {
         const effect = collect_effects[index];
         if (!effect.active) continue;
         const frame = collectFrame(effect.timer);
-        if (drawBerryObjectSlot(first_object + object_offset, fixedToPixel(effect.x), fixedToPixel(effect.y), .collect, frame, effect.slot, camera)) {
+        if (drawBerryObjectSlot(first_object + object_offset, fixedToPixel(effect.x), fixedToPixel(effect.y), .collect, frame, effect.slot, effect.ghost, camera)) {
             object_offset += 1;
         }
     }
@@ -262,6 +292,75 @@ fn hasVisibleSprites() bool {
     return false;
 }
 
+fn mainPaletteVariant() PaletteVariant {
+    var has_ghost = false;
+    var has_normal = false;
+
+    var index: usize = 0;
+    while (index < loaded_count) : (index += 1) {
+        const berry = loaded[index];
+        if (!berry.active) continue;
+        if (berry.ghost) {
+            has_ghost = true;
+        } else {
+            has_normal = true;
+        }
+    }
+
+    index = 0;
+    while (index < carried_count) : (index += 1) {
+        const berry = carried[index];
+        if (!berry.active) continue;
+        if (berry.ghost) {
+            has_ghost = true;
+        } else {
+            has_normal = true;
+        }
+    }
+
+    return if (has_ghost and !has_normal) .ghost else .normal;
+}
+
+fn collectPaletteVariant() PaletteVariant {
+    var has_ghost = false;
+    var has_normal = false;
+
+    var index: usize = 0;
+    while (index < collect_effect_count) : (index += 1) {
+        const effect = collect_effects[index];
+        if (!effect.active) continue;
+        if (effect.ghost) {
+            has_ghost = true;
+        } else {
+            has_normal = true;
+        }
+    }
+
+    return if (has_ghost and !has_normal) .ghost else .normal;
+}
+
+fn loadMainPalette(variant: PaletteVariant) void {
+    const desired: PaletteVariant = if (variant == .ghost) .ghost else .normal;
+    if (loaded_main_palette == desired) return;
+    if (desired == .ghost) {
+        gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(&ghost_palette_data), 16);
+    } else {
+        gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(&palette_data), 16);
+    }
+    loaded_main_palette = desired;
+}
+
+fn loadCollectPalette(variant: PaletteVariant) void {
+    const desired: PaletteVariant = if (variant == .ghost) .ghost else .normal;
+    if (loaded_collect_palette == desired) return;
+    if (desired == .ghost) {
+        gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, collect_palette_bank) * 16], @ptrCast(&ghost_collect_palette_data), 16);
+    } else {
+        gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, collect_palette_bank) * 16], @ptrCast(&collect_palette_data), 16);
+    }
+    loaded_collect_palette = desired;
+}
+
 fn pickupLoaded(player: Player, room_index: usize) void {
     var index: usize = 0;
     while (index < loaded_count) : (index += 1) {
@@ -281,6 +380,7 @@ fn addCarried(berry: Berry, room_index: usize) bool {
 
     carried[carried_count] = .{
         .active = true,
+        .ghost = berry.ghost,
         .global_id = berry.global_id,
         .source_room = room_index,
         .x = pixelToFixed(berry.center_x),
@@ -404,9 +504,12 @@ fn collectFirstCarried() void {
     if (carried_count == 0) return;
 
     const berry = carried[0];
-    startCollectEffect(berry.x, berry.y);
-    if (collectibles.markStrawberryCollected(berry.global_id, chain_combo_index)) {
+    startCollectEffect(berry.x, berry.y, berry.ghost);
+    const newly_collected = collectibles.markStrawberryCollected(berry.global_id, chain_combo_index);
+    if (newly_collected or berry.ghost) {
         playCollectSound(chain_combo_index);
+    }
+    if (newly_collected) {
         save.commitProgress();
     }
     removeCarriedAt(0);
@@ -418,10 +521,11 @@ fn collectFirstCarried() void {
     }
 }
 
-fn startCollectEffect(x: i32, y: i32) void {
+fn startCollectEffect(x: i32, y: i32, ghost: bool) void {
     if (collect_effect_count >= max_carried) return;
     collect_effects[collect_effect_count] = .{
         .active = true,
+        .ghost = ghost,
         .x = x,
         .y = y,
         .slot = nextCollectSlot(),
@@ -487,17 +591,17 @@ fn approachFollow(value: i32, target: i32) i32 {
     return value + @divTrunc(delta, 4);
 }
 
-fn drawBerryObject(object_index: usize, center_x: i16, center_y: i16, animation: Animation, frame: u16, camera: Camera) bool {
-    return drawBerryObjectSlot(object_index, center_x, center_y, animation, frame, 0, camera);
+fn drawBerryObject(object_index: usize, center_x: i16, center_y: i16, animation: Animation, frame: u16, ghost: bool, camera: Camera) bool {
+    return drawBerryObjectSlot(object_index, center_x, center_y, animation, frame, 0, ghost, camera);
 }
 
-fn drawBerryObjectSlot(object_index: usize, center_x: i16, center_y: i16, animation: Animation, frame: u16, collect_slot: u8, camera: Camera) bool {
-    const spec = animationSpec(animation, collect_slot);
+fn drawBerryObjectSlot(object_index: usize, center_x: i16, center_y: i16, animation: Animation, frame: u16, collect_slot: u8, ghost: bool, camera: Camera) bool {
+    const spec = animationSpec(animation, collect_slot, ghost);
     const x = center_x - @divTrunc(spec.cell_width, 2) - camera.x;
     const y = center_y - @divTrunc(spec.cell_height, 2) - camera.y;
     if (!visible(x, y, spec.cell_width, spec.cell_height)) return false;
 
-    loadAnimationFrame(animation, frame, collect_slot);
+    loadAnimationFrame(animation, frame, collect_slot, ghost);
     gba.display.objects[object_index] = gba.display.Object.init(.{
         .size = spec.size,
         .x = objX(x),
@@ -509,13 +613,29 @@ fn drawBerryObjectSlot(object_index: usize, center_x: i16, center_y: i16, animat
     return true;
 }
 
-fn loadAnimationFrame(animation: Animation, frame: u16, collect_slot: u8) void {
+fn loadAnimationFrame(animation: Animation, frame: u16, collect_slot: u8, ghost: bool) void {
     switch (animation) {
-        .idle => loadTileFrame(&idle_tiles_data, idle_base_tile, frame, idle_tiles_per_frame, &loaded_idle_frame),
-        .flap => loadTileFrame(&flap_tiles_data, flap_base_tile, frame, flap_tiles_per_frame, &loaded_flap_frame),
+        .idle => {
+            if (ghost) {
+                loadTileFrame(&ghost_idle_tiles_data, ghost_idle_base_tile, frame, idle_tiles_per_frame, &loaded_ghost_idle_frame);
+            } else {
+                loadTileFrame(&idle_tiles_data, idle_base_tile, frame, idle_tiles_per_frame, &loaded_idle_frame);
+            }
+        },
+        .flap => {
+            if (ghost) {
+                loadTileFrame(&ghost_flap_tiles_data, ghost_flap_base_tile, frame, flap_tiles_per_frame, &loaded_ghost_flap_frame);
+            } else {
+                loadTileFrame(&flap_tiles_data, flap_base_tile, frame, flap_tiles_per_frame, &loaded_flap_frame);
+            }
+        },
         .collect => {
             const slot = collectSlotIndex(collect_slot);
-            loadTileFrame(&collect_tiles_data, collectSlotBase(slot), frame, collect_tiles_per_frame, &loaded_collect_frames[slot]);
+            if (ghost) {
+                loadTileFrame(&ghost_collect_tiles_data, ghostCollectSlotBase(slot), frame, collect_tiles_per_frame, &loaded_ghost_collect_frames[slot]);
+            } else {
+                loadTileFrame(&collect_tiles_data, collectSlotBase(slot), frame, collect_tiles_per_frame, &loaded_collect_frames[slot]);
+            }
         },
     }
 }
@@ -529,7 +649,7 @@ fn loadTileFrame(tile_data: []align(4) const u8, target_tile: u10, frame: u16, t
     loaded_frame.* = frame;
 }
 
-fn animationSpec(animation: Animation, collect_slot: u8) struct {
+fn animationSpec(animation: Animation, collect_slot: u8, ghost: bool) struct {
     base_tile: u10,
     cell_width: i16,
     cell_height: i16,
@@ -537,9 +657,9 @@ fn animationSpec(animation: Animation, collect_slot: u8) struct {
     palette: u4,
 } {
     return switch (animation) {
-        .idle => .{ .base_tile = idle_base_tile, .cell_width = idle_cell_width, .cell_height = idle_cell_height, .size = .size_32x16, .palette = palette_bank },
-        .flap => .{ .base_tile = flap_base_tile, .cell_width = flap_cell_width, .cell_height = flap_cell_height, .size = .size_64x32, .palette = palette_bank },
-        .collect => .{ .base_tile = collectSlotBase(collectSlotIndex(collect_slot)), .cell_width = collect_cell_width, .cell_height = collect_cell_height, .size = .size_32x16, .palette = collect_palette_bank },
+        .idle => .{ .base_tile = if (ghost) ghost_idle_base_tile else idle_base_tile, .cell_width = idle_cell_width, .cell_height = idle_cell_height, .size = .size_32x16, .palette = palette_bank },
+        .flap => .{ .base_tile = if (ghost) ghost_flap_base_tile else flap_base_tile, .cell_width = flap_cell_width, .cell_height = flap_cell_height, .size = .size_64x32, .palette = palette_bank },
+        .collect => .{ .base_tile = if (ghost) ghostCollectSlotBase(collectSlotIndex(collect_slot)) else collectSlotBase(collectSlotIndex(collect_slot)), .cell_width = collect_cell_width, .cell_height = collect_cell_height, .size = .size_32x16, .palette = collect_palette_bank },
     };
 }
 
@@ -552,10 +672,17 @@ fn collectSlotBase(slot: usize) u10 {
     return collect_base_tile + @as(u10, @intCast(slot * collect_tiles_per_frame));
 }
 
+fn ghostCollectSlotBase(slot: usize) u10 {
+    return ghost_collect_base_tile + @as(u10, @intCast(slot * collect_tiles_per_frame));
+}
+
 fn invalidateFrames() void {
     loaded_idle_frame = invalid_frame;
     loaded_flap_frame = invalid_frame;
     loaded_collect_frames = [_]u16{invalid_frame} ** collect_slot_count;
+    loaded_ghost_idle_frame = invalid_frame;
+    loaded_ghost_flap_frame = invalid_frame;
+    loaded_ghost_collect_frames = [_]u16{invalid_frame} ** collect_slot_count;
 }
 
 fn loopFrame(anim_counter: u16, frame_count: u16, frame_ticks: u16) u16 {

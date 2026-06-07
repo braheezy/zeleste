@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import hashlib
 import json
 import os
@@ -20,8 +21,11 @@ ROOM_BUNDLE_OUTPUTS = [
     "bg_map.bin",
     "bg_palette.bin",
     "spawn.bin",
+    "respawn_points.bin",
     "collision.bin",
     "falling_blocks.bin",
+    "falling_block_tiles.bin",
+    "falling_block_palette.bin",
     "breakable_walls.bin",
     "disappearing_platforms.bin",
     "mech_blocks.bin",
@@ -30,6 +34,13 @@ ROOM_BUNDLE_OUTPUTS = [
     "rhythm_blocks.bin",
     "springs.bin",
     "strawberries.bin",
+    "cassettes.bin",
+    "dash_refills.bin",
+    "hidden_covers.bin",
+    "hidden_cover_tiles.bin",
+    "hidden_cover_map.bin",
+    "hidden_cover_groups.bin",
+    "hidden_cover_palette.bin",
     "foreground_stamps.bin",
     "bridge_poles.bin",
     "generic_stamps.bin",
@@ -85,6 +96,15 @@ def rect_literal(rect: dict | None) -> str:
 
 def annotation_path_for_image(image: Path) -> Path:
     return image.with_name(f"{image.stem}_annotations.json")
+
+
+def hidden_cover_overlay_paths_for_image(image: Path) -> list[Path]:
+    return [
+        image.with_name(f"{image.stem}-overlay.png"),
+        image.with_name(f"{image.stem}_overlay.png"),
+        image.with_name(f"{image.stem}-hidden-cover.png"),
+        image.with_name(f"{image.stem}_hidden_cover.png"),
+    ]
 
 
 def load_annotation(image: Path) -> dict:
@@ -173,6 +193,28 @@ def write_room_cache(path: Path, data: dict) -> None:
     tmp.replace(path)
 
 
+def run_room_command(command: list[str]) -> str:
+    completed = subprocess.run(
+        command,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "room asset command failed with exit code "
+            f"{completed.returncode}: {' '.join(command)}\n{completed.stdout}"
+        )
+    return completed.stdout
+
+
+def print_room_log(log: str) -> None:
+    if not log:
+        return
+    print(log, end="" if log.endswith("\n") else "\n")
+
+
 def expected_room_outputs(room: dict, output_dir: Path) -> list[Path]:
     outputs = [output_dir / filename for filename in ROOM_BUNDLE_OUTPUTS]
     if "parallax" in room:
@@ -210,6 +252,8 @@ def room_fingerprint(
         update_hash(hasher, stable_command_part(part))
     hash_required_file(hasher, image, "background")
     hash_optional_file(hasher, annotation_path_for_image(image), "annotations")
+    for overlay_path in hidden_cover_overlay_paths_for_image(image):
+        hash_optional_file(hasher, overlay_path, f"hidden-cover-overlay:{overlay_path.name}")
     hash_optional_file(hasher, scene_path_for_image(image), "scene")
     for tool in [
         "build_room_bundle.py",
@@ -391,12 +435,13 @@ def build_room(
     prefix: str,
     room: dict,
     rgb_bits: int,
-    room_cache: dict,
-) -> tuple[str, dict]:
+    cached_rooms: dict,
+) -> tuple[str, dict, dict, str]:
     room_name = zig_room_name(prefix, str(room["id"]))
     output_dir = generated_root / room_name
     image = manifest_dir / str(room["image"])
     effective_rgb_bits = int(room.get("rgbBits", rgb_bits))
+    log = ""
     command = [
         sys.executable,
         str(Path(__file__).with_name("build_room_bundle.py")),
@@ -406,7 +451,7 @@ def build_room(
         str(effective_rgb_bits),
     ]
     digest = room_fingerprint(manifest_dir, output_dir, room, command, effective_rgb_bits)
-    cached_room = room_cache["rooms"].get(room_name)
+    cached_room = cached_rooms.get(room_name)
     cache_hit = (
         os.environ.get("ASSET_FORCE") != "1"
         and isinstance(cached_room, dict)
@@ -414,11 +459,11 @@ def build_room(
         and room_outputs_exist(room, output_dir)
     )
     if not cache_hit:
-        subprocess.run(command, check=True)
+        log += run_room_command(command)
 
         if "parallax" in room:
             parallax = room["parallax"]
-            subprocess.run(
+            log += run_room_command(
                 [
                     sys.executable,
                     str(Path(__file__).with_name("pack_parallax_obj.py")),
@@ -428,19 +473,18 @@ def build_room(
                     str(output_dir),
                     "--name",
                     str(parallax.get("name", "parallax_fg")),
-                ],
-                check=True,
+                ]
             )
         if not room_outputs_exist(room, output_dir):
             missing = [str(path) for path in expected_room_outputs(room, output_dir) if not path.is_file()]
             raise RuntimeError(f"room bundle {room_name} did not produce expected outputs: {', '.join(missing)}")
-    room_cache["rooms"][room_name] = {
+    cache_entry = {
         "fingerprint": digest,
         "outputs": [path.name for path in expected_room_outputs(room, output_dir)],
     }
 
     image_data = read_png_rgba(image)
-    return room_name, {"width": image_data.width, "height": image_data.height}
+    return room_name, {"width": image_data.width, "height": image_data.height}, cache_entry, log
 
 
 def emit_generated_zig(
@@ -499,8 +543,11 @@ def emit_generated_zig(
             ("bg_map", "bg_map.bin"),
             ("bg_palette", "bg_palette.bin"),
             ("spawn", "spawn.bin"),
+            ("respawn_points", "respawn_points.bin"),
             ("collision", "collision.bin"),
             ("falling_blocks", "falling_blocks.bin"),
+            ("falling_block_tiles", "falling_block_tiles.bin"),
+            ("falling_block_palette", "falling_block_palette.bin"),
             ("breakable_walls", "breakable_walls.bin"),
             ("disappearing_platforms", "disappearing_platforms.bin"),
             ("mech_blocks", "mech_blocks.bin"),
@@ -509,6 +556,13 @@ def emit_generated_zig(
             ("rhythm_blocks", "rhythm_blocks.bin"),
             ("springs", "springs.bin"),
             ("strawberries", "strawberries.bin"),
+            ("cassettes", "cassettes.bin"),
+            ("dash_refills", "dash_refills.bin"),
+            ("hidden_covers", "hidden_covers.bin"),
+            ("hidden_cover_tiles", "hidden_cover_tiles.bin"),
+            ("hidden_cover_map", "hidden_cover_map.bin"),
+            ("hidden_cover_groups", "hidden_cover_groups.bin"),
+            ("hidden_cover_palette", "hidden_cover_palette.bin"),
             ("foreground_stamps", "foreground_stamps.bin"),
             ("generic_stamps", "generic_stamps.bin"),
             ("bird_npcs", "bird_npcs.bin"),
@@ -550,7 +604,10 @@ def emit_generated_zig(
                 f"        .spawn_right = root.spawnFromBytesAt(&{room_name}_spawn, 8),",
                 f"        .spawn_top = root.spawnFromBytesAt(&{room_name}_spawn, 12),",
                 f"        .spawn_bottom = root.spawnFromBytesAt(&{room_name}_spawn, 16),",
+                f"        .respawn_points = &{room_name}_respawn_points,",
                 f"        .falling_blocks = &{room_name}_falling_blocks,",
+                f"        .falling_block_tiles = &{room_name}_falling_block_tiles,",
+                f"        .falling_block_palette = &{room_name}_falling_block_palette,",
                 f"        .breakable_walls = &{room_name}_breakable_walls,",
                 f"        .disappearing_platforms = &{room_name}_disappearing_platforms,",
                 f"        .mech_blocks = &{room_name}_mech_blocks,",
@@ -559,6 +616,13 @@ def emit_generated_zig(
                 f"        .rhythm_blocks = &{room_name}_rhythm_blocks,",
                 f"        .springs = &{room_name}_springs,",
                 f"        .strawberries = &{room_name}_strawberries,",
+                f"        .cassettes = &{room_name}_cassettes,",
+                f"        .dash_refills = &{room_name}_dash_refills,",
+                f"        .hidden_covers = &{room_name}_hidden_covers,",
+                f"        .hidden_cover_tiles = &{room_name}_hidden_cover_tiles,",
+                f"        .hidden_cover_map = &{room_name}_hidden_cover_map,",
+                f"        .hidden_cover_groups = &{room_name}_hidden_cover_groups,",
+                f"        .hidden_cover_palette = &{room_name}_hidden_cover_palette,",
                 f"        .foreground_stamps = &{room_name}_foreground_stamps,",
                 f"        .generic_stamps = &{room_name}_generic_stamps,",
                 f"        .bird_npcs = &{room_name}_bird_npcs,",
@@ -605,6 +669,68 @@ def emit_generated_zig(
     path.write_text("\n".join(lines))
 
 
+def parse_jobs(value: str, source: str) -> int:
+    try:
+        jobs = int(value)
+    except ValueError as err:
+        raise ValueError(f"{source} must be an integer, got {value!r}") from err
+    if jobs < 1:
+        raise ValueError(f"{source} must be at least 1, got {jobs}")
+    return jobs
+
+
+def resolve_jobs(requested_jobs: int | None, room_count: int) -> int:
+    if room_count <= 1:
+        return 1
+    if requested_jobs is not None:
+        return min(requested_jobs, room_count)
+    env_jobs = os.environ.get("ASSET_JOBS")
+    if env_jobs:
+        return min(parse_jobs(env_jobs, "ASSET_JOBS"), room_count)
+    return max(1, min(os.cpu_count() or 1, room_count))
+
+
+def build_rooms(
+    manifest_dir: Path,
+    generated_root: Path,
+    prefix: str,
+    rooms: list[dict],
+    rgb_bits: int,
+    room_cache: dict,
+    jobs: int,
+) -> tuple[list[str], list[dict]]:
+    cached_rooms = room_cache["rooms"]
+    results: list[tuple[str, dict, dict, str] | None] = [None] * len(rooms)
+
+    if jobs == 1:
+        for index, room in enumerate(rooms):
+            result = build_room(manifest_dir, generated_root, prefix, room, rgb_bits, cached_rooms)
+            print_room_log(result[3])
+            results[index] = result
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as executor:
+            futures = {
+                executor.submit(build_room, manifest_dir, generated_root, prefix, room, rgb_bits, cached_rooms): index
+                for index, room in enumerate(rooms)
+            }
+            for future in concurrent.futures.as_completed(futures):
+                index = futures[future]
+                result = future.result()
+                print_room_log(result[3])
+                results[index] = result
+
+    room_names: list[str] = []
+    room_sizes: list[dict] = []
+    for result in results:
+        if result is None:
+            raise RuntimeError("internal error: missing room build result")
+        room_name, size, cache_entry, _log = result
+        room_cache["rooms"][room_name] = cache_entry
+        room_names.append(room_name)
+        room_sizes.append(size)
+    return room_names, room_sizes
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("manifest", type=Path)
@@ -612,19 +738,34 @@ def main() -> int:
     parser.add_argument("--zig-output", type=Path, required=True)
     parser.add_argument("--rgb-bits", type=int, default=4)
     parser.add_argument("--chapter-index", type=int, default=0)
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=None,
+        help="room bundle jobs to run in parallel; defaults to ASSET_JOBS or CPU count",
+    )
     args = parser.parse_args()
+    if args.jobs is not None and args.jobs < 1:
+        parser.error("--jobs must be at least 1")
 
     manifest = json.loads(args.manifest.read_text())
     manifest_dir = args.manifest.parent
     prefix = str(manifest.get("outputPrefix", manifest["id"]))
     room_cache_path = args.generated_root / ".room_bundle_cache.json"
     room_cache = read_room_cache(room_cache_path)
-    room_names: list[str] = []
-    room_sizes: list[dict] = []
-    for room in manifest["rooms"]:
-        room_name, size = build_room(manifest_dir, args.generated_root, prefix, room, args.rgb_bits, room_cache)
-        room_names.append(room_name)
-        room_sizes.append(size)
+    try:
+        jobs = resolve_jobs(args.jobs, len(manifest["rooms"]))
+    except ValueError as err:
+        parser.error(str(err))
+    room_names, room_sizes = build_rooms(
+        manifest_dir,
+        args.generated_root,
+        prefix,
+        manifest["rooms"],
+        args.rgb_bits,
+        room_cache,
+        jobs,
+    )
 
     emit_generated_zig(args.zig_output, manifest_dir, args.generated_root, prefix, manifest, room_names, room_sizes, args.chapter_index)
     write_room_cache(room_cache_path, room_cache)

@@ -72,7 +72,7 @@ pub fn shouldStartBridgeEndingHold(player: Player, room_index: usize) bool {
 }
 
 pub fn startBridgeEndingHold(player: *Player) void {
-    bridge.startEndingHold();
+    bridge.startEndingHold(player);
     holdPlayerForBridgeEnding(player);
     dust.clear();
 
@@ -110,6 +110,7 @@ pub fn startEndLevelTransition(player: *Player, camera: Camera) void {
     player.climbing = false;
     player.wall_sliding = false;
     player.climb_dangling = false;
+    player.climb_dir = 0;
     player.facing_left = false;
     player.animation = .run;
     player.animation_timer = 0;
@@ -141,6 +142,7 @@ fn holdPlayerForBridgeEnding(player: *Player) void {
     player.climbing = false;
     player.wall_sliding = false;
     player.climb_dangling = false;
+    player.climb_dir = 0;
     if (player.animation != .fall) {
         player.animation = .fall;
         player.animation_timer = 0;
@@ -238,6 +240,7 @@ fn updateEndLevelTransition(player: *Player, camera: *Camera, room_index: *usize
 }
 
 fn loadOverworldScreen() void {
+    audio.stopSoundEffects();
     audio.stopMusic();
     save.finishChapter(0);
     bridge.deactivateForOverworld();
@@ -252,10 +255,12 @@ fn loadOverworldScreen() void {
 }
 
 fn startGameplayFromOverworld(target_room: usize, player: *Player, camera: *Camera, room_index: *usize, respawn: *RespawnPoint) void {
+    audio.stopSoundEffects();
     room_loader.hideGameplayDisplayForLoad();
     frame.sync();
 
     room_index.* = target_room;
+    save.beginChapterRunForRoom(target_room);
     if (city.flow.ownsGeneratedRoomIndex(target_room)) {
         audio.playCityMusic();
     } else {
@@ -266,7 +271,7 @@ fn startGameplayFromOverworld(target_room: usize, player: *Player, camera: *Came
         .spawn = rooms[target_room].spawn,
     };
     _ = save.commitSessionCheckpoint(respawn.room_index, respawn.spawn);
-    room_loader.loadGameplayRoom(target_room, .transition);
+    room_loader.loadGameplayRoomPhased(target_room, .transition);
     room_systems.clearTransientEffects();
     player.* = room_transition.spawnPlayerAt(respawn.spawn);
     player.hair_initialized = false;

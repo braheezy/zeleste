@@ -199,6 +199,7 @@ pub fn drawEndLevelTransition(player: *Player, camera: Camera, room_index: usize
 
 fn invalidateObjectTileCaches(room_index: usize) void {
     player_render.invalidate();
+    save_indicator.invalidateGraphics();
     chapter_systems.invalidateObjectTileCaches(room_index);
 }
 

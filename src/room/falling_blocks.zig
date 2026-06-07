@@ -6,6 +6,7 @@ const collision = @import("../world/collision.zig");
 const dynamic_object_slots = @import("dynamic_object_slots.zig");
 const level = @import("../generated_rooms.zig");
 const math = @import("../core/math.zig");
+const mover_sfx = @import("mover_sfx.zig");
 const oam = @import("../core/oam.zig");
 const player_mod = @import("../player/state.zig");
 const room_data = @import("../world/room_data.zig");
@@ -31,16 +32,20 @@ pub const first_object = dynamic_object_slots.first_object;
 pub const objects_per_block = dynamic_object_slots.falling_objects_per_block;
 pub const object_capacity = dynamic_object_slots.object_capacity;
 
-const record_bytes = 10;
+const record_bytes = 18;
 const trigger_grab_flag: u8 = 1;
 const shake_frames = 18;
 const grab_trigger_frames = 8;
 const gravity: i32 = 0x58;
 const max_fall: i32 = 0x560;
+const tile_size: i16 = 8;
 const base_tile: u10 = 32;
 const fixed_sprite_tile_count: u10 = 28;
-const generic_16_tile: u10 = base_tile + fixed_sprite_tile_count;
+const generic_16_tile: u10 = 72;
 const generic_8x16_tile: u10 = generic_16_tile + 4;
+const room_visual_base_tile: u10 = 320;
+const max_room_visual_tiles: usize = 80;
+const no_tile_offset: u16 = 0xffff;
 const palette_bank: u4 = 1;
 
 const State = enum(u8) {
@@ -68,6 +73,12 @@ pub const Block = struct {
     hold_frames: u8 = 0,
     vy: i32 = 0,
     source_index: u8 = 0,
+    tile_offset: u16 = no_tile_offset,
+    spike_tile_offset: u16 = no_tile_offset,
+    spike_up_mask: u8 = 0,
+    spike_down_mask: u8 = 0,
+    spike_left_mask: u8 = 0,
+    spike_right_mask: u8 = 0,
 };
 
 pub const UpdateResult = struct {
@@ -89,9 +100,25 @@ var block_count: usize = 0;
 var landed_masks: [rooms.len]u8 = [_]u8{0} ** rooms.len;
 var landed_y: [rooms.len][max_blocks]i16 = [_][max_blocks]i16{[_]i16{0} ** max_blocks} ** rooms.len;
 var last_drawn_objects: usize = 0;
+var room_visuals_loaded: bool = false;
+var active_room_index: usize = 0;
 
-pub fn loadGraphics() void {
+pub fn loadGraphics(room_index: usize) void {
+    room_visuals_loaded = false;
     if (block_count == 0) return;
+
+    const room = rooms[room_index];
+    if (room.falling_block_tiles.len > 0 and room.falling_block_palette.len >= 32) {
+        gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(room.falling_block_palette.ptr), 16);
+        const tile_count = @min(room.falling_block_tiles.len / 32, max_room_visual_tiles);
+        if (tile_count > 0) {
+            const tiles: [*]align(2) const gba.display.Tile4Bpp = @ptrCast(room.falling_block_tiles.ptr);
+            gba.display.memcpyObjectTiles4Bpp(room_visual_base_tile, tiles[0..tile_count]);
+            room_visuals_loaded = true;
+        }
+        return;
+    }
+
     gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(&palette_data), 16);
     gba.display.memcpyObjectTiles4Bpp(base_tile, @ptrCast(&tiles_data));
     loadGenericTiles();
@@ -100,6 +127,8 @@ pub fn loadGraphics() void {
 pub fn load(room_index: usize) void {
     blocks = [_]Block{.{}} ** max_blocks;
     block_count = 0;
+    room_visuals_loaded = false;
+    active_room_index = room_index;
     hideObjects();
 
     const data = rooms[room_index].falling_blocks;
@@ -118,6 +147,12 @@ pub fn load(room_index: usize) void {
         const h = data[source_offset + 5];
         const max_y = readI16Le(data, source_offset + 6);
         const flags = data[source_offset + 8];
+        const tile_offset = readU16Le(data, source_offset + 10);
+        const spike_tile_offset = readU16Le(data, source_offset + 12);
+        const spike_up_mask = data[source_offset + 14];
+        const spike_down_mask = data[source_offset + 15];
+        const spike_left_mask = data[source_offset + 16];
+        const spike_right_mask = data[source_offset + 17];
         if (w == 0 or h == 0) continue;
 
         const trigger_mode: TriggerMode = if ((flags & trigger_grab_flag) != 0) .grab else .player_below;
@@ -130,6 +165,12 @@ pub fn load(room_index: usize) void {
             .h = h,
             .max_y = max_y - @as(i16, @intCast(h)),
             .source_index = @intCast(source_index),
+            .tile_offset = tile_offset,
+            .spike_tile_offset = spike_tile_offset,
+            .spike_up_mask = spike_up_mask,
+            .spike_down_mask = spike_down_mask,
+            .spike_left_mask = spike_left_mask,
+            .spike_right_mask = spike_right_mask,
         };
 
         if (landed(room_index, source_index)) {
@@ -219,6 +260,25 @@ pub fn solidRectAt(x: i16, y: i16, width: i16, height: i16) bool {
     return false;
 }
 
+pub fn spikeHitAt(x: i16, y: i16, width: i16, height: i16, speed_x: i32, speed_y: i32) ?collision.SpikeHit {
+    const rect_left = x;
+    const rect_top = y;
+    const rect_right = x + width;
+    const rect_bottom = y + height;
+    var index: usize = 0;
+    while (index < block_count) : (index += 1) {
+        const block = blocks[index];
+        if (!block.active or !hasSpikes(block)) continue;
+        const block_x = block.x;
+        const block_y = fixedToPixel(block.y);
+        if (spikeMaskHit(block.spike_up_mask, .up, block_x, block_y - tile_size, true, rect_left, rect_top, rect_right, rect_bottom, speed_x, speed_y)) |hit| return hit;
+        if (spikeMaskHit(block.spike_down_mask, .down, block_x, block_y + @as(i16, @intCast(block.h)), true, rect_left, rect_top, rect_right, rect_bottom, speed_x, speed_y)) |hit| return hit;
+        if (spikeMaskHit(block.spike_left_mask, .left, block_x - tile_size, block_y, false, rect_left, rect_top, rect_right, rect_bottom, speed_x, speed_y)) |hit| return hit;
+        if (spikeMaskHit(block.spike_right_mask, .right, block_x + @as(i16, @intCast(block.w)), block_y, false, rect_left, rect_top, rect_right, rect_bottom, speed_x, speed_y)) |hit| return hit;
+    }
+    return null;
+}
+
 pub fn draw(camera: Camera) void {
     if (block_count == 0 and last_drawn_objects == 0) return;
 
@@ -236,7 +296,7 @@ pub fn draw(camera: Camera) void {
             continue;
         }
 
-        drawBlock(block, draw_x, draw_y, &object_offset);
+        drawBlock(block, draw_x, draw_y, block.x + shake_x, fixedToPixel(block.y) + shake_y, &object_offset);
         if (object_offset >= object_capacity) break;
     }
 
@@ -274,7 +334,10 @@ fn updateIdle(block: *Block, player: Player) void {
             if (playerBelowBlock(player, block.*)) startShaking(block);
         },
         .grab => {
-            if (playerHoldingBlock(player, block.*)) {
+            const contact = playerContactAt(player, block.*, block.x, fixedToPixel(block.y));
+            if (contact.standing) {
+                startShaking(block);
+            } else if (contact.holding) {
                 if (block.hold_frames < grab_trigger_frames) block.hold_frames += 1;
                 if (block.hold_frames >= grab_trigger_frames) startShaking(block);
             } else {
@@ -292,6 +355,7 @@ fn updateShaking(block: *Block, result: *UpdateResult) void {
         block.state = .falling;
         block.vy = 0;
         block.hold_frames = 0;
+        mover_sfx.fallingBlockRelease();
     }
 }
 
@@ -316,6 +380,7 @@ fn updateFalling(room_index: usize, block: *Block, player: *Player) bool {
         block.vy = 0;
         block.state = .landed;
         markLanded(room_index, block.source_index, fixedToPixel(block.y));
+        mover_sfx.fallingBlockImpact();
     }
     return false;
 }
@@ -326,6 +391,7 @@ fn updateFallingNoPlayer(room_index: usize, block: *Block) bool {
         block.vy = 0;
         block.state = .landed;
         markLanded(room_index, block.source_index, fixedToPixel(block.y));
+        mover_sfx.fallingBlockImpact();
     }
     return landed_now;
 }
@@ -370,6 +436,7 @@ fn startShaking(block: *Block) void {
     block.state = .shaking;
     block.timer = shake_frames;
     block.hold_frames = 0;
+    mover_sfx.fallingBlockShake();
 }
 
 fn drawChunk(object_index: usize, x: i16, y: i16, tile: u10, size: gba.display.Object.Size) void {
@@ -383,7 +450,13 @@ fn drawChunk(object_index: usize, x: i16, y: i16, tile: u10, size: gba.display.O
     });
 }
 
-fn drawBlock(block: Block, draw_x: i16, draw_y: i16, object_offset: *usize) void {
+fn drawBlock(block: Block, draw_x: i16, draw_y: i16, world_x: i16, world_y: i16, object_offset: *usize) void {
+    if (hasRoomVisual(block)) {
+        drawRoomVisualBlock(block, draw_x, draw_y, object_offset);
+        drawSpikes(block, draw_x, draw_y, world_x, world_y, object_offset);
+        return;
+    }
+
     if (fixedSpriteShape(block)) {
         if (object_offset.* + objects_per_block > object_capacity) return;
         const object_index = first_object + object_offset.*;
@@ -391,6 +464,7 @@ fn drawBlock(block: Block, draw_x: i16, draw_y: i16, object_offset: *usize) void
         drawChunk(object_index + 1, draw_x + 32, draw_y, base_tile + 16, .size_16x32);
         drawChunk(object_index + 2, draw_x + 48, draw_y, base_tile + 24, .size_8x32);
         object_offset.* += objects_per_block;
+        drawSpikes(block, draw_x, draw_y, world_x, world_y, object_offset);
         return;
     }
 
@@ -412,10 +486,38 @@ fn drawBlock(block: Block, draw_x: i16, draw_y: i16, object_offset: *usize) void
         }
         y += chunk_h;
     }
+    drawSpikes(block, draw_x, draw_y, world_x, world_y, object_offset);
+}
+
+fn drawRoomVisualBlock(block: Block, draw_x: i16, draw_y: i16, object_offset: *usize) void {
+    var tile = room_visual_base_tile + @as(u10, @intCast(block.tile_offset));
+    var y: usize = 0;
+    while (y < block.h and object_offset.* < object_capacity) {
+        const chunk_h: usize = if (@as(usize, block.h) - y >= 16) 16 else 8;
+        var x: usize = 0;
+        while (x < block.w and object_offset.* < object_capacity) {
+            const chunk_w: usize = if (@as(usize, block.w) - x >= 16) 16 else 8;
+            drawChunk(
+                first_object + object_offset.*,
+                draw_x + @as(i16, @intCast(x)),
+                draw_y + @as(i16, @intCast(y)),
+                tile,
+                objectSize(chunk_w, chunk_h),
+            );
+            tile += chunkTileCount(chunk_w, chunk_h);
+            object_offset.* += 1;
+            x += chunk_w;
+        }
+        y += chunk_h;
+    }
 }
 
 fn objectCountFor(block: Block) usize {
-    if (fixedSpriteShape(block)) return objects_per_block;
+    const body_count = if (hasRoomVisual(block)) chunkObjectCountFor(block) else if (fixedSpriteShape(block)) objects_per_block else chunkObjectCountFor(block);
+    return body_count + spikeCountFor(block);
+}
+
+fn chunkObjectCountFor(block: Block) usize {
     var count: usize = 0;
     var y: usize = 0;
     while (y < block.h) {
@@ -431,8 +533,98 @@ fn objectCountFor(block: Block) usize {
     return count;
 }
 
+fn hasRoomVisual(block: Block) bool {
+    return room_visuals_loaded and block.tile_offset != no_tile_offset;
+}
+
 fn fixedSpriteShape(block: Block) bool {
     return block.w == 56 and block.h == 32;
+}
+
+fn hasSpikes(block: Block) bool {
+    return room_visuals_loaded and
+        block.spike_tile_offset != no_tile_offset and
+        (block.spike_up_mask != 0 or
+            block.spike_down_mask != 0 or
+            block.spike_left_mask != 0 or
+            block.spike_right_mask != 0);
+}
+
+fn spikeCountFor(block: Block) usize {
+    if (!hasSpikes(block)) return 0;
+    return countMask(block.spike_up_mask) +
+        countMask(block.spike_down_mask) +
+        countMask(block.spike_left_mask) +
+        countMask(block.spike_right_mask);
+}
+
+fn countMask(mask: u8) usize {
+    var count: usize = 0;
+    var bits = mask;
+    while (bits != 0) {
+        count += @as(usize, bits & 1);
+        bits >>= 1;
+    }
+    return count;
+}
+
+fn spikeMaskHit(
+    mask: u8,
+    direction: collision.SpikeDirection,
+    base_x: i16,
+    base_y: i16,
+    horizontal: bool,
+    rect_left: i16,
+    rect_top: i16,
+    rect_right: i16,
+    rect_bottom: i16,
+    speed_x: i32,
+    speed_y: i32,
+) ?collision.SpikeHit {
+    var bit: u4 = 0;
+    while (bit < 8) : (bit += 1) {
+        if ((mask & (@as(u8, 1) << @as(u3, @intCast(bit)))) == 0) continue;
+        const offset: i16 = @as(i16, @intCast(@as(u16, bit) * 8));
+        const spike_x = base_x + if (horizontal) offset else 0;
+        const spike_y = base_y + if (horizontal) 0 else offset;
+        if (spikeCoveredByStaticSolid(spike_x, spike_y)) continue;
+        if (collision.spikeTileHitAt(direction, rect_left, rect_top, rect_right, rect_bottom, spike_x, spike_y, speed_x, speed_y)) {
+            return .{ .direction = direction };
+        }
+    }
+    return null;
+}
+
+fn drawSpikes(block: Block, draw_x: i16, draw_y: i16, world_x: i16, world_y: i16, object_offset: *usize) void {
+    if (!hasSpikes(block)) return;
+
+    var spike_tile = block.spike_tile_offset;
+    drawSpikeMask(block.spike_up_mask, draw_x, draw_y - tile_size, world_x, world_y - tile_size, true, object_offset, &spike_tile);
+    drawSpikeMask(block.spike_down_mask, draw_x, draw_y + @as(i16, @intCast(block.h)), world_x, world_y + @as(i16, @intCast(block.h)), true, object_offset, &spike_tile);
+    drawSpikeMask(block.spike_left_mask, draw_x - tile_size, draw_y, world_x - tile_size, world_y, false, object_offset, &spike_tile);
+    drawSpikeMask(block.spike_right_mask, draw_x + @as(i16, @intCast(block.w)), draw_y, world_x + @as(i16, @intCast(block.w)), world_y, false, object_offset, &spike_tile);
+}
+
+fn drawSpikeMask(mask: u8, base_x: i16, base_y: i16, world_base_x: i16, world_base_y: i16, horizontal: bool, object_offset: *usize, spike_tile: *u16) void {
+    var bit: u4 = 0;
+    while (bit < 8) : (bit += 1) {
+        if ((mask & (@as(u8, 1) << @as(u3, @intCast(bit)))) == 0) continue;
+        if (object_offset.* >= object_capacity or spike_tile.* >= max_room_visual_tiles) return;
+        const offset: i16 = @as(i16, @intCast(@as(u16, bit) * 8));
+        const x = base_x + if (horizontal) offset else 0;
+        const y = base_y + if (horizontal) 0 else offset;
+        const world_spike_x = world_base_x + if (horizontal) offset else 0;
+        const world_spike_y = world_base_y + if (horizontal) 0 else offset;
+        if (!spikeCoveredByStaticSolid(world_spike_x, world_spike_y)) {
+            drawChunk(first_object + object_offset.*, x, y, room_visual_base_tile + @as(u10, @intCast(spike_tile.*)), .size_8x8);
+            object_offset.* += 1;
+        }
+        spike_tile.* += 1;
+    }
+}
+
+fn spikeCoveredByStaticSolid(x: i16, y: i16) bool {
+    return collision.solidRectAt(rooms[active_room_index], x, y, tile_size, tile_size);
 }
 
 fn objectSize(width: usize, height: usize) gba.display.Object.Size {
@@ -445,6 +637,12 @@ fn objectSize(width: usize, height: usize) gba.display.Object.Size {
 fn genericTileForChunk(width: usize, height: usize) u10 {
     if (width == 8 and height == 16) return generic_8x16_tile;
     return generic_16_tile;
+}
+
+fn chunkTileCount(width: usize, height: usize) u10 {
+    if (width == 16 and height == 16) return 4;
+    if (width == 16 or height == 16) return 2;
+    return 1;
 }
 
 fn loadGenericTiles() void {

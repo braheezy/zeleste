@@ -2,6 +2,7 @@ const gba = @import("gba");
 const level = @import("generated_rooms.zig");
 const build_options = @import("build_options");
 const audio = @import("core/audio.zig");
+const background = @import("world/background.zig");
 const camera_mod = @import("world/camera.zig");
 const chapter_flow = @import("chapters/flow.zig");
 const chapter_systems = @import("chapters/systems.zig");
@@ -12,6 +13,7 @@ const frame = @import("core/frame.zig");
 const frontend = @import("core/frontend.zig");
 const gameplay_scene = @import("room/gameplay_scene.zig");
 const hair = @import("player/hair.zig");
+const math = @import("core/math.zig");
 const room_data = @import("world/room_data.zig");
 const player_controller = @import("player/controller.zig");
 const player_death = @import("player/death.zig");
@@ -40,6 +42,7 @@ pub const spawnFromBytes = room_data.spawnFromBytes;
 pub const spawnFromBytesAt = room_data.spawnFromBytesAt;
 const Camera = camera_mod.Camera;
 const Player = player_mod.State;
+const fixedToPixel = math.fixedToPixel;
 
 const bg_screenblock = video.bg_screenblock;
 const parallax_screenblock = video.parallax_screenblock;
@@ -68,6 +71,9 @@ pub fn run() void {
         respawn = selection.respawn;
         room_index = respawn.room_index;
     }
+    if (dev_start) {
+        save.beginChapterRunForRoom(room_index);
+    }
     playMusicForRoom(room_index);
     room_loader.loadGameplayRoom(room_index, .initial);
     gameplay_scene.loadWindSnowTiles();
@@ -93,7 +99,7 @@ pub fn run() void {
     gba.display.ctrl.* = .initMode0(.{
         .obj_mapping = .map_1d,
         .bg0 = true,
-        .bg1 = rooms[room_index].parallax != null,
+        .bg1 = background.hasForegroundLayer(rooms[room_index]),
         .obj = true,
     });
 
@@ -114,10 +120,6 @@ pub fn run() void {
         save_indicator.update();
         if (chapter_flow.updateTransitionIfActive(&player, &camera, &room_index, &respawn, input)) {
             continue;
-        }
-        if (input.isJustPressed(.start)) {
-            save.commitProgress();
-            save_indicator.update();
         }
         if (respawn_burst_timer > 0) {
             respawn_burst_timer -= 1;
@@ -175,7 +177,8 @@ pub fn run() void {
             room_systems.updatePlayerEntities(&player, room_index);
             if (room_systems.updateDynamicHazards(&player, room_index)) |death_cause| {
                 room_systems.handlePlayerDeathStart(room_index);
-                save.noteDeath();
+                save.noteDeathInRoom(room_index);
+                respawn = deathRespawnPoint(player, room_index, respawn);
                 player_death.begin(player, camera, death_cause, room_index);
                 death_timer = player_death.death_frames;
                 continue;
@@ -196,7 +199,8 @@ pub fn run() void {
         if (!cutscene_locked and !chapter_flow.endingHoldActive(room_index)) {
             if (room_systems.touchHazard(player, room_index)) |death_cause| {
                 room_systems.handlePlayerDeathStart(room_index);
-                save.noteDeath();
+                save.noteDeathInRoom(room_index);
+                respawn = deathRespawnPoint(player, room_index, respawn);
                 player_death.begin(player, next_camera, death_cause, room_index);
                 death_timer = player_death.death_frames;
                 continue;
@@ -205,15 +209,16 @@ pub fn run() void {
         const previous_room_index = room_index;
         var entry_side: ExitDirection = undefined;
         if (!cutscene_locked and !chapter_flow.endingHoldActive(room_index) and room_transition.trySwitch(&player, input, &room_index, &entry_side)) {
+            audio.stopSoundEffects();
             chapter_systems.handleRoomTransition(previous_room_index, room_index);
             playMusicForRoom(room_index);
-            respawn = respawnPoint(room_index, room_transition.respawnForEntrySide(room_index, entry_side));
+            respawn = respawnPoint(room_index, room_transition.respawnForEntry(room_index, player, entry_side));
             if (save.commitSessionCheckpoint(respawn.room_index, respawn.spawn)) {
                 save_indicator.update();
             }
             room_loader.hideGameplayDisplayForLoad();
             frame.sync();
-            room_loader.loadGameplayRoom(room_index, .transition);
+            room_loader.loadGameplayRoomPhased(room_index, .transition);
             room_systems.clearTransientEffects();
             player.hair_initialized = false;
             hair.update(&player, chapter_systems.endingHairOverrideActive(room_index));
@@ -250,6 +255,26 @@ fn respawnPoint(room_index: usize, spawn: Spawn) RespawnPoint {
     };
 }
 
+fn deathRespawnPoint(player: Player, room_index: usize, current_respawn: RespawnPoint) RespawnPoint {
+    if (!isCityS1Room(room_index)) return current_respawn;
+
+    const checkpoint = room_transition.respawnPointAt(room_index, 1) orelse return current_respawn;
+    const start_x = current_respawn.spawn.x;
+    const player_x = fixedToPixel(player.x);
+    const crossed_checkpoint = if (start_x > checkpoint.x)
+        player_x <= checkpoint.x
+    else
+        player_x >= checkpoint.x;
+
+    if (!crossed_checkpoint) return current_respawn;
+    return respawnPoint(room_index, checkpoint);
+}
+
+fn isCityS1Room(room_index: usize) bool {
+    const s1_room = city.flow.roomIndexFor(1, "s1") orelse return false;
+    return room_index == s1_room;
+}
+
 fn developmentStartOverride() bool {
     return build_options.start_override;
 }
@@ -268,11 +293,18 @@ fn followCamera(player: Player, room_index: usize, camera: Camera) Camera {
 }
 
 fn playMusicForRoom(room_index: usize) void {
-    if (city.flow.ownsGeneratedRoomIndex(room_index)) {
+    if (isCityCassetteRoom(room_index)) {
+        audio.playCityCassetteMusic();
+    } else if (city.flow.ownsGeneratedRoomIndex(room_index)) {
         audio.playCityMusic();
     } else {
         audio.playPrologueMusic();
     }
+}
+
+fn isCityCassetteRoom(room_index: usize) bool {
+    const cassette_room = city.flow.roomIndexFor(1, "11z") orelse return false;
+    return room_index == cassette_room;
 }
 
 fn renderCameraWithCutsceneShake(camera: Camera, room_index: usize) Camera {

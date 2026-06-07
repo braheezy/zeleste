@@ -1,5 +1,6 @@
 const camera_mod = @import("../world/camera.zig");
 const city = @import("city.zig");
+const collision = @import("../world/collision.zig");
 const player_mod = @import("../player/state.zig");
 
 const Camera = camera_mod.Camera;
@@ -7,6 +8,7 @@ const Player = player_mod.State;
 const PlayerDeathCause = player_mod.DeathCause;
 
 pub const FloorSurface = city.entities.FloorSurface;
+pub const BreakableWallImpact = city.entities.BreakableWallImpact;
 
 pub fn load(room_index: usize) void {
     if (!isCityRoom(room_index)) {
@@ -20,7 +22,7 @@ pub fn load(room_index: usize) void {
 pub fn loadObjectGraphics(room_index: usize) void {
     if (!isCityRoom(room_index)) return;
 
-    city.entities.loadObjectGraphics();
+    city.entities.loadObjectGraphics(room_index);
 }
 
 pub fn updateDynamicHazards(player: *Player, room_index: usize) ?PlayerDeathCause {
@@ -38,7 +40,7 @@ pub fn updatePlayerEntities(player: *Player, room_index: usize) void {
 pub fn handlePlayerDeathStart(room_index: usize) void {
     if (!isCityRoom(room_index)) return;
 
-    city.entities.handlePlayerDeathStart();
+    city.entities.handlePlayerDeathStart(room_index);
 }
 
 pub fn dynamicSolidRectAt(room_index: usize, x: i16, y: i16, width: i16, height: i16) bool {
@@ -47,8 +49,14 @@ pub fn dynamicSolidRectAt(room_index: usize, x: i16, y: i16, width: i16, height:
     return city.entities.dynamicSolidRectAt(x, y, width, height);
 }
 
-pub fn tryBreakDashCollision(player: *Player, room_index: usize) bool {
-    if (!isCityRoom(room_index)) return false;
+pub fn dynamicSpikeHitAt(room_index: usize, x: i16, y: i16, width: i16, height: i16, speed_x: i32, speed_y: i32) ?collision.SpikeHit {
+    if (!isCityRoom(room_index)) return null;
+
+    return city.entities.dynamicSpikeHitAt(x, y, width, height, speed_x, speed_y);
+}
+
+pub fn tryBreakDashCollision(player: *Player, room_index: usize) ?BreakableWallImpact {
+    if (!isCityRoom(room_index)) return null;
 
     return city.entities.tryBreakDashCollision(player, room_index);
 }

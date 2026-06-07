@@ -51,14 +51,12 @@ const player_climb_max_stamina = player_mod.climb_max_stamina;
 const player_climb_tired_stamina = player_mod.climb_tired_stamina;
 const player_climb_up_speed = player_mod.climb_up_speed;
 const player_climb_down_speed = player_mod.climb_down_speed;
+const player_climb_slip_speed = player_mod.climb_slip_speed;
 const player_climb_accel = player_mod.climb_accel;
 const player_climb_grab_y_mult = player_mod.climb_grab_y_mult;
 const player_climb_up_cost = player_mod.climb_up_cost;
 const player_climb_still_cost = player_mod.climb_still_cost;
 const player_climb_jump_cost = player_mod.climb_jump_cost;
-const player_climb_ledge_frames = player_mod.climb_ledge_frames;
-const player_climb_ledge_hop_pixels = player_mod.climb_ledge_hop_pixels;
-const player_climb_ledge_min_body_above = player_mod.climb_ledge_min_body_above;
 const player_climb_jump_lockout_frames = player_mod.climb_jump_lockout_frames;
 const player_var_jump_frames = player_mod.var_jump_frames;
 const player_wall_jump_var_jump_frames = player_mod.wall_jump_var_jump_frames;
@@ -86,6 +84,19 @@ const player_climb_pull_first_frame = player_mod.climb_pull_first_frame;
 const player_climb_pull_frame_count = player_mod.climb_pull_frame_count;
 const landing_dust_min_speed = fixed_one / 2;
 const landing_dust_air_frame_threshold: u8 = 4;
+const breakable_wall_recoil_speed: i32 = 0x180;
+const climb_check_dist: i16 = 2;
+const climb_up_check_dist: i16 = 2;
+const climb_hop_x_speed: i32 = 0x12C;
+const climb_hop_y_speed: i32 = -0x15E;
+const climb_hop_force_frames: u8 = 7;
+const climb_hop_grab_lockout_frames: u8 = 10;
+const climb_ledge_pull_frames: u8 = 6;
+
+const LedgeTarget = struct {
+    x: i16,
+    y: i16,
+};
 
 pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: usize, dash_unlocked: bool) void {
     const was_grounded = player.grounded;
@@ -132,14 +143,15 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
         }
     }
 
-    if (player.grounded and player.dash_timer == 0 and player.dash_refill_cooldown_timer == 0) {
-        refillPlayerDash(player);
+    if (player.climb_ledge_timer > 0) {
+        updateClimbLedgePull(player, room_index);
+        updateAnimation(player);
+        updateLandingDustAirFrames(player);
+        return;
     }
 
-    if (player.climb_ledge_timer > 0) {
-        updateClimbLedgeMotion(player, room_index);
-        updateAnimation(player);
-        return;
+    if (player.grounded and player.dash_timer == 0 and player.dash_refill_cooldown_timer == 0) {
+        refillPlayerDash(player);
     }
 
     if (player.dash_timer > 0) {
@@ -153,7 +165,7 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
     }
 
     player.moving = horizontal != 0;
-    if (horizontal != 0) {
+    if (horizontal != 0 and !player.climbing and !player.climb_dangling) {
         player.facing_left = horizontal < 0;
     }
 
@@ -177,10 +189,62 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
     updateHorizontalSpeed(player, effective_horizontal);
 
     const climb_wall_dir = climbWallDirection(player.*, room_index);
+    const climb_jump_wall_dir: i16 = if (player.climbing and player.climb_dir != 0)
+        player.climb_dir
+    else if (climb_wall_dir != 0)
+        climb_wall_dir
+    else
+        0;
+    const active_climb_wall_dir: i16 = if (climb_jump_wall_dir != 0) climb_jump_wall_dir else climbFacingDir(player.*);
+    const can_climb_jump = player.jump_buffer_timer > 0 and !player.grounded and
+        (player.climbing or (!player.grounded and grab_held and player.climb_grab_lockout_timer == 0 and player.stamina > 0 and climb_jump_wall_dir != 0));
     const wall_jump_dir = player_collision.wallJumpDirection(player.*, horizontal, room_index);
     var jumped_this_frame = false;
 
-    if (player.jump_buffer_timer > 0 and player.coyote_timer > 0) {
+    if (can_climb_jump) {
+        const jump_away_from_wall = horizontal == -active_climb_wall_dir or player.stamina <= 0;
+        if (jump_away_from_wall) {
+            const jump_dir = -active_climb_wall_dir;
+            dust.spawnJumpAtFeet(player.*);
+            player_sfx.playWallJump(active_climb_wall_dir);
+            player.vx = @as(i32, jump_dir) * player_wall_jump_h_speed;
+            player.vy = player_wall_jump_speed;
+            applyLiftBoostToJump(player);
+            player.force_move_x = jump_dir;
+            player.force_move_x_timer = player_wall_jump_force_frames;
+            player.apex_hang_disabled_timer = player_var_jump_frames + 8;
+            player.var_jump_speed = player.vy;
+            player.var_jump_timer = player_wall_jump_var_jump_frames;
+            player.jump_buffer_timer = 0;
+            player.coyote_timer = 0;
+            player.grounded = false;
+            player.facing_left = jump_dir < 0;
+            player.climb_grab_lockout_timer = player_climb_jump_lockout_frames;
+            player.climbing = false;
+            player.climb_dangling = false;
+            player.climb_dir = 0;
+            jumped_this_frame = true;
+        } else {
+            dust.spawnJumpAtFeet(player.*);
+            player_sfx.playClimbJump(active_climb_wall_dir);
+            player.stamina = @max(0, player.stamina - player_climb_jump_cost);
+            player.vx = 0;
+            player.vy = player_jump_speed;
+            applyLiftBoostToJump(player);
+            player.force_move_x_timer = 0;
+            player.var_jump_speed = player.vy;
+            player.var_jump_timer = player_var_jump_frames;
+            player.jump_buffer_timer = 0;
+            player.coyote_timer = 0;
+            player.grounded = false;
+            player.facing_left = active_climb_wall_dir < 0;
+            player.climb_grab_lockout_timer = player_climb_jump_lockout_frames;
+            player.climbing = false;
+            player.climb_dangling = false;
+            player.climb_dir = 0;
+            jumped_this_frame = true;
+        }
+    } else if (player.jump_buffer_timer > 0 and player.coyote_timer > 0) {
         if (player.grounded) {
             chapter_systems.releaseActorAtPlayer(room_index, player.*);
         }
@@ -198,27 +262,8 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
             player.climb_grab_lockout_timer = player_climb_jump_lockout_frames;
             player.climbing = false;
             player.climb_dangling = false;
+            player.climb_dir = 0;
         }
-    } else if (player.jump_buffer_timer > 0 and player.climbing and climb_wall_dir != 0 and horizontal != -climb_wall_dir and player.stamina > 0) {
-        dust.spawnJumpAtFeet(player.*);
-        player_sfx.playClimbJump(climb_wall_dir);
-        player.stamina = @max(0, player.stamina - player_climb_jump_cost);
-        player.vx = @as(i32, -climb_wall_dir) * (player_wall_jump_h_speed / 2);
-        player.vy = player_wall_jump_speed;
-        applyLiftBoostToJump(player);
-        player.force_move_x = -climb_wall_dir;
-        player.force_move_x_timer = player_wall_jump_force_frames / 2;
-        player.apex_hang_disabled_timer = player_var_jump_frames + 8;
-        player.var_jump_speed = player.vy;
-        player.var_jump_timer = player_wall_jump_var_jump_frames;
-        player.jump_buffer_timer = 0;
-        player.coyote_timer = 0;
-        player.grounded = false;
-        player.facing_left = climb_wall_dir > 0;
-        player.climb_grab_lockout_timer = player_climb_jump_lockout_frames;
-        player.climbing = false;
-        player.climb_dangling = false;
-        jumped_this_frame = true;
     } else if (player.jump_buffer_timer > 0 and wall_jump_dir != 0) {
         dust.spawnJumpAtFeet(player.*);
         player_sfx.playWallJump(-wall_jump_dir);
@@ -237,6 +282,7 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
         player.climb_grab_lockout_timer = player_climb_jump_lockout_frames;
         player.climbing = false;
         player.climb_dangling = false;
+        player.climb_dir = 0;
         jumped_this_frame = true;
     }
 
@@ -271,8 +317,9 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
         player.var_jump_timer = 0;
         player.wall_slide_timer = player_wall_slide_frames;
         player.wall_sliding = false;
-        if (!grab_held) {
+        if (!grab_held or vertical >= 0) {
             player.climbing = false;
+            player.climb_dir = 0;
         }
         player.climb_dangling = false;
     }
@@ -306,6 +353,7 @@ pub fn tryStartDash(player: *Player, horizontal: i16, vertical: i16, allow_dash:
     player.climb_grab_lockout_timer = 0;
     player.climbing = false;
     player.climb_dangling = false;
+    player.climb_dir = 0;
     player.wall_sliding = false;
     player.grounded = false;
     if (dash_x != 0) {
@@ -333,7 +381,12 @@ pub fn updateDashMovement(player: *Player, room_index: usize) void {
         player.dash_trail_timer = player_dash_trail_interval;
     }
 
-    _ = chapter_entities.tryBreakDashCollision(player, room_index);
+    if (chapter_entities.tryBreakDashCollision(player, room_index)) |impact| {
+        applyBreakableWallImpact(player, room_index, impact);
+        updateLandingDustAirFrames(player);
+        updateAnimation(player);
+        return;
+    }
     moveHorizontal(player, player.vx, room_index);
     player.grounded = false;
     moveVertical(player, player.vy, room_index);
@@ -443,6 +496,43 @@ fn endDash(player: *Player) void {
     player.dash_dir_y = 0;
 }
 
+fn applyBreakableWallImpact(player: *Player, room_index: usize, impact: chapter_entities.BreakableWallImpact) void {
+    if (impact.normal_x < 0) {
+        player.x = pixelToFixed(impact.wall_x - player_body_width);
+    } else if (impact.normal_x > 0) {
+        player.x = pixelToFixed(impact.wall_right);
+    }
+    if (impact.normal_y < 0) {
+        player.y = pixelToFixed(impact.wall_y - player_body_height);
+    } else if (impact.normal_y > 0) {
+        player.y = pixelToFixed(impact.wall_bottom);
+    }
+
+    const recoil_x = -impact.dash_dir_x;
+    const recoil_y = -impact.dash_dir_y;
+    var recoil_speed = breakable_wall_recoil_speed;
+    if (recoil_x != 0 and recoil_y != 0) {
+        recoil_speed = fixedMul(recoil_speed, player_dash_diagonal_mult);
+    }
+    player.vx = @as(i32, recoil_x) * recoil_speed;
+    player.vy = @as(i32, recoil_y) * recoil_speed;
+    player.dash_timer = 0;
+    player.dash_dir_x = 0;
+    player.dash_dir_y = 0;
+    player.dash_effect_timer = 0;
+    player.dash_trail_timer = 0;
+    player.var_jump_timer = 0;
+    player.climbing = false;
+    player.climb_dangling = false;
+    player.climb_dir = 0;
+    player.wall_sliding = false;
+    player.grounded = player_collision.floorContact(player.*, room_index);
+    player.moving = player.vx != 0;
+    if (player.vx != 0) {
+        player.facing_left = player.vx < 0;
+    }
+}
+
 fn applyLiftBoostToJump(player: *Player) void {
     if (player.lift_boost_timer == 0) return;
     player.vx += player.lift_boost_x;
@@ -516,31 +606,47 @@ fn updateClimb(player: *Player, grab_held: bool, vertical: i16, room_index: usiz
     if (!grab_held or player.stamina <= 0 or player.climb_grab_lockout_timer > 0) {
         player.climbing = false;
         player.climb_dangling = false;
+        player.climb_dir = 0;
         return;
     }
 
-    const facing_dir: i16 = if (player.facing_left) -1 else 1;
-    const climb_dir = if (player_collision.wallContact(player.*, facing_dir, room_index))
-        facing_dir
-    else if (player_collision.wallContact(player.*, -facing_dir, room_index))
-        -facing_dir
+    const preferred_dir = climbFacingDir(player.*);
+    var climb_dir: i16 = if (climbContact(player.*, preferred_dir, room_index))
+        preferred_dir
+    else if (climbContact(player.*, -preferred_dir, room_index))
+        -preferred_dir
     else
         0;
+    if (climb_dir == 0 and !player.climbing and player.vy >= 0 and vertical < 1) {
+        climb_dir = if (tryClimbStartLift(player, preferred_dir, room_index))
+            preferred_dir
+        else if (tryClimbStartLift(player, -preferred_dir, room_index))
+            -preferred_dir
+        else
+            0;
+    }
     if (climb_dir == 0) {
-        if (player.climbing and vertical < 0 and tryClimbLedge(player, facing_dir, room_index)) {
+        if (player.climbing and player.vy < 0 and tryClimbHopAfterLostWall(player, preferred_dir, room_index)) {
             return;
         }
         player.climbing = false;
         player.climb_dangling = false;
+        player.climb_dir = 0;
+        return;
+    }
+    if (!player.climbing and player.vy < 0) {
+        player.climb_dangling = false;
+        player.climb_dir = 0;
         return;
     }
     if (!player.climbing and player.stamina <= player_climb_tired_stamina) {
         player.climb_dangling = false;
+        player.climb_dir = 0;
         return;
     }
 
     player.facing_left = climb_dir < 0;
-    if (player.climbing and vertical < 0 and tryClimbLedge(player, climb_dir, room_index)) {
+    if (player.climbing and vertical < 0 and tryClimbHopFromWall(player, climb_dir, room_index)) {
         return;
     }
 
@@ -551,15 +657,19 @@ fn updateClimb(player: *Player, grab_held: bool, vertical: i16, room_index: usiz
 
     player.climbing = true;
     player.climb_dangling = false;
+    player.climb_dir = climb_dir;
     player.wall_sliding = false;
     player.vx = 0;
 
-    const target_y: i32 = if (vertical < 0)
+    var target_y: i32 = if (vertical < 0)
         player_climb_up_speed
     else if (vertical > 0)
         player_climb_down_speed
     else
         0;
+    if (vertical == 0 and !player.grounded and climbAtLedgeTop(player.*, climb_dir, room_index)) {
+        target_y = player_climb_slip_speed;
+    }
     player.vy = approach(player.vy, target_y, player_climb_accel);
     player.climb_dangling = vertical == 0 and !player.grounded and climbDangleContact(player.*, climb_dir, room_index);
 
@@ -574,9 +684,39 @@ fn updateClimb(player: *Player, grab_held: bool, vertical: i16, room_index: usiz
 }
 
 fn climbWallDirection(player: Player, room_index: usize) i16 {
-    if (player_collision.wallContact(player, -1, room_index)) return -1;
-    if (player_collision.wallContact(player, 1, room_index)) return 1;
+    if (climbContact(player, -1, room_index)) return -1;
+    if (climbContact(player, 1, room_index)) return 1;
     return 0;
+}
+
+fn climbFacingDir(player: Player) i16 {
+    if ((player.climbing or player.climb_dangling) and player.climb_dir != 0) return player.climb_dir;
+    return if (player.facing_left) -1 else 1;
+}
+
+fn climbContact(player: Player, dir: i16, room_index: usize) bool {
+    return climbContactAt(fixedToPixel(player.x), fixedToPixel(player.y), dir, room_index);
+}
+
+fn climbContactAt(x: i16, y: i16, dir: i16, room_index: usize) bool {
+    const check_x = x + if (dir < 0) @as(i16, -climb_check_dist) else player_body_width;
+    return player_collision.solidRectAt(check_x, y, climb_check_dist, player_body_height, room_index) or
+        player_collision.dynamicSolidRectAt(room_index, check_x, y, climb_check_dist, player_body_height);
+}
+
+fn tryClimbStartLift(player: *Player, dir: i16, room_index: usize) bool {
+    const start_x = fixedToPixel(player.x);
+    const start_y = fixedToPixel(player.y);
+    var lift: i16 = 1;
+    while (lift <= climb_up_check_dist) : (lift += 1) {
+        const lifted_y = start_y - lift;
+        if (player_collision.collidesAt(start_x, lifted_y, room_index)) continue;
+        if (climbContactAt(start_x, lifted_y, dir, room_index)) {
+            player.y = pixelToFixed(lifted_y);
+            return true;
+        }
+    }
+    return false;
 }
 
 fn climbDangleContact(player: Player, dir: i16, room_index: usize) bool {
@@ -592,84 +732,141 @@ fn climbDangleContact(player: Player, dir: i16, room_index: usize) bool {
     return hands_caught and !body_blocked;
 }
 
-fn tryClimbLedge(player: *Player, dir: i16, room_index: usize) bool {
+fn tryClimbHopFromWall(player: *Player, dir: i16, room_index: usize) bool {
+    if (!climbLowerSideContact(player.*, dir, room_index)) return false;
+    return tryClimbHop(player, dir, room_index);
+}
+
+fn tryClimbHopAfterLostWall(player: *Player, dir: i16, room_index: usize) bool {
+    return tryClimbHop(player, dir, room_index);
+}
+
+fn tryClimbHop(player: *Player, dir: i16, room_index: usize) bool {
+    if (player.grounded) return false;
     const start_x = fixedToPixel(player.x);
     const start_y = fixedToPixel(player.y);
+    if (player_collision.collidesAt(start_x, start_y - 1, room_index)) return false;
+    if (!climbUpperSideClear(player.*, dir, room_index)) return false;
 
-    const min_y_offset = player_climb_ledge_min_body_above - player_body_height;
-    var y_offset: i16 = min_y_offset;
-    while (y_offset <= 0) : (y_offset += 1) {
-        var over: i16 = player_body_width - 2;
-        while (over <= player_body_width + 2) : (over += 1) {
-            const candidate_x = start_x + dir * over;
-            const candidate_y = start_y + y_offset;
-            if (!player_collision.collidesAt(candidate_x, candidate_y, room_index) and player_collision.floorContactAt(candidate_x, candidate_y, room_index)) {
-                player_sfx.playClimbLedge(player);
-                startClimbLedgeMotion(player, candidate_x, candidate_y);
-                return true;
-            }
-        }
+    if (climbLedgeTarget(player.*, dir, room_index)) |target| {
+        startClimbLedgePull(player, dir, target);
+        return true;
     }
 
-    return false;
+    startClimbHop(player, dir);
+    return true;
 }
 
-fn startClimbLedgeMotion(player: *Player, target_x: i16, target_y: i16) void {
-    player.climb_ledge_timer = player_climb_ledge_frames;
+fn climbAtLedgeTop(player: Player, dir: i16, room_index: usize) bool {
+    return !player.grounded and climbUpperSideClear(player, dir, room_index) and climbLowerSideContact(player, dir, room_index);
+}
+
+fn climbUpperSideClear(player: Player, dir: i16, room_index: usize) bool {
+    const start_x = fixedToPixel(player.x);
+    const start_y = fixedToPixel(player.y);
+    const side_x = start_x + if (dir < 0) @as(i16, -1) else player_body_width;
+    if (player_collision.wallSolidAtPixel(side_x, start_y, room_index) or
+        player_collision.wallSolidAtPixel(side_x, start_y + 4, room_index))
+    {
+        return false;
+    }
+    return true;
+}
+
+fn climbLowerSideContact(player: Player, dir: i16, room_index: usize) bool {
+    const start_x = fixedToPixel(player.x);
+    const start_y = fixedToPixel(player.y);
+    const side_x = start_x + if (dir < 0) @as(i16, -1) else player_body_width;
+    return player_collision.wallSolidAtPixel(side_x, start_y + 8, room_index) or
+        player_collision.wallSolidAtPixel(side_x, start_y + player_body_height - 3, room_index);
+}
+
+fn climbLedgeTarget(player: Player, dir: i16, room_index: usize) ?LedgeTarget {
+    const start_x = fixedToPixel(player.x);
+    const start_y = fixedToPixel(player.y);
+    const side_x = start_x + if (dir < 0) @as(i16, -1) else player_body_width;
+    var scan_y = start_y + 5;
+    const scan_end = start_y + player_body_height;
+    while (scan_y <= scan_end) : (scan_y += 1) {
+        if (!isWallTopAt(side_x, scan_y, room_index)) continue;
+        const target = LedgeTarget{
+            .x = start_x + dir * player_body_width,
+            .y = scan_y - player_body_height,
+        };
+        if (validClimbLedgeTarget(target, room_index)) return target;
+    }
+    return null;
+}
+
+fn validClimbLedgeTarget(target: LedgeTarget, room_index: usize) bool {
+    return !player_collision.collidesAt(target.x, target.y, room_index) and
+        player_collision.floorContactAt(target.x, target.y, room_index);
+}
+
+fn isWallTopAt(x: i16, y: i16, room_index: usize) bool {
+    return player_collision.wallSolidAtPixel(x, y, room_index) and
+        !player_collision.wallSolidAtPixel(x, y - 1, room_index);
+}
+
+fn startClimbLedgePull(player: *Player, dir: i16, target: LedgeTarget) void {
+    player_sfx.playClimbLedge(player);
+    player.climb_ledge_timer = climb_ledge_pull_frames;
     player.climb_ledge_start_x = player.x;
     player.climb_ledge_start_y = player.y;
-    player.climb_ledge_target_x = pixelToFixed(target_x);
-    player.climb_ledge_target_y = pixelToFixed(target_y);
+    player.climb_ledge_target_x = pixelToFixed(target.x);
+    player.climb_ledge_target_y = pixelToFixed(target.y);
     player.vx = 0;
     player.vy = 0;
-    player.grounded = false;
-    player.climbing = true;
+    player.force_move_x = 0;
+    player.force_move_x_timer = 0;
+    player.climb_grab_lockout_timer = climb_hop_grab_lockout_frames;
+    player.climbing = false;
     player.climb_dangling = false;
+    player.climb_dir = 0;
     player.wall_sliding = false;
+    player.grounded = false;
+    player.facing_left = dir < 0;
 }
 
-fn updateClimbLedgeMotion(player: *Player, room_index: usize) void {
-    const duration: i32 = player_climb_ledge_frames;
-    const elapsed: i32 = duration - @as(i32, player.climb_ledge_timer) + 1;
-    const remaining = duration - elapsed;
-    const denom = duration * duration;
-    const eased = denom - remaining * remaining;
-    const arc = @divTrunc(4 * player_climb_ledge_hop_pixels * fixed_one * elapsed * remaining, denom);
-
-    const current_x = fixedToPixel(player.x);
-    const current_y = fixedToPixel(player.y);
-    const next_x = fixedToPixel(player.climb_ledge_start_x + @divTrunc((player.climb_ledge_target_x - player.climb_ledge_start_x) * eased, denom));
-    const next_y = fixedToPixel(player.climb_ledge_start_y + @divTrunc((player.climb_ledge_target_y - player.climb_ledge_start_y) * elapsed, duration) - arc);
-    if (!player_collision.collidesAt(next_x, next_y, room_index)) {
-        player.x = pixelToFixed(next_x);
-        player.y = pixelToFixed(next_y);
-    } else if (!player_collision.collidesAt(current_x, next_y, room_index)) {
-        player.y = pixelToFixed(next_y);
-    } else if (!player_collision.collidesAt(next_x, current_y, room_index)) {
-        player.x = pixelToFixed(next_x);
-    }
+fn updateClimbLedgePull(player: *Player, room_index: usize) void {
+    const remaining = @min(player.climb_ledge_timer, climb_ledge_pull_frames);
+    const elapsed: u8 = climb_ledge_pull_frames - remaining + 1;
+    player.x = interpolateFixed(player.climb_ledge_start_x, player.climb_ledge_target_x, elapsed, climb_ledge_pull_frames);
+    player.y = interpolateFixed(player.climb_ledge_start_y, player.climb_ledge_target_y, elapsed, climb_ledge_pull_frames);
     player.vx = 0;
     player.vy = 0;
-    player.moving = false;
-    player.grounded = false;
-    player.climbing = true;
+    player.climbing = false;
     player.climb_dangling = false;
+    player.climb_dir = 0;
     player.wall_sliding = false;
-
+    player.grounded = false;
     player.climb_ledge_timer -= 1;
     if (player.climb_ledge_timer == 0) {
-        const target_x = fixedToPixel(player.climb_ledge_target_x);
-        const target_y = fixedToPixel(player.climb_ledge_target_y);
-        if (!player_collision.collidesAt(target_x, target_y, room_index)) {
-            player.x = player.climb_ledge_target_x;
-            player.y = player.climb_ledge_target_y;
-        }
-        player_collision.resolvePlayerEmbedding(player, room_index);
-        player.grounded = true;
-        player.climbing = false;
-        player.stamina = player_climb_max_stamina;
-        player.wall_slide_timer = player_wall_slide_frames;
+        player.x = player.climb_ledge_target_x;
+        player.y = player.climb_ledge_target_y;
+        player.grounded = player_collision.floorContact(player.*, room_index);
     }
+}
+
+fn interpolateFixed(start: i32, target: i32, elapsed: u8, total: u8) i32 {
+    return start + @divTrunc((target - start) * @as(i32, elapsed), @as(i32, total));
+}
+
+fn startClimbHop(player: *Player, dir: i16) void {
+    player_sfx.playClimbLedge(player);
+    player.vx = @as(i32, dir) * climb_hop_x_speed;
+    if (player.vy > climb_hop_y_speed) {
+        player.vy = climb_hop_y_speed;
+    }
+    player.force_move_x = dir;
+    player.force_move_x_timer = climb_hop_force_frames;
+    player.climb_grab_lockout_timer = climb_hop_grab_lockout_frames;
+    player.climb_ledge_timer = 0;
+    player.climbing = false;
+    player.climb_dangling = false;
+    player.climb_dir = 0;
+    player.wall_sliding = false;
+    player.grounded = false;
 }
 
 fn chooseNextIdle(player: *Player) void {

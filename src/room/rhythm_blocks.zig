@@ -31,6 +31,7 @@ const tiles_per_variant: u10 = 4;
 const tile_count = tiles_per_variant * 4;
 const palette_bank: u4 = 1;
 const color_frames: u16 = 60;
+const visual_y_offset: i16 = 1;
 
 const Color = enum(u8) {
     blue = 0,
@@ -44,7 +45,6 @@ const Block = struct {
     w: u8 = 0,
     h: u8 = 0,
     color: Color = .blue,
-    suppressed: bool = false,
 };
 
 var blocks: [max_blocks]Block = [_]Block{.{}} ** max_blocks;
@@ -92,27 +92,20 @@ pub fn loadGraphics() void {
     gba.display.memcpyObjectTiles4Bpp(base_tile, &tiles);
 }
 
-pub fn update(player: *Player) void {
-    if (block_count == 0) return;
+pub fn update(player: *Player) bool {
+    if (block_count == 0) return false;
+    const previous_timer = timer;
     timer = (timer + 1) % (color_frames * 2);
 
     var index: usize = 0;
     while (index < block_count) : (index += 1) {
-        const block = &blocks[index];
+        const block = blocks[index];
         if (!block.active) continue;
-
-        if (!colorIsActive(block.color)) {
-            block.suppressed = false;
-            continue;
-        }
-
-        const overlaps_player = playerOverlapsBlock(player.*, block.*);
-        if (block.suppressed) {
-            if (!overlaps_player) block.suppressed = false;
-        } else if (overlaps_player) {
-            block.suppressed = true;
-        }
+        if (colorIsActiveAt(block.color, previous_timer)) continue;
+        if (!colorIsActive(block.color)) continue;
+        if (playerOverlapsBlock(player.*, block)) return true;
     }
+    return false;
 }
 
 pub fn floorAtPlayer(player: Player) bool {
@@ -205,7 +198,7 @@ fn objectCapacity() usize {
 }
 
 fn solid(block: Block) bool {
-    return block.active and colorIsActive(block.color) and !block.suppressed;
+    return block.active and colorIsActive(block.color);
 }
 
 fn visualActive(block: Block) bool {
@@ -213,7 +206,11 @@ fn visualActive(block: Block) bool {
 }
 
 fn colorIsActive(color: Color) bool {
-    const phase = @divTrunc(timer, color_frames) & 1;
+    return colorIsActiveAt(color, timer);
+}
+
+fn colorIsActiveAt(color: Color, at_timer: u16) bool {
+    const phase = @divTrunc(at_timer, color_frames) & 1;
     return switch (color) {
         .blue => phase == 0,
         .pink => phase == 1,
@@ -261,7 +258,7 @@ fn drawBlock(block: Block, camera: Camera, first_object: usize, object_offset: *
             drawObject(
                 first_object + object_offset.*,
                 block.x + @as(i16, @intCast(x)) - camera.x,
-                block.y + @as(i16, @intCast(y)) - camera.y,
+                block.y + @as(i16, @intCast(y)) + visual_y_offset - camera.y,
                 variantTile(block.color, visualActive(block)),
                 objectSize(chunk_w, chunk_h),
             );

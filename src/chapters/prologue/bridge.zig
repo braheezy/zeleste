@@ -17,6 +17,7 @@ const Player = player_mod.State;
 const SceneRect = room_data.SceneRect;
 const Spawn = room_data.Spawn;
 const approach = math.approach;
+const clampI16 = math.clampI16;
 const fixedToPixel = math.fixedToPixel;
 const pixelToFixed = math.pixelToFixed;
 const hideObject = oam.hideObject;
@@ -44,6 +45,10 @@ const world_x: i16 = 64;
 const world_y: i16 = 126;
 const ending_early_shake_frames: u8 = 12;
 const ending_gap_chunks = 3;
+const ending_hold_left_margin: i16 = 16;
+const ending_hold_right_margin: i16 = 96;
+const ending_hold_fall_depth: i16 = 8;
+const ending_hold_delay_frames: u8 = 12;
 const collapse_keep_behind_px: i16 = 40;
 const max_chunks = 128;
 const max_objects = 30;
@@ -87,6 +92,7 @@ var drawn_object_count: usize = 0;
 var bridge_active: bool = false;
 var sequence_started: bool = false;
 var ending_hold: bool = false;
+var ending_hold_candidate_frames: u8 = 0;
 var ending_dash_started: bool = false;
 var collapse_shake_tick: u8 = 0;
 var ending_start_index: usize = max_chunks;
@@ -99,6 +105,7 @@ pub fn load(room_index: usize, active_room: bool) void {
     bridge_active = active_room;
     sequence_started = false;
     ending_hold = false;
+    ending_hold_candidate_frames = 0;
     ending_dash_started = false;
     collapse_shake_tick = 0;
     ending_start_index = max_chunks;
@@ -258,21 +265,37 @@ pub fn endingHoldActive() bool {
 }
 
 pub fn shouldStartEndingHold(player: Player, active_room: bool) bool {
-    if (!bridge_active or !active_room or !ending.active or !ending.final_triggered) return false;
+    if (!bridge_active or !active_room or !ending.active or !ending.final_triggered) {
+        ending_hold_candidate_frames = 0;
+        return false;
+    }
     const player_center_x = fixedToPixel(player.x) + player_mod.body_width / 2;
-    const player_bottom = fixedToPixel(player.y) + player_mod.body_height;
-    return player_center_x >= ending.platform.x - 16 and
-        player_center_x <= ending.platform.right() + 56 and
-        player_bottom > ending.platform.y + 10 and
-        player.vy > 0;
+    const player_top = fixedToPixel(player.y);
+    const player_bottom = player_top + player_mod.body_height;
+    const platform = ending.platform;
+    const in_hold_x = player_center_x >= platform.x - ending_hold_left_margin and
+        player_center_x <= platform.right() + ending_hold_right_margin and
+        player_top <= platform.y + visual_height + 72;
+    const falling_short = player.vy > 0 and player_bottom >= platform.y + ending_hold_fall_depth;
+    if (!in_hold_x or !falling_short) {
+        ending_hold_candidate_frames = 0;
+        return false;
+    }
+
+    if (ending_hold_candidate_frames >= ending_hold_delay_frames) return true;
+    ending_hold_candidate_frames += 1;
+    return false;
 }
 
-pub fn startEndingHold() void {
+pub fn startEndingHold(player: *Player) void {
     ending_hold = true;
+    ending_hold_candidate_frames = 0;
+    snapPlayerForEndingHold(player);
 }
 
 pub fn markEndingDashStarted() void {
     ending_hold = false;
+    ending_hold_candidate_frames = 0;
     ending_dash_started = true;
 }
 
@@ -293,6 +316,7 @@ pub fn endingHintOrDefault(player_x: i16, player_y: i16) Spawn {
 pub fn deactivateForOverworld() void {
     bridge_active = false;
     ending_hold = false;
+    ending_hold_candidate_frames = 0;
     ending_dash_started = false;
     ending = .{};
     collapse_shake_tick = 0;
@@ -502,7 +526,26 @@ fn endingTriggerActive(player: Player) bool {
     const player_right = player_left + player_mod.body_width;
     const player_bottom = player_top + player_mod.body_height;
     const trigger = ending.trigger;
-    return rectsOverlap(player_left, player_top, player_right, player_bottom, trigger.x, trigger.y, trigger.right(), trigger.bottom());
+    if (rectsOverlap(player_left, player_top, player_right, player_bottom, trigger.x, trigger.y, trigger.right(), trigger.bottom())) {
+        return true;
+    }
+
+    const platform = ending.platform;
+    const player_center_x = player_left + player_mod.body_width / 2;
+    return player_center_x >= trigger.right() and
+        player_center_x <= platform.right() + ending_hold_right_margin and
+        player_bottom >= trigger.y - 48 and
+        player_top <= platform.y + visual_height + 96;
+}
+
+fn snapPlayerForEndingHold(player: *Player) void {
+    if (!ending.active) return;
+
+    const platform = ending.platform;
+    const player_x = fixedToPixel(player.x);
+    const hold_x = clampI16(player_x, platform.x - ending_hold_left_margin, platform.right() + 32);
+
+    player.x = pixelToFixed(hold_x);
 }
 
 fn chunkIndexAtX(x: i16) ?usize {

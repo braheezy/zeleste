@@ -13,6 +13,7 @@ const math = @import("../../core/math.zig");
 const player_mod = @import("../../player/state.zig");
 const room_data = @import("../../world/room_data.zig");
 const text_mod = @import("../../core/text.zig");
+const ui_sfx = @import("../../core/ui_sfx.zig");
 
 const Camera = camera_mod.Camera;
 const Player = player_mod.State;
@@ -219,6 +220,7 @@ fn lockPlayer(player: *Player) void {
     player.climbing = false;
     player.wall_sliding = false;
     player.climb_dangling = false;
+    player.climb_dir = 0;
     player.dash_timer = 0;
     player.dash_cooldown_timer = 0;
 }
@@ -233,11 +235,13 @@ fn updateDialogue(input: gba.input.BufferedKeysState, cutscene: *const GrannyCut
     const page = cutscene.dialogue[state.dialogue_index];
     const page_end = cutscene_dialogue.wrappedNextOffset(page, state.dialogue_offset);
     if (dialogueUsesTypewriter(page.text) and state.dialogue_reveal_offset < page_end) {
+        ui_sfx.dialogueAdvance(pageSpeakerIsMadeline(page));
         revealDialogueTo(page.text, page_end);
         return;
     }
 
     if (page_end < page.text.len) {
+        ui_sfx.dialogueAdvance(pageSpeakerIsMadeline(page));
         state.dialogue_offset = page_end;
         state.dialogue_cache.invalidate();
         resetDialogueReveal(cutscene);
@@ -246,16 +250,19 @@ fn updateDialogue(input: gba.input.BufferedKeysState, cutscene: *const GrannyCut
 
     const completed_page = state.dialogue_index;
     if (completed_page == 0) {
+        ui_sfx.dialogueBoxOut(pageSpeakerIsMadeline(page));
         state.phase = .walk_talk;
         cutscene_dialogue.hideObjects(dialogue_first_object);
         return;
     }
     if (completed_page == 2) {
+        ui_sfx.dialogueBoxOut(pageSpeakerIsMadeline(page));
         state.phase = .walk_edge;
         cutscene_dialogue.hideObjects(dialogue_first_object);
         return;
     }
     if (completed_page == 3) {
+        ui_sfx.dialogueBoxOut(pageSpeakerIsMadeline(page));
         state.phase = .laugh_pause;
         state.laugh_pause_timer = laugh_text.pause_frames;
         cutscene_dialogue.hideObjects(dialogue_first_object);
@@ -264,13 +271,23 @@ fn updateDialogue(input: gba.input.BufferedKeysState, cutscene: *const GrannyCut
     }
     const next_page = completed_page + 1;
     if (next_page >= cutscene.dialogue.len) {
+        ui_sfx.dialogueBoxOut(pageSpeakerIsMadeline(page));
         finish(cutscene);
     } else {
-        startDialogue(next_page);
+        ui_sfx.dialogueAdvance(pageSpeakerIsMadeline(page));
+        continueDialogue(next_page);
     }
 }
 
 fn startDialogue(index: u8) void {
+    startDialogueInternal(index, true);
+}
+
+fn continueDialogue(index: u8) void {
+    startDialogueInternal(index, false);
+}
+
+fn startDialogueInternal(index: u8, play_box_in: bool) void {
     state.phase = .dialogue;
     state.dialogue_index = index;
     state.dialogue_offset = 0;
@@ -278,6 +295,9 @@ fn startDialogue(index: u8) void {
     state.dialogue_cache.invalidate();
     if (rooms[state.room_index].granny_cutscene) |cutscene| {
         resetDialogueReveal(cutscene);
+        if (play_box_in and index < cutscene.dialogue.len) {
+            ui_sfx.dialogueBoxIn(pageSpeakerIsMadeline(cutscene.dialogue[index]));
+        }
     }
 }
 
@@ -321,6 +341,7 @@ fn updateDialogueReveal(cutscene: *const GrannyCutscene) void {
     const old_offset = state.dialogue_reveal_offset;
     const new_offset = text_mod.advanceRevealByWords(page.text, old_offset, target, ominous_words_per_tick);
     revealDialogueTo(page.text, new_offset);
+    if (new_offset != old_offset) ui_sfx.dialogueText();
 }
 
 fn revealDialogueTo(text: []const u8, offset: usize) void {
@@ -350,6 +371,10 @@ fn dialogueUsesTypewriter(text: []const u8) bool {
     return text_mod.contains(text, "strange place") or
         text_mod.contains(text, "see things") or
         text_mod.contains(text, "ready to see");
+}
+
+fn pageSpeakerIsMadeline(page: room_data.CutsceneDialoguePage) bool {
+    return text_mod.startsWith(page.speaker, "Madeline");
 }
 
 fn laughTextAllowedInRoom(room_index: usize) bool {

@@ -15,6 +15,7 @@
                 --accent: #72d6ff;
                 --solid: rgba(255, 72, 72, 0.52);
                 --breakable: rgba(255, 154, 76, 0.62);
+                --breakable-dirt: rgba(176, 102, 54, 0.68);
                 --oneway: rgba(92, 188, 255, 0.64);
                 --spike: rgba(255, 72, 188, 0.68);
                 --spring: rgba(255, 205, 74, 0.72);
@@ -27,6 +28,7 @@
                 --traffic: rgba(255, 224, 92, 0.72);
                 --traffic-blue: rgba(80, 174, 255, 0.76);
                 --traffic-pink: rgba(255, 88, 190, 0.76);
+                --hidden-cover: rgba(88, 162, 255, 0.58);
                 --exit-line: rgba(104, 255, 152, 0.95);
                 --death-line: rgba(255, 72, 72, 0.95);
                 --spawn: rgba(80, 255, 136, 0.88);
@@ -192,12 +194,21 @@
                     <option value="fallingBlock">Falling Block</option>
                     <option value="mechBlock">Mech Block</option>
                     <option value="trafficBlock">Rhythm Block</option>
+                    <option value="hiddenCover">Hidden Cover</option>
                     <option value="exitLine">Exit Line</option>
                     <option value="pitDeathLine">Pit Death Line</option>
                     <option value="spawn">Spawn Point</option>
                     <option value="foregroundStamp">Foreground Stamp</option>
                     <option value="birdNpc">Bird NPC</option>
                 </select>
+
+                <div id="breakablePanel">
+                    <label for="breakableMaterial">Breakable Material</label>
+                    <select id="breakableMaterial">
+                        <option value="smashableIce">Ice</option>
+                        <option value="smashableDirt">Dirt</option>
+                    </select>
+                </div>
 
                 <div id="spikePanel">
                     <label for="spikeDirection">Spike/Spring Direction</label>
@@ -291,6 +302,7 @@
                     <div>Falling Blocks: <span id="fallingBlockStats">0</span></div>
                     <div>Mech Blocks: <span id="mechBlockStats">0</span></div>
                     <div>Rhythm Blocks: <span id="trafficBlockStats">0</span></div>
+                    <div>Hidden Covers: <span id="hiddenCoverStats">0</span></div>
                     <div>Exits: <span id="exitLineStats">0</span></div>
                     <div>Pit Deaths: <span id="pitDeathLineStats">0</span></div>
                     <div>Spawn: <span id="spawnStats">none</span></div>
@@ -313,6 +325,7 @@
         <script>
             const backgroundSelect = document.getElementById("backgroundSelect");
             const modeSelect = document.getElementById("mode");
+            const breakableMaterialSelect = document.getElementById("breakableMaterial");
             const spikeDirectionSelect = document.getElementById("spikeDirection");
             const tileSizeInput = document.getElementById("tileSize");
             const zoomInput = document.getElementById("zoom");
@@ -334,6 +347,7 @@
             const fallingBlockStats = document.getElementById("fallingBlockStats");
             const mechBlockStats = document.getElementById("mechBlockStats");
             const trafficBlockStats = document.getElementById("trafficBlockStats");
+            const hiddenCoverStats = document.getElementById("hiddenCoverStats");
             const exitLineStats = document.getElementById("exitLineStats");
             const pitDeathLineStats = document.getElementById("pitDeathLineStats");
             const spawnStats = document.getElementById("spawnStats");
@@ -365,6 +379,7 @@
             let gridH = 0;
             let tiles = new Set();
             let breakableTiles = new Set();
+            let breakableMaterials = new Map();
             let oneWayTiles = new Set();
             let spikeTiles = new Map();
             let springs = [];
@@ -377,6 +392,7 @@
             let selectedMechBlock = "";
             let trafficBlocks = new Map();
             let selectedTrafficBlock = "";
+            let hiddenCoverTiles = new Set();
             let exitLines = [];
             let pitDeathLines = [];
             let respawnPoints = [];
@@ -423,6 +439,7 @@
 
             const validSpikeDirections = new Set(["up", "down", "left", "right"]);
             const validTrafficBlockColors = new Set(["blue", "pink"]);
+            const validBreakableMaterials = new Set(["smashableIce", "smashableDirt"]);
             const springLongSize = 14;
             const springThickness = 4;
             const stonePlatformSize = 8;
@@ -435,7 +452,7 @@
             const strawberryWidth = 18;
             const strawberryHeight = 16;
             const dashRefillSize = 12;
-            const cassetteWidth = 16;
+            const cassetteWidth = 24;
             const cassetteHeight = 16;
             const strawberrySpritePalette = {
                 K: "#0b0c12",
@@ -492,6 +509,16 @@
 
             function currentSpikeDirection() {
                 return normalizeSpikeDirection(spikeDirectionSelect.value);
+            }
+
+            function normalizeBreakableMaterial(value) {
+                const material = String(value || "smashableIce").replace(/[-_]/g, "").toLowerCase();
+                if (material === "dirt" || material === "breakabledirt" || material === "smashabledirt") return "smashableDirt";
+                return "smashableIce";
+            }
+
+            function currentBreakableMaterial() {
+                return normalizeBreakableMaterial(breakableMaterialSelect.value);
             }
 
             function normalizeStrawberryType(value) {
@@ -653,7 +680,8 @@
                 rememberCurrentExitTargetRoom();
                 currentBackground = backgrounds.find((item) => item.image === backgroundSelect.value) || backgrounds[0];
                 if (!currentBackground) return;
-                await Promise.all([loadImage(currentBackground.image), loadAnnotation(currentBackground.image)]);
+                await loadImage(currentBackground.image);
+                await loadAnnotation(currentBackground.image);
                 redraw();
                 setStatus(`Loaded ${currentBackground.image}`);
             }
@@ -670,6 +698,7 @@
             async function loadAnnotation(imagePath) {
                 tiles = new Set();
                 breakableTiles = new Set();
+                breakableMaterials = new Map();
                 oneWayTiles = new Set();
                 spikeTiles = new Map();
                 springs = [];
@@ -682,6 +711,7 @@
                 selectedMechBlock = "";
                 trafficBlocks = new Map();
                 selectedTrafficBlock = "";
+                hiddenCoverTiles = new Set();
                 exitLines = [];
                 pitDeathLines = [];
                 respawnPoints = [];
@@ -734,7 +764,9 @@
                     if (kind === "solid") {
                         tiles.add(key(tile.x, tile.y));
                     } else if (kind === "breakableWall" || kind === "breakable") {
-                        breakableTiles.add(key(tile.x, tile.y));
+                        const tileKey = key(tile.x, tile.y);
+                        breakableTiles.add(tileKey);
+                        breakableMaterials.set(tileKey, normalizeBreakableMaterial(tile.material));
                     } else if (kind === "oneWay") {
                         oneWayTiles.add(key(tile.x, tile.y));
                     } else if (kind === "spike" || kind === "hazard") {
@@ -813,6 +845,17 @@
                             color: trafficBlockColorFromSource(tile),
                         });
                         trafficBlocks.set(key(block.x, block.y), block);
+                    } else if (kind === "hiddenCover" || kind === "secretCover" || kind === "cover") {
+                        hiddenCoverTiles.add(key(Number(tile.x) || 0, Number(tile.y) || 0));
+                    }
+                }
+                for (const cover of (result.data && result.data.hiddenCovers) || []) {
+                    for (const tile of cover.tiles || []) {
+                        if (Array.isArray(tile)) {
+                            hiddenCoverTiles.add(key(Number(tile[0]) || 0, Number(tile[1]) || 0));
+                        } else {
+                            hiddenCoverTiles.add(key(Number(tile.x) || 0, Number(tile.y) || 0));
+                        }
                     }
                 }
                 for (const spring of (result.data && result.data.springs) || []) {
@@ -986,11 +1029,14 @@
                     const tile = splitKey(tileKey);
                     overlayCtx.fillRect(tile.x * tileSize, tile.y * tileSize, tileSize, tileSize);
                 }
-                overlayCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--breakable");
                 for (const tileKey of breakableTiles) {
                     const tile = splitKey(tileKey);
                     const x = tile.x * tileSize;
                     const y = tile.y * tileSize;
+                    const material = normalizeBreakableMaterial(breakableMaterials.get(tileKey));
+                    overlayCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue(
+                        material === "smashableDirt" ? "--breakable-dirt" : "--breakable",
+                    );
                     overlayCtx.fillRect(x, y, tileSize, tileSize);
                     overlayCtx.strokeStyle = "rgba(255,255,255,0.42)";
                     overlayCtx.lineWidth = 1;
@@ -1072,6 +1118,14 @@
                 overlayCtx.lineWidth = 1;
                 for (const [blockKey, block] of trafficBlocks) {
                     drawTrafficBlock(block, 0.86, blockKey === selectedTrafficBlock);
+                }
+
+                overlayCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--hidden-cover");
+                overlayCtx.strokeStyle = "rgba(236,255,255,0.66)";
+                overlayCtx.lineWidth = 1;
+                for (const tileKey of hiddenCoverTiles) {
+                    const tile = splitKey(tileKey);
+                    drawHiddenCoverTile(tile.x * tileSize, tile.y * tileSize, tileSize, 0.82);
                 }
 
                 for (const stamp of foregroundStamps) {
@@ -1173,6 +1227,12 @@
                         drawTrafficBlock(block, 0.48, false);
                     }
                 }
+                if (modeSelect.value === "hiddenCover" && !eraseMode && hoverTile) {
+                    overlayCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--hidden-cover");
+                    overlayCtx.strokeStyle = "rgba(236,255,255,0.66)";
+                    overlayCtx.lineWidth = 1;
+                    drawHiddenCoverTile(hoverTile.x * tileSize, hoverTile.y * tileSize, tileSize, 0.45);
+                }
 
                 overlayCtx.strokeStyle = "rgba(255,255,255,0.48)";
                 overlayCtx.lineWidth = 1;
@@ -1221,6 +1281,7 @@
                 fallingBlockStats.textContent = String(fallingBlocks.length);
                 mechBlockStats.textContent = mechBlockStatsText();
                 trafficBlockStats.textContent = trafficBlockStatsText();
+                hiddenCoverStats.textContent = String(hiddenCoverTiles.size);
                 exitLineStats.textContent = String(exitLines.length);
                 pitDeathLineStats.textContent = String(pitDeathLines.length);
                 spawnStats.textContent = respawnPoints.length
@@ -1668,6 +1729,24 @@
                 overlayCtx.restore();
             }
 
+            function drawHiddenCoverTile(x, y, size, alpha) {
+                overlayCtx.save();
+                overlayCtx.globalAlpha = alpha;
+                overlayCtx.fillRect(x, y, size, size);
+                overlayCtx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
+                overlayCtx.beginPath();
+                overlayCtx.moveTo(x + 2, y + 2);
+                overlayCtx.lineTo(x + size - 2, y + 2);
+                overlayCtx.moveTo(x + 2, y + size - 2);
+                overlayCtx.lineTo(x + size - 2, y + size - 2);
+                overlayCtx.moveTo(x + 2, y + 2);
+                overlayCtx.lineTo(x + 2, y + size - 2);
+                overlayCtx.moveTo(x + size - 2, y + 2);
+                overlayCtx.lineTo(x + size - 2, y + size - 2);
+                overlayCtx.stroke();
+                overlayCtx.restore();
+            }
+
             function drawTrafficTrack(block, selected) {
                 const center = trafficBlockCenter(block);
                 const target = trafficBlockTarget(block);
@@ -1820,16 +1899,19 @@
                 if (erase) {
                     tiles.delete(tileKey);
                     breakableTiles.delete(tileKey);
+                    breakableMaterials.delete(tileKey);
                     oneWayTiles.delete(tileKey);
                     spikeTiles.delete(tileKey);
                 } else if (kind === "oneWay") {
                     tiles.delete(tileKey);
                     breakableTiles.delete(tileKey);
+                    breakableMaterials.delete(tileKey);
                     spikeTiles.delete(tileKey);
                     oneWayTiles.add(tileKey);
                 } else if (kind === "spike") {
                     tiles.delete(tileKey);
                     breakableTiles.delete(tileKey);
+                    breakableMaterials.delete(tileKey);
                     oneWayTiles.delete(tileKey);
                     spikeTiles.set(tileKey, currentSpikeDirection());
                 } else if (kind === "breakableWall") {
@@ -1837,8 +1919,10 @@
                     oneWayTiles.delete(tileKey);
                     spikeTiles.delete(tileKey);
                     breakableTiles.add(tileKey);
+                    breakableMaterials.set(tileKey, currentBreakableMaterial());
                 } else {
                     breakableTiles.delete(tileKey);
+                    breakableMaterials.delete(tileKey);
                     oneWayTiles.delete(tileKey);
                     spikeTiles.delete(tileKey);
                     tiles.add(tileKey);
@@ -2541,6 +2625,20 @@
                     redraw();
                     return;
                 }
+                if (modeSelect.value === "hiddenCover") {
+                    const tileKey = key(tile.x, tile.y);
+                    if (tileKey === lastKey && !event.shiftKey) return;
+                    lastKey = tileKey;
+                    if (event.shiftKey && !eraseMode) {
+                        for (let x = tile.x; x < gridW; x += 1) hiddenCoverTiles.add(key(x, tile.y));
+                    } else if (eraseMode) {
+                        hiddenCoverTiles.delete(tileKey);
+                    } else {
+                        hiddenCoverTiles.add(tileKey);
+                    }
+                    redraw();
+                    return;
+                }
                 if (modeSelect.value === "spring") {
                     if (event.type !== "pointerdown") return;
                     const point = eventToPixel(event);
@@ -2649,6 +2747,39 @@
                 birdNpc.flightPath.push(point);
             }
 
+            function hiddenCoverGroups(sortedTiles) {
+                const pending = new Set(sortedTiles.map((tile) => key(tile.x, tile.y)));
+                const groups = [];
+                while (pending.size > 0) {
+                    const first = pending.values().next().value;
+                    pending.delete(first);
+                    const stack = [splitKey(first)];
+                    const tiles = [];
+                    while (stack.length > 0) {
+                        const tile = stack.pop();
+                        tiles.push(tile);
+                        for (const neighbor of [
+                            { x: tile.x - 1, y: tile.y },
+                            { x: tile.x + 1, y: tile.y },
+                            { x: tile.x, y: tile.y - 1 },
+                            { x: tile.x, y: tile.y + 1 },
+                        ]) {
+                            const neighborKey = key(neighbor.x, neighbor.y);
+                            if (!pending.has(neighborKey)) continue;
+                            pending.delete(neighborKey);
+                            stack.push(neighbor);
+                        }
+                    }
+                    tiles.sort((a, b) => a.y - b.y || a.x - b.x);
+                    groups.push({ id: groups.length, tiles: tiles.map((tile) => [tile.x, tile.y]) });
+                }
+                return groups.sort((a, b) => {
+                    const firstA = a.tiles[0] || [0, 0];
+                    const firstB = b.tiles[0] || [0, 0];
+                    return firstA[1] - firstB[1] || firstA[0] - firstB[0];
+                }).map((group, index) => ({ ...group, id: index }));
+            }
+
             function annotationObject() {
                 const sorted = [...tiles].map(splitKey).sort((a, b) => a.y - b.y || a.x - b.x);
                 const sortedBreakable = [...breakableTiles].map(splitKey).sort((a, b) => a.y - b.y || a.x - b.x);
@@ -2665,6 +2796,7 @@
                 const sortedStonePlatforms = [...stonePlatforms].map(splitKey).sort((a, b) => a.y - b.y || a.x - b.x);
                 const sortedMechBlocks = [...mechBlocks.values()].sort((a, b) => a.y - b.y || a.x - b.x);
                 const sortedTrafficBlocks = [...trafficBlocks.values()].sort((a, b) => a.y - b.y || a.x - b.x);
+                const sortedHiddenCoverTiles = [...hiddenCoverTiles].map(splitKey).sort((a, b) => a.y - b.y || a.x - b.x);
                 const sortedExitLines = [...exitLines].sort(annotationLineSort);
                 const sortedPitDeathLines = [...pitDeathLines].sort(annotationLineSort);
                 const annotation = {
@@ -2773,6 +2905,7 @@
                             targetCenterY: target.y,
                         };
                     }),
+                    hiddenCovers: hiddenCoverGroups(sortedHiddenCoverTiles),
                     birdNpc: birdNpc,
                     tiles: [
                         ...sorted.map((tile) => ({
@@ -2785,7 +2918,7 @@
                             x: tile.x,
                             y: tile.y,
                             kind: "breakableWall",
-                            material: "breakableWall",
+                            material: normalizeBreakableMaterial(breakableMaterials.get(key(tile.x, tile.y))),
                         })),
                         ...sortedOneWay.map((tile) => ({
                             x: tile.x,
@@ -2869,6 +3002,7 @@
                 } else if (modeSelect.value === "breakableWall") {
                     if (!confirm("Clear all breakable wall tiles for this background?")) return;
                     breakableTiles.clear();
+                    breakableMaterials.clear();
                 } else if (modeSelect.value === "spike") {
                     if (!confirm("Clear all spike tiles for this background?")) return;
                     spikeTiles.clear();
@@ -2898,6 +3032,9 @@
                     if (!confirm("Clear all traffic blocks for this background?")) return;
                     trafficBlocks.clear();
                     selectedTrafficBlock = "";
+                } else if (modeSelect.value === "hiddenCover") {
+                    if (!confirm("Clear all hidden cover tiles for this background?")) return;
+                    hiddenCoverTiles.clear();
                 } else if (modeSelect.value === "exitLine") {
                     if (!confirm("Clear all exit lines for this background?")) return;
                     exitLines = [];
@@ -2923,6 +3060,7 @@
             tileSizeInput.addEventListener("change", resetPaintAndRedraw);
             zoomInput.addEventListener("change", resetPaintAndRedraw);
             modeSelect.addEventListener("change", resetPaintAndRedraw);
+            breakableMaterialSelect.addEventListener("change", resetPaintAndRedraw);
             spikeDirectionSelect.addEventListener("change", resetPaintAndRedraw);
             strawberryFlyingInput.addEventListener("change", resetPaintAndRedraw);
             trafficBlockColorSelect.addEventListener("change", () => {
