@@ -126,6 +126,12 @@ pub fn loadGraphics() void {
     invalidateFrame();
 }
 
+pub fn invalidateGraphics() void {
+    loaded_palette = .invalid;
+    bubble_tiles_loaded = false;
+    invalidateFrame();
+}
+
 pub fn update(player: *Player, room_index: usize) void {
     if (return_state.active) return;
 

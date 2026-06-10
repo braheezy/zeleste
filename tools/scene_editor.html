@@ -52,9 +52,18 @@
       <div id="bridgePanel">
         <label for="bridgePartSelect">Bridge Ending</label>
         <select id="bridgePartSelect">
-          <option value="platform">Thick Platform</option>
-          <option value="trigger">Fall Trigger</option>
-          <option value="hint">Dash Hint</option>
+          <optgroup label="Bridge Geometry">
+            <option value="platform">Collapse Platform</option>
+            <option value="trigger">End Trigger Zone</option>
+            <option value="hint">Dash Hint Box</option>
+          </optgroup>
+          <optgroup label="Cutscene Points">
+            <option value="cutscene.holdPoint">Player Freeze Point</option>
+            <option value="cutscene.birdStart">Bird Start Point</option>
+            <option value="cutscene.birdIdle">Bird Idle Point</option>
+            <option value="cutscene.walkTarget">Walk Target Point</option>
+            <option value="cutscene.cameraTarget">Camera Target Point</option>
+          </optgroup>
         </select>
         <button id="deleteBridgePartButton" type="button">Delete Part</button>
       </div>
@@ -67,7 +76,7 @@
       <div class="hint">
         Bird origin, hint, and triggers are per screen. Add a bird only on screens that need the tutorial.
         Wire mode: drag directly over the source wire, release to save it. Right click near a wire to select/delete it.
-        Bridge mode: choose a part, drag its rectangle, save.
+        Bridge mode: drag rectangles for collapse platform, end trigger, and dash hint. Room 3 also shows the authored takeoff platform, dash cue, dash target, and bridge-run end from 3_cutscene.json.
       </div>
     </aside>
     <main>
@@ -99,6 +108,7 @@
 
     let backgrounds = [];
     let animations = [];
+    let prologueEndCutscene = null;
     let currentBackground = null;
     let image = null;
     let scene = null;
@@ -108,6 +118,17 @@
     let pointerMode = null;
     let triggerDragStart = null;
     let bridgeDragStart = null;
+
+    const bridgePartDefs = {
+      platform: { key: 'platform', type: 'rect', label: 'collapse platform', stroke: 'rgba(117,240,120,0.95)', fill: 'rgba(117,240,120,0.16)' },
+      trigger: { key: 'trigger', type: 'rect', label: 'end trigger/catch', stroke: 'rgba(255,209,102,0.95)', fill: 'rgba(255,209,102,0.14)' },
+      hint: { key: 'hint', type: 'rect', label: 'dash hint', stroke: 'rgba(114,214,255,0.95)', fill: 'rgba(114,214,255,0.14)' },
+      'cutscene.holdPoint': { scope: 'cutscene', key: 'holdPoint', type: 'point', label: 'player freeze', stroke: 'rgba(255,255,255,0.95)', fill: 'rgba(255,255,255,0.18)' },
+      'cutscene.birdStart': { scope: 'cutscene', key: 'birdStart', type: 'point', label: 'bird start', stroke: 'rgba(255,150,255,0.95)', fill: 'rgba(255,150,255,0.18)' },
+      'cutscene.birdIdle': { scope: 'cutscene', key: 'birdIdle', type: 'point', label: 'bird idle', stroke: 'rgba(255,96,220,0.95)', fill: 'rgba(255,96,220,0.18)' },
+      'cutscene.walkTarget': { scope: 'cutscene', key: 'walkTarget', type: 'point', label: 'walk target', stroke: 'rgba(156,255,152,0.95)', fill: 'rgba(156,255,152,0.18)' },
+      'cutscene.cameraTarget': { scope: 'cutscene', key: 'cameraTarget', type: 'point', label: 'camera target', stroke: 'rgba(210,190,255,0.95)', fill: 'rgba(210,190,255,0.18)' },
+    };
 
     const status = (message) => { statusEl.textContent = message; };
     const zoom = () => Math.max(1, Number(zoomInput.value) || 1);
@@ -124,6 +145,7 @@
     async function loadStartup() {
       const bg = await apiJson('/api/scene/backgrounds');
       backgrounds = bg.backgrounds;
+      prologueEndCutscene = await loadOptionalJson('assets/chapters/prologue_a/3_cutscene.json');
       backgroundSelect.replaceChildren();
       for (const item of backgrounds) {
         const option = document.createElement('option');
@@ -132,6 +154,16 @@
         backgroundSelect.append(option);
       }
       await loadSelectedBackground();
+    }
+
+    async function loadOptionalJson(path) {
+      try {
+        const response = await fetch(`/${path}?t=${Date.now()}`, { cache: 'no-store' });
+        if (!response.ok) return null;
+        return await response.json();
+      } catch (_) {
+        return null;
+      }
     }
 
     async function loadSelectedBackground() {
@@ -163,6 +195,7 @@
       for (const key of ['platform', 'trigger', 'hint']) {
         if (scene.bridgeEnding[key]) scene.bridgeEnding[key] = normalizedRect(scene.bridgeEnding[key]);
       }
+      normalizeBridgeCutscene();
       for (const wire of scene.wires) {
         if (!wire.points) wire.points = [];
         delete wire.controls;
@@ -235,6 +268,41 @@
       ];
     }
 
+    function normalizeBridgeCutscene() {
+      const bridge = scene.bridgeEnding || {};
+      if (!hasBridgeEndingContent(bridge)) return;
+      if (!bridge.cutscene) bridge.cutscene = defaultBridgeCutscene();
+      const cutscene = bridge.cutscene;
+      for (const [id, def] of Object.entries(bridgePartDefs)) {
+        if (def.scope !== 'cutscene') continue;
+        const value = cutscene[def.key];
+        if (!value) continue;
+        cutscene[def.key] = def.type === 'rect' ? normalizedRect(value) : normalizedPoint(value);
+      }
+    }
+
+    function hasBridgeEndingContent(bridge) {
+      if (!bridge) return false;
+      return Boolean(bridge.platform || bridge.trigger || bridge.hint || bridge.cutscene);
+    }
+
+    function defaultBridgeCutscene() {
+      const bridge = scene.bridgeEnding || {};
+      const platform = bridge.platform ? normalizedRect(bridge.platform) : null;
+      const width = image?.width || 320;
+      const height = image?.height || 180;
+      const platformLeft = platform ? platform.x : width - 72;
+      const platformTop = platform ? platform.y : height - 48;
+      const platformRight = platform ? platform.x + platform.w : width - 16;
+      return {
+        holdPoint: { x: platformLeft - 10, y: platformTop - 18 },
+        birdStart: { x: platformLeft + 140, y: Math.max(0, platformTop - 84) },
+        birdIdle: { x: platformLeft + 34, y: Math.max(0, platformTop - 42) },
+        walkTarget: { x: platformRight - 16, y: platformTop - 18 },
+        cameraTarget: { x: Math.min(width - 1, platformLeft + 24), y: Math.max(0, platformTop - 72) },
+      };
+    }
+
     function triggerIdForAction(action) {
       if (action === 'peck_then_fly') return 'peck_then_fly';
       return 'show_hold_hint';
@@ -265,6 +333,7 @@
       overlayCtx.imageSmoothingEnabled = false;
       baseCtx.drawImage(image, 0, 0);
       overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+      drawBridgeRuntimeGuide();
       drawEntity();
       drawBridgeEnding();
       drawWires();
@@ -351,20 +420,183 @@
     }
 
     function drawBridgeEnding() {
-      const bridge = scene.bridgeEnding || {};
-      drawBridgePart('platform', bridge.platform, 'rgba(117,240,120,0.95)', 'rgba(117,240,120,0.16)');
-      drawBridgePart('trigger', bridge.trigger, 'rgba(255,209,102,0.95)', 'rgba(255,209,102,0.14)');
-      drawBridgePart('hint', bridge.hint, 'rgba(114,214,255,0.95)', 'rgba(114,214,255,0.14)');
+      const isPrologueBridgeRoom = currentBackground && currentBackground.image === 'assets/chapters/prologue_a/3.png';
+      for (const id of Object.keys(bridgePartDefs)) {
+        if (isPrologueBridgeRoom && prologueEndCutscene) {
+          if (editModeSelect.value !== 'bridgeEnding' || bridgePartSelect.value !== id) continue;
+        }
+        drawBridgePart(id);
+      }
     }
 
-    function drawBridgePart(kind, rect, stroke, fill) {
-      if (!rect) return;
-      const selected = editModeSelect.value === 'bridgeEnding' && bridgePartSelect.value === kind;
-      const box = normalizedRect(rect);
-      drawBox(box.x, box.y, box.w, box.h, selected ? stroke : stroke.replace('0.95', '0.55'), selected ? fill : fill.replace('0.16', '0.07').replace('0.14', '0.07'));
+    function drawBridgeRuntimeGuide() {
+      const isPrologueBridgeRoom = currentBackground && currentBackground.image === 'assets/chapters/prologue_a/3.png';
+      if (!isPrologueBridgeRoom || !prologueEndCutscene) return;
+
+      overlayCtx.save();
+      const takeoff = normalizedRect(prologueEndCutscene.takeoffPlatform || { x: 0, y: 0, w: 0, h: 0 });
+      const collapse = normalizedRect(prologueEndCutscene.collapsePlatform || { x: 0, y: 0, w: 0, h: 0 });
+      const cue = prologueEndCutscene.dashCuePoint ? normalizedPoint(prologueEndCutscene.dashCuePoint) : null;
+      const target = prologueEndCutscene.dashTarget ? normalizedPoint(prologueEndCutscene.dashTarget) : null;
+      if (takeoff.w > 0 && takeoff.h > 0) {
+        const endX = takeoff.x + takeoff.w;
+        drawGuideRect(takeoff, 'takeoff', 'rgba(255,209,102,0.95)');
+        drawBridgeMarker(endX, takeoff.y, takeoff.h, 'bridge ends');
+        if (collapse.w > 0 && collapse.x > endX) {
+          drawGapGuide(endX, takeoff.y, collapse.x - endX, Math.max(takeoff.h, collapse.h));
+        }
+      }
+      if (collapse.w > 0 && collapse.h > 0) {
+        drawGuideRect(collapse, 'collapse', 'rgba(117,240,120,0.95)');
+      }
+      if (cue) drawGuidePoint(cue, 'cue', 'rgba(255,255,255,0.95)');
+      if (target) drawGuidePoint(target, 'target', 'rgba(114,214,255,0.95)');
+      overlayCtx.restore();
+    }
+
+    function drawBridgeMarker(x, y, h, label) {
+      overlayCtx.strokeStyle = 'rgba(255,255,255,0.95)';
+      overlayCtx.lineWidth = 2;
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(x + 0.5, y - 12);
+      overlayCtx.lineTo(x + 0.5, y + h + 8);
+      overlayCtx.stroke();
+      overlayCtx.fillStyle = 'rgba(0,0,0,0.75)';
+      const textX = Math.max(4, x - 42);
+      const textY = Math.max(9, y - 16);
+      overlayCtx.fillRect(textX - 2, textY - 8, label.length * 5 + 4, 10);
+      overlayCtx.fillStyle = 'rgba(255,255,255,0.96)';
+      overlayCtx.font = '8px monospace';
+      overlayCtx.fillText(label, textX, textY);
+    }
+
+    function drawGapGuide(x, y, w, h) {
+      overlayCtx.save();
+      overlayCtx.fillStyle = 'rgba(255,80,80,0.08)';
+      overlayCtx.fillRect(x, y, w, h);
+      overlayCtx.strokeStyle = 'rgba(255,110,110,0.55)';
+      overlayCtx.setLineDash([3, 3]);
+      overlayCtx.lineWidth = 1;
+      overlayCtx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+      overlayCtx.setLineDash([]);
+      overlayCtx.fillStyle = 'rgba(0,0,0,0.72)';
+      overlayCtx.font = '8px monospace';
+      overlayCtx.fillRect(x + 2, Math.max(0, y - 10), 24, 10);
+      overlayCtx.fillStyle = 'rgba(255,180,180,0.96)';
+      overlayCtx.fillText('gap', x + 4, Math.max(8, y - 2));
+      overlayCtx.restore();
+    }
+
+    function drawGuideRect(rect, label, color) {
+      overlayCtx.save();
+      overlayCtx.setLineDash([3, 2]);
+      overlayCtx.strokeStyle = color;
+      overlayCtx.lineWidth = 1;
+      overlayCtx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
+      overlayCtx.setLineDash([]);
+      overlayCtx.fillStyle = 'rgba(0,0,0,0.65)';
+      overlayCtx.font = '8px monospace';
+      overlayCtx.fillRect(rect.x + 1, Math.max(0, rect.y - 10), label.length * 5 + 4, 10);
+      overlayCtx.fillStyle = color;
+      overlayCtx.fillText(label, rect.x + 3, Math.max(8, rect.y - 2));
+      overlayCtx.restore();
+    }
+
+    function drawGuidePoint(point, label, color) {
+      overlayCtx.save();
+      overlayCtx.strokeStyle = color;
+      overlayCtx.fillStyle = 'rgba(0,0,0,0.45)';
+      overlayCtx.lineWidth = 1;
+      overlayCtx.beginPath();
+      overlayCtx.arc(point.x, point.y, 4, 0, Math.PI * 2);
+      overlayCtx.fill();
+      overlayCtx.stroke();
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(point.x - 7, point.y);
+      overlayCtx.lineTo(point.x + 7, point.y);
+      overlayCtx.moveTo(point.x, point.y - 7);
+      overlayCtx.lineTo(point.x, point.y + 7);
+      overlayCtx.stroke();
+      overlayCtx.font = '8px monospace';
+      overlayCtx.fillStyle = 'rgba(0,0,0,0.65)';
+      overlayCtx.fillRect(point.x + 5, point.y - 10, label.length * 5 + 4, 10);
+      overlayCtx.fillStyle = color;
+      overlayCtx.fillText(label, point.x + 7, point.y - 2);
+      overlayCtx.restore();
+    }
+
+    function selectedBridgePartDef() {
+      return bridgePartDefs[bridgePartSelect.value] || bridgePartDefs.platform;
+    }
+
+    function ensureBridgeCutscene() {
+      if (!scene.bridgeEnding) scene.bridgeEnding = {};
+      if (!scene.bridgeEnding.cutscene) scene.bridgeEnding.cutscene = defaultBridgeCutscene();
+      return scene.bridgeEnding.cutscene;
+    }
+
+    function bridgePartValue(id) {
+      const def = bridgePartDefs[id];
+      if (!def || !scene.bridgeEnding) return null;
+      const owner = def.scope === 'cutscene' ? scene.bridgeEnding.cutscene : scene.bridgeEnding;
+      return owner ? owner[def.key] : null;
+    }
+
+    function setBridgePartValue(id, value) {
+      const def = bridgePartDefs[id];
+      if (!def) return;
+      if (!scene.bridgeEnding) scene.bridgeEnding = {};
+      const owner = def.scope === 'cutscene' ? ensureBridgeCutscene() : scene.bridgeEnding;
+      owner[def.key] = def.type === 'rect' ? normalizedRect(value) : normalizedPoint(value);
+    }
+
+    function deleteBridgePartValue(id) {
+      const def = bridgePartDefs[id];
+      if (!def || !scene.bridgeEnding) return;
+      const owner = def.scope === 'cutscene' ? scene.bridgeEnding.cutscene : scene.bridgeEnding;
+      if (owner) delete owner[def.key];
+    }
+
+    function drawBridgePart(id) {
+      const def = bridgePartDefs[id];
+      const value = bridgePartValue(id);
+      if (!def || !value) return;
+      const selected = editModeSelect.value === 'bridgeEnding' && bridgePartSelect.value === id;
+      const stroke = selected ? def.stroke : transparentize(def.stroke, 0.55);
+      const fill = selected ? def.fill : transparentize(def.fill, 0.07);
+      if (def.type === 'point') {
+        const point = normalizedPoint(value);
+        drawPoint(point.x, point.y, stroke, fill);
+        overlayCtx.fillStyle = selected ? 'white' : 'rgba(255,255,255,0.75)';
+        overlayCtx.font = '8px monospace';
+        overlayCtx.fillText(def.label, point.x + 5, point.y - 5);
+        return;
+      }
+      const box = normalizedRect(value);
+      drawBox(box.x, box.y, box.w, box.h, stroke, fill);
       overlayCtx.fillStyle = selected ? 'white' : 'rgba(255,255,255,0.75)';
       overlayCtx.font = '8px monospace';
-      overlayCtx.fillText(kind, box.x + 3, box.y + 10);
+      overlayCtx.fillText(def.label, box.x + 3, box.y + 10);
+    }
+
+    function transparentize(color, alpha) {
+      return color.replace(/rgba\(([^,]+),([^,]+),([^,]+),[^)]+\)/, `rgba($1,$2,$3,${alpha})`);
+    }
+
+    function drawPoint(x, y, stroke, fill) {
+      overlayCtx.strokeStyle = stroke;
+      overlayCtx.fillStyle = fill;
+      overlayCtx.lineWidth = 2;
+      overlayCtx.beginPath();
+      overlayCtx.arc(x, y, 4, 0, Math.PI * 2);
+      overlayCtx.fill();
+      overlayCtx.stroke();
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(x - 7, y);
+      overlayCtx.lineTo(x + 7, y);
+      overlayCtx.moveTo(x, y - 7);
+      overlayCtx.lineTo(x, y + 7);
+      overlayCtx.stroke();
     }
 
     function drawWire(wire, selected, label) {
@@ -408,6 +640,13 @@
       const x1 = Math.max(rect.x, rect.x + rect.w);
       const y1 = Math.max(rect.y, rect.y + rect.h);
       return { x: x0, y: y0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0) };
+    }
+
+    function normalizedPoint(point) {
+      return {
+        x: Math.round(Number(point?.x) || 0),
+        y: Math.round(Number(point?.y) || 0),
+      };
     }
 
     function eventPoint(event) {
@@ -478,7 +717,9 @@
       }
       if (pointerMode === 'bridgeEnding') {
         if (!scene.bridgeEnding) scene.bridgeEnding = {};
-        bridgeDragStart = eventPoint(event);
+        const def = selectedBridgePartDef();
+        if (def.scope === 'cutscene') ensureBridgeCutscene();
+        bridgeDragStart = def.type === 'rect' ? eventPoint(event) : null;
       }
       handlePointer(event);
     });
@@ -523,13 +764,14 @@
         });
       }
       if (pointerMode === 'bridgeEnding' && bridgeDragStart) {
-        if (!scene.bridgeEnding) scene.bridgeEnding = {};
-        scene.bridgeEnding[bridgePartSelect.value] = normalizedRect({
+        setBridgePartValue(bridgePartSelect.value, normalizedRect({
           x: bridgeDragStart.x,
           y: bridgeDragStart.y,
           w: point.x - bridgeDragStart.x,
           h: point.y - bridgeDragStart.y,
-        });
+        }));
+      } else if (pointerMode === 'bridgeEnding') {
+        setBridgePartValue(bridgePartSelect.value, normalizedPoint(point));
       }
       redraw();
     }
@@ -554,8 +796,7 @@
       }
     });
     deleteBridgePartButton.addEventListener('click', () => {
-      if (!scene.bridgeEnding) scene.bridgeEnding = {};
-      delete scene.bridgeEnding[bridgePartSelect.value];
+      deleteBridgePartValue(bridgePartSelect.value);
       redraw();
     });
     window.addEventListener('keydown', (event) => {

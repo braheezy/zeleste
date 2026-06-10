@@ -11,6 +11,7 @@ const tiny_birds = @import("tiny_birds.zig");
 
 const Camera = camera_mod.Camera;
 const Player = player_mod.State;
+const Spawn = room_data.Spawn;
 const approach = math.approach;
 const fixedToPixel = math.fixedToPixel;
 const pixelToFixed = math.pixelToFixed;
@@ -29,7 +30,7 @@ const climb_hint_tiles_data align(4) = assets.bird_climb_hint_tiles_data;
 const dash_hint_tiles_data align(4) = assets.bird_dash_hint_tiles_data;
 const hint_palette_data align(4) = assets.bird_hint_palette_data;
 
-pub const object = tiny_birds.first_object;
+pub const object = 126;
 pub const hint_object = object + 1;
 pub const base_tile: u10 = tiny_birds.base_tile;
 pub const palette_bank: u4 = tiny_birds.palette_bank;
@@ -186,19 +187,31 @@ pub fn load(room_index: usize) void {
 }
 
 pub fn startEndingFlyIn(player_x: i16, player_y: i16, hint_x: i16, hint_y: i16) void {
+    startEndingFlyInAt(
+        .{ .x = player_x + 140, .y = player_y - 42 },
+        .{ .x = player_x + 34, .y = player_y - 18 },
+        .{ .x = hint_x, .y = hint_y },
+    );
+}
+
+pub fn startEndingFlyInAt(start: Spawn, idle: Spawn, hint: Spawn) void {
     npc = .{
         .active = true,
         .state = .ending_fly_in,
-        .x = pixelToFixed(player_x + 140),
-        .y = pixelToFixed(player_y - 42),
-        .home_x = player_x + 34,
-        .home_y = player_y - 18,
-        .hint_x = hint_x,
-        .hint_y = hint_y,
+        .x = pixelToFixed(start.x),
+        .y = pixelToFixed(start.y),
+        .home_x = idle.x,
+        .home_y = idle.y,
+        .hint_x = hint.x,
+        .hint_y = hint.y,
         .frame = fly_first_frame,
         .facing_left = true,
     };
     loadPalettes();
+}
+
+pub fn endingDashReady() bool {
+    return npc.active and npc.state == .ending_idle;
 }
 
 pub fn update(player: Player, camera: Camera) void {

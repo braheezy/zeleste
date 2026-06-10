@@ -54,6 +54,7 @@ pub const CutsceneAnimCue = struct {
 
 pub const DialoguePortrait = enum(u8) {
     none,
+    madeline_idle,
     granny_normal,
     granny_mock,
     granny_laugh,

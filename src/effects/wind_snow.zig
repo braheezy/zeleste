@@ -17,7 +17,8 @@ pub const base_tile: u10 = 76;
 pub const first_object = 43;
 pub const palette_bank: u4 = 3;
 
-const max_particles = 28;
+// Slots 64..70 are reserved for springs; keep wind/snow in 43..63.
+const max_particles = 21;
 const limited_particles = 16;
 const tile_count = 8;
 const rooms = level.rooms;

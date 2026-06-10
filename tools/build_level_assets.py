@@ -77,6 +77,16 @@ def cutscene_path_for_image(image: Path) -> Path:
     return image.with_name(f"{image.stem}_cutscene.json")
 
 
+def load_granny_cutscene_for_image(image: Path) -> dict | None:
+    path = cutscene_path_for_image(image)
+    if not path.exists():
+        return None
+    cutscene = json.loads(path.read_text())
+    if cutscene.get("id") != "granny_intro":
+        return None
+    return cutscene
+
+
 def point_literal(point: dict | None) -> str:
     point = point or {}
     return f".{{ .x = {int(point.get('x', 0))}, .y = {int(point.get('y', 0))} }}"
@@ -379,6 +389,9 @@ def portrait_literal(page: dict) -> str:
     mapping = {
         "": ".none",
         "none": ".none",
+        "madeline": ".madeline_idle",
+        "madeline_idle": ".madeline_idle",
+        "madeline_neutral": ".madeline_idle",
         "normal": ".granny_normal",
         "granny_normal": ".granny_normal",
         "mock": ".granny_mock",
@@ -577,9 +590,9 @@ def emit_generated_zig(
             lines.append(f"const {room_name}_{name}_tiles align(4) = @embedFile({zig_string(rel + '/' + name + '_tiles.bin')}).*;")
             lines.append(f"const {room_name}_{name}_map align(4) = @embedFile({zig_string(rel + '/' + name + '_map.bin')}).*;")
             lines.append(f"const {room_name}_{name}_palette align(4) = @embedFile({zig_string(rel + '/' + name + '_palette.bin')}).*;")
-        cutscene_path = cutscene_path_for_image(manifest_dir / str(room["image"]))
-        if cutscene_path.exists():
-            emit_granny_cutscene(lines, room_name, json.loads(cutscene_path.read_text()))
+        granny_cutscene = load_granny_cutscene_for_image(manifest_dir / str(room["image"]))
+        if granny_cutscene is not None:
+            emit_granny_cutscene(lines, room_name, granny_cutscene)
         lines.append("")
 
     lines.append("pub const rooms = [_]root.RoomBackground{")
@@ -631,7 +644,7 @@ def emit_generated_zig(
                 f"        .bridge_ending = &{room_name}_bridge_ending,",
                 f"        .exit_lines = &{room_name}_exit_lines,",
                 f"        .death_lines = &{room_name}_death_lines,",
-                f"        .granny_cutscene = {'&' + room_name + '_granny_cutscene' if cutscene_path_for_image(manifest_dir / str(room['image'])).exists() else 'null'},",
+                f"        .granny_cutscene = {'&' + room_name + '_granny_cutscene' if load_granny_cutscene_for_image(manifest_dir / str(room['image'])) is not None else 'null'},",
                 f"        .wind_snow_strength = {int(room.get('windSnowStrength', 0))},",
                 f"        .wind_snow_dir_x = {int(room.get('windSnowDirX', -1))},",
                 f"        .left = {neighbor_literal(room, 'left', indices)},",

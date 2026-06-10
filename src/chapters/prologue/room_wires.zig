@@ -92,13 +92,14 @@ pub fn draw(camera: Camera, bridge_active: bool) void {
 }
 
 pub fn hideObjects(bridge_active: bool) void {
+    if (bridge_active) return;
+
     const used_falling_objects = falling_blocks.usedObjectCount();
     var index: usize = used_falling_objects;
     while (index < falling_blocks.object_capacity) : (index += 1) {
         hideObject(falling_blocks.first_object + index);
     }
 
-    if (bridge_active) return;
     index = foreground_stamps.behindObjectCount();
     while (index < foreground_stamps.max_stamps) : (index += 1) {
         hideObject(foreground_stamps.behind_first_object + index);

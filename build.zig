@@ -523,6 +523,35 @@ pub fn build(b: *std.Build) void {
     pack_dash_refill.addArg(b.pathFromRoot("src/generated/assets/entities/dash_refill"));
     assets_step.dependOn(&pack_dash_refill.step);
 
+    const pack_speech_bubbles = beginCachedPythonCommand(b, "speech_bubbles", "tools/pack_speech_bubbles_obj.py");
+    addCacheInput(b, pack_speech_bubbles, "assets/speech-bubble-idle.png");
+    addCacheInput(b, pack_speech_bubbles, "assets/speech-bubble-a.png");
+    addCacheOutput(b, pack_speech_bubbles, "src/generated/assets/ui/speech_bubble_tiles.bin");
+    addCacheOutput(b, pack_speech_bubbles, "src/generated/assets/ui/speech_bubble_palette.bin");
+    addCacheOutput(b, pack_speech_bubbles, "src/generated/assets/ui/speech_bubble_meta.zig");
+    addCacheOutput(b, pack_speech_bubbles, "src/generated/assets/ui/speech_bubble.json");
+    finishCachedPythonCommand(b, pack_speech_bubbles, "tools/pack_speech_bubbles_obj.py");
+    pack_speech_bubbles.addArg("--idle");
+    pack_speech_bubbles.addArg(b.pathFromRoot("assets/speech-bubble-idle.png"));
+    pack_speech_bubbles.addArg("--prompt");
+    pack_speech_bubbles.addArg(b.pathFromRoot("assets/speech-bubble-a.png"));
+    pack_speech_bubbles.addArg("--output-dir");
+    pack_speech_bubbles.addArg(b.pathFromRoot("src/generated/assets/ui"));
+    assets_step.dependOn(&pack_speech_bubbles.step);
+
+    const pack_textbox = beginCachedPythonCommand(b, "textbox", "tools/pack_textbox_obj.py");
+    addCacheInput(b, pack_textbox, "assets/textbox.png");
+    addCacheOutput(b, pack_textbox, "src/generated/assets/ui/textbox_tiles.bin");
+    addCacheOutput(b, pack_textbox, "src/generated/assets/ui/textbox_palette.bin");
+    addCacheOutput(b, pack_textbox, "src/generated/assets/ui/textbox_meta.zig");
+    addCacheOutput(b, pack_textbox, "src/generated/assets/ui/textbox.json");
+    finishCachedPythonCommand(b, pack_textbox, "tools/pack_textbox_obj.py");
+    pack_textbox.addArg("--input");
+    pack_textbox.addArg(b.pathFromRoot("assets/textbox.png"));
+    pack_textbox.addArg("--output-dir");
+    pack_textbox.addArg(b.pathFromRoot("src/generated/assets/ui"));
+    assets_step.dependOn(&pack_textbox.step);
+
     const pack_cassette = beginCachedPythonCommand(b, "cassette", "tools/pack_cassette_obj.py");
     addCacheInput(b, pack_cassette, "assets/casette-uncollected.png");
     addCacheInput(b, pack_cassette, "assets/casette-collected.png");
@@ -609,12 +638,15 @@ pub fn build(b: *std.Build) void {
     const pack_granny = beginCachedPythonCommand(b, "granny", "tools/pack_granny_assets.py");
     addCacheInputDir(b, pack_granny, "assets/animations/granny");
     addCacheInputDir(b, pack_granny, "assets/portraits/granny");
+    addCacheInputDir(b, pack_granny, "assets/portraits/madeline");
     addCacheOutputDir(b, pack_granny, "src/generated/assets/granny");
     finishCachedPythonCommand(b, pack_granny, "tools/pack_granny_assets.py");
     pack_granny.addArg("--input-dir");
     pack_granny.addArg(b.pathFromRoot("assets/animations/granny"));
     pack_granny.addArg("--portrait-dir");
     pack_granny.addArg(b.pathFromRoot("assets/portraits/granny"));
+    pack_granny.addArg("--madeline-portrait-dir");
+    pack_granny.addArg(b.pathFromRoot("assets/portraits/madeline"));
     pack_granny.addArg("--output-dir");
     pack_granny.addArg(b.pathFromRoot("src/generated/assets/granny"));
     assets_step.dependOn(&pack_granny.step);

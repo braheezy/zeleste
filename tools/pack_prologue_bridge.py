@@ -177,9 +177,7 @@ def main() -> int:
         next_group_id = append_thick(layout, groups, thick_layout, rng, next_group_id)
         if index != 4:
             next_group_id = append_random_chunks(layout, groups, rng, pool, 2 if index == 0 else 6, next_group_id)
-    layout.extend([EMPTY_CHUNK] * 4)
-    groups.extend([NO_GROUP] * 4)
-    next_group_id = append_random_chunks(layout, groups, rng, pool, 3, next_group_id)
+    next_group_id = append_random_chunks(layout, groups, rng, pool, 7, next_group_id)
     for index in range(4):
         next_group_id = append_thick(layout, groups, thick_layout, rng, next_group_id)
         if index != 3:

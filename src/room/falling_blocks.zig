@@ -108,7 +108,16 @@ pub fn loadGraphics(room_index: usize) void {
     if (block_count == 0) return;
 
     const room = rooms[room_index];
+    if (allBlocksUseFixedSprite()) {
+        gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(&palette_data), 16);
+        loadFixedSpriteTiles();
+        return;
+    }
+
     if (room.falling_block_tiles.len > 0 and room.falling_block_palette.len >= 32) {
+        if (hasFixedSpriteBlock()) {
+            loadFixedSpriteTiles();
+        }
         gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(room.falling_block_palette.ptr), 16);
         const tile_count = @min(room.falling_block_tiles.len / 32, max_room_visual_tiles);
         if (tile_count > 0) {
@@ -120,7 +129,7 @@ pub fn loadGraphics(room_index: usize) void {
     }
 
     gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(&palette_data), 16);
-    gba.display.memcpyObjectTiles4Bpp(base_tile, @ptrCast(&tiles_data));
+    loadFixedSpriteTiles();
     loadGenericTiles();
 }
 
@@ -451,12 +460,6 @@ fn drawChunk(object_index: usize, x: i16, y: i16, tile: u10, size: gba.display.O
 }
 
 fn drawBlock(block: Block, draw_x: i16, draw_y: i16, world_x: i16, world_y: i16, object_offset: *usize) void {
-    if (hasRoomVisual(block)) {
-        drawRoomVisualBlock(block, draw_x, draw_y, object_offset);
-        drawSpikes(block, draw_x, draw_y, world_x, world_y, object_offset);
-        return;
-    }
-
     if (fixedSpriteShape(block)) {
         if (object_offset.* + objects_per_block > object_capacity) return;
         const object_index = first_object + object_offset.*;
@@ -464,6 +467,12 @@ fn drawBlock(block: Block, draw_x: i16, draw_y: i16, world_x: i16, world_y: i16,
         drawChunk(object_index + 1, draw_x + 32, draw_y, base_tile + 16, .size_16x32);
         drawChunk(object_index + 2, draw_x + 48, draw_y, base_tile + 24, .size_8x32);
         object_offset.* += objects_per_block;
+        drawSpikes(block, draw_x, draw_y, world_x, world_y, object_offset);
+        return;
+    }
+
+    if (hasRoomVisual(block)) {
+        drawRoomVisualBlock(block, draw_x, draw_y, object_offset);
         drawSpikes(block, draw_x, draw_y, world_x, world_y, object_offset);
         return;
     }
@@ -513,7 +522,7 @@ fn drawRoomVisualBlock(block: Block, draw_x: i16, draw_y: i16, object_offset: *u
 }
 
 fn objectCountFor(block: Block) usize {
-    const body_count = if (hasRoomVisual(block)) chunkObjectCountFor(block) else if (fixedSpriteShape(block)) objects_per_block else chunkObjectCountFor(block);
+    const body_count = if (fixedSpriteShape(block)) objects_per_block else if (hasRoomVisual(block)) chunkObjectCountFor(block) else chunkObjectCountFor(block);
     return body_count + spikeCountFor(block);
 }
 
@@ -539,6 +548,27 @@ fn hasRoomVisual(block: Block) bool {
 
 fn fixedSpriteShape(block: Block) bool {
     return block.w == 56 and block.h == 32;
+}
+
+fn hasFixedSpriteBlock() bool {
+    var index: usize = 0;
+    while (index < block_count) : (index += 1) {
+        if (blocks[index].active and fixedSpriteShape(blocks[index])) return true;
+    }
+    return false;
+}
+
+fn allBlocksUseFixedSprite() bool {
+    if (block_count == 0) return false;
+    var index: usize = 0;
+    while (index < block_count) : (index += 1) {
+        if (blocks[index].active and !fixedSpriteShape(blocks[index])) return false;
+    }
+    return true;
+}
+
+fn loadFixedSpriteTiles() void {
+    gba.display.memcpyObjectTiles4Bpp(base_tile, @ptrCast(&tiles_data));
 }
 
 fn hasSpikes(block: Block) bool {

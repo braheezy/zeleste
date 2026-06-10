@@ -158,3 +158,38 @@ metasprites rather than requiring the source art to fit square grid cells.
 If a dialogue page has no explicit `cue`, the generated script treats Granny as
 playing `idle` by default. The editor also supports `camera_focus_2` plus
 `camera.secondary.afterDialogue` for a later zoom beat in the same exchange.
+
+## Prologue Room 3 Endscene
+
+This source data replaces the older idea of an optional player-controlled
+bridge-ending dash. The intended semantics are deterministic: when Madeline
+jumps from the authored takeoff point on the second-to-last bridge platform, the
+scene locks input, starts the bird fly-in/dash prompt, drops the old final
+platform using the existing bridge-ending data, waits until she reaches the
+lower bridge-side `dashCuePoint`, holds her there for the dash cue, then sends
+her rightward through `dashTarget`, finishes chapter 0, and loads the overworld.
+
+The source data should stay semantic: `takeoffPlatform` and `takeoffPoint` come
+from the authored annotation; `collapsePlatform` and `birdDashPrompt` come from
+the previous room 3 `bridgeEnding.platform` and `bridgeEnding.hint` values in
+`3_scene.json`; `dashCuePoint` is the low freeze point close to the falling
+bridge platform; and `dashTarget` is where the scripted ending dash carries
+Madeline. Do not derive the freeze from the first moment the ending trigger
+fires, because that catches her too high and too far left.
+
+## Chapter 1 6zb NPC Intro
+
+The current editor is `task city-6zb-cutscene`. It writes
+`assets/chapters/1_city/6zb_cutscene.json` and intentionally stops at source
+authoring. Runtime packing/interpreter work should come after the JSON has been
+reviewed in the editor.
+
+This room can be approached from multiple places, so the source data uses a
+`triggers` array instead of a single `trigger` rectangle. All triggers feed the
+same first-pass script: lock input, walk Madeline to `madeline_talk`, face the
+NPC, focus the camera, play the initial `dialogue` pages, set
+`city_6zb_intro_done`, then unlock input. The `postConversations` array stores
+the optional Theo talks that can be triggered one after another after the
+cutscene flag is set. These are not inserted into the forced cutscene script.
+The older flat `postDialogue` field is only kept as a migration fallback for
+first-pass editor data.

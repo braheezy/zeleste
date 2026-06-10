@@ -2,7 +2,9 @@ const background = @import("../world/background.zig");
 const camera_mod = @import("../world/camera.zig");
 const chapter_entities = @import("../chapters/entities.zig");
 const chapter_systems = @import("../chapters/systems.zig");
+const cutscene_dialogue = @import("../cutscene/dialogue.zig");
 const dash_effects = @import("../player/dash_effects.zig");
+const debug_fps = @import("../core/debug_fps.zig");
 const dust = @import("../effects/dust.zig");
 const hair = @import("../player/hair.zig");
 const level = @import("../generated_rooms.zig");
@@ -28,6 +30,7 @@ pub fn loadWindSnowTiles() void {
 
 pub fn loadObjectSprites(room_index: usize) void {
     invalidateObjectTileCaches(room_index);
+    wind_snow.loadTiles();
     player_render.loadPalettes();
     chapter_entities.loadObjectGraphics(room_index);
     hair.loadPalette();
@@ -37,6 +40,7 @@ pub fn loadObjectSprites(room_index: usize) void {
     player_death_vfx.loadTiles();
     dash_effects.loadTile();
     player_render.loadFrame(0);
+    debug_fps.reloadGraphics();
 }
 
 pub fn hidePlayerObjects() void {
@@ -86,8 +90,8 @@ pub fn drawInitial(player: *Player, camera: Camera, room_index: usize, anim_coun
     chapter_systems.drawTutorialNpc(camera, room_index);
     chapter_systems.drawCutsceneNpc(camera, room_index, scene_slots, anim_counter);
     chapter_systems.drawAmbientNpcs(camera, room_index, anim_counter);
-    chapter_systems.drawCutsceneOverlay(camera, room_index, anim_counter);
     save_indicator.draw();
+    chapter_systems.drawCutsceneOverlay(camera, room_index, anim_counter);
 }
 
 pub fn drawGameplay(player: *Player, camera: Camera, room_index: usize, anim_counter: u16) void {
@@ -108,8 +112,8 @@ pub fn drawGameplay(player: *Player, camera: Camera, room_index: usize, anim_cou
     drawWindSnow(camera);
     player_render.draw(player.*, camera, anim_counter);
     player_render.drawSweat(player, camera);
-    chapter_systems.drawCutsceneOverlay(camera, room_index, anim_counter);
     save_indicator.draw();
+    chapter_systems.drawCutsceneOverlay(camera, room_index, anim_counter);
 }
 
 pub fn drawLoaded(player: *Player, camera: Camera, room_index: usize, anim_counter: u16) void {
@@ -130,8 +134,8 @@ pub fn drawLoaded(player: *Player, camera: Camera, room_index: usize, anim_count
     chapter_systems.drawTutorialNpc(camera, room_index);
     chapter_systems.drawCutsceneNpc(camera, room_index, scene_slots, anim_counter);
     chapter_systems.drawAmbientNpcs(camera, room_index, anim_counter);
-    chapter_systems.drawCutsceneOverlay(camera, room_index, anim_counter);
     save_indicator.draw();
+    chapter_systems.drawCutsceneOverlay(camera, room_index, anim_counter);
 }
 
 pub fn drawRespawnRoom(camera: Camera, room_index: usize, anim_counter: u16) void {
@@ -193,13 +197,14 @@ pub fn drawEndLevelTransition(player: *Player, camera: Camera, room_index: usize
     drawWindSnow(camera);
     player_render.draw(player.*, camera, anim_counter);
     player_render.drawSweat(player, camera);
-    chapter_systems.drawCutsceneOverlay(camera, room_index, anim_counter);
     save_indicator.draw();
+    chapter_systems.drawCutsceneOverlay(camera, room_index, anim_counter);
 }
 
 fn invalidateObjectTileCaches(room_index: usize) void {
     player_render.invalidate();
     save_indicator.invalidateGraphics();
+    cutscene_dialogue.invalidateGraphics();
     chapter_systems.invalidateObjectTileCaches(room_index);
 }
 

@@ -207,6 +207,12 @@ pub fn loadGraphics() void {
     invalidateFrames();
 }
 
+pub fn invalidateGraphics() void {
+    loaded_main_palette = .invalid;
+    loaded_collect_palette = .invalid;
+    invalidateFrames();
+}
+
 pub fn update(player: *Player, room_index: usize) void {
     const dash_started = dashStartedThisFrame(player.*);
     pickupLoaded(player.*, room_index);

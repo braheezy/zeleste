@@ -56,9 +56,15 @@ pub fn loadObjectGraphics(room_index: usize) void {
     mech_blocks.loadGraphics();
     rhythm_blocks.loadGraphics();
     disappearing_platforms.loadGraphics();
+    springs.loadGraphics();
     strawberries.loadGraphics();
     cassettes.loadGraphics();
     dash_refills.loadGraphics();
+}
+
+pub fn invalidateObjectGraphics() void {
+    strawberries.invalidateGraphics();
+    cassettes.invalidateGraphics();
 }
 
 pub fn resetPaletteState() void {

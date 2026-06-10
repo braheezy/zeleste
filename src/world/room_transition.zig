@@ -26,8 +26,14 @@ const exit_line_min_overlap_px: i16 = 4;
 const vertical_transition_overlap_px: i16 = 8;
 const entry_wall_restore_x_px: i16 = 14;
 const entry_wall_restore_y_px: i16 = 10;
+const vertical_line_entry_fit_x_px: i16 = 2;
 
 const EntryYBounds = struct {
+    min: i16,
+    max: i16,
+};
+
+const EntryXBounds = struct {
     min: i16,
     max: i16,
 };
@@ -185,14 +191,19 @@ pub fn trySwitch(player: *Player, input: gba.input.BufferedKeysState, room_index
         if (room.up) |next_room| {
             if (!implicitEdgeTransitionAllowed(room_index.*, next_room, .up, player_x, player_y)) return false;
             const previous_room = room_index.*;
+            const previous_player = player.*;
             const entry_context = entryActionContext(player.*, previous_room);
             alignPlayerBetweenRooms(player, previous_room, next_room);
             const aligned_entry = entryPosition(player.*);
             room_index.* = next_room;
             clampPlayerToRoom(player, room_index.*);
             enterRoomFromBottom(player, room_index.*);
-            fitPlayerAfterVerticalRoomEntry(player, room_index.*, aligned_entry);
-            restoreEntryActionContact(player, room_index.*, entry_context);
+            if (!fitPlayerAfterVerticalRoomEntry(player, room_index.*, aligned_entry)) {
+                player.* = previous_player;
+                room_index.* = previous_room;
+                return false;
+            }
+            restoreEntryActionContactNearAlignedX(player, room_index.*, entry_context, entryPosition(player.*).x);
             entry_side.* = oppositeDirection(.up);
             startCooldown(player);
             return true;
@@ -202,14 +213,19 @@ pub fn trySwitch(player: *Player, input: gba.input.BufferedKeysState, room_index
         if (room.down) |next_room| {
             if (!implicitEdgeTransitionAllowed(room_index.*, next_room, .down, player_x, player_y)) return false;
             const previous_room = room_index.*;
+            const previous_player = player.*;
             const entry_context = entryActionContext(player.*, previous_room);
             alignPlayerBetweenRooms(player, previous_room, next_room);
             const aligned_entry = entryPosition(player.*);
             room_index.* = next_room;
             clampPlayerToRoom(player, room_index.*);
             enterRoomFromTop(player);
-            fitPlayerAfterVerticalRoomEntry(player, room_index.*, aligned_entry);
-            restoreEntryActionContact(player, room_index.*, entry_context);
+            if (!fitPlayerAfterVerticalRoomEntry(player, room_index.*, aligned_entry)) {
+                player.* = previous_player;
+                room_index.* = previous_room;
+                return false;
+            }
+            restoreEntryActionContactNearAlignedX(player, room_index.*, entry_context, entryPosition(player.*).x);
             entry_side.* = oppositeDirection(.down);
             startCooldown(player);
             return true;
@@ -331,7 +347,7 @@ fn tryExitLineSwitch(
                     room_index.* = previous_room;
                     continue;
                 }
-                restoreEntryActionContact(player, room_index.*, entry_context);
+                restoreEntryActionContactNearAlignedX(player, room_index.*, entry_context, entryPosition(player.*).x);
                 entry_side.* = oppositeDirection(exit_line.direction);
                 startCooldown(player);
                 return true;
@@ -352,7 +368,7 @@ fn tryExitLineSwitch(
                     room_index.* = previous_room;
                     continue;
                 }
-                restoreEntryActionContact(player, room_index.*, entry_context);
+                restoreEntryActionContactNearAlignedX(player, room_index.*, entry_context, entryPosition(player.*).x);
                 entry_side.* = oppositeDirection(exit_line.direction);
                 startCooldown(player);
                 return true;
@@ -450,6 +466,14 @@ fn entryActionContext(player: Player, room_index: usize) EntryActionContext {
 }
 
 fn restoreEntryActionContact(player: *Player, room_index: usize, context: EntryActionContext) void {
+    restoreEntryActionContactInXBounds(player, room_index, context, null);
+}
+
+fn restoreEntryActionContactNearAlignedX(player: *Player, room_index: usize, context: EntryActionContext, aligned_x: i16) void {
+    restoreEntryActionContactInXBounds(player, room_index, context, verticalEntryXBounds(room_index, aligned_x));
+}
+
+fn restoreEntryActionContactInXBounds(player: *Player, room_index: usize, context: EntryActionContext, x_bounds: ?EntryXBounds) void {
     const preserves_wall_action = context.climbing or context.climb_dangling or context.wall_sliding;
     if (!preserves_wall_action) return;
 
@@ -458,7 +482,7 @@ fn restoreEntryActionContact(player: *Player, room_index: usize, context: EntryA
     player.grounded = false;
 
     if (context.wall_dir == 0) return;
-    restoreWallContactAfterEntry(player, room_index, context.wall_dir);
+    restoreWallContactAfterEntry(player, room_index, context.wall_dir, x_bounds);
     if (!entryWallContactAtPlayer(player.*, context.wall_dir, room_index)) return;
 
     player.facing_left = context.wall_dir < 0;
@@ -468,28 +492,36 @@ fn restoreEntryActionContact(player: *Player, room_index: usize, context: EntryA
     player.wall_sliding = context.wall_sliding;
 }
 
-fn restoreWallContactAfterEntry(player: *Player, room_index: usize, wall_dir: i16) void {
+fn restoreWallContactAfterEntry(player: *Player, room_index: usize, wall_dir: i16, x_bounds: ?EntryXBounds) void {
     if (entryWallContactAtPlayer(player.*, wall_dir, room_index)) return;
 
     const start_x = fixedToPixel(player.x);
     const start_y = fixedToPixel(player.y);
-    if (tryRestoreWallContactAtX(player, room_index, wall_dir, start_x, start_y)) return;
+    if (tryRestoreWallContactAtX(player, room_index, wall_dir, start_x, start_y, x_bounds)) return;
     var x_offset: i16 = 1;
     while (x_offset <= entry_wall_restore_x_px) : (x_offset += 1) {
         const toward_wall_x = start_x + wall_dir * x_offset;
-        if (tryRestoreWallContactAtX(player, room_index, wall_dir, toward_wall_x, start_y)) return;
+        if (tryRestoreWallContactAtX(player, room_index, wall_dir, toward_wall_x, start_y, x_bounds)) return;
         const away_from_wall_x = start_x - wall_dir * x_offset;
-        if (tryRestoreWallContactAtX(player, room_index, wall_dir, away_from_wall_x, start_y)) return;
+        if (tryRestoreWallContactAtX(player, room_index, wall_dir, away_from_wall_x, start_y, x_bounds)) return;
     }
 }
 
-fn tryRestoreWallContactAtX(player: *Player, room_index: usize, wall_dir: i16, x: i16, start_y: i16) bool {
+fn tryRestoreWallContactAtX(player: *Player, room_index: usize, wall_dir: i16, x: i16, start_y: i16, x_bounds: ?EntryXBounds) bool {
+    if (!entryXInBounds(x, x_bounds)) return false;
     var y_offset: i16 = 0;
     while (y_offset <= entry_wall_restore_y_px) : (y_offset += 1) {
         if (tryRestoreWallContactAt(player, room_index, wall_dir, x, start_y - y_offset)) return true;
         if (y_offset != 0 and tryRestoreWallContactAt(player, room_index, wall_dir, x, start_y + y_offset)) return true;
     }
     return false;
+}
+
+fn entryXInBounds(x: i16, x_bounds: ?EntryXBounds) bool {
+    if (x_bounds) |bounds| {
+        return x >= bounds.min and x <= bounds.max;
+    }
+    return true;
 }
 
 fn tryRestoreWallContactAt(player: *Player, room_index: usize, wall_dir: i16, x: i16, y: i16) bool {
@@ -526,10 +558,10 @@ fn fitPlayerAfterRoomEntry(player: *Player, room_index: usize) void {
     _ = tryFitPlayerAfterRoomEntryAt(player, room_index, fixedToPixel(player.x), fixedToPixel(player.y), fullEntryYBounds(room_index));
 }
 
-fn fitPlayerAfterVerticalRoomEntry(player: *Player, room_index: usize, aligned_entry: EntryPosition) void {
+fn fitPlayerAfterVerticalRoomEntry(player: *Player, room_index: usize, aligned_entry: EntryPosition) bool {
     const y_bounds = verticalEntryYBounds(room_index);
-    if (restoreAlignedEntryPosition(player, room_index, aligned_entry, y_bounds)) return;
-    _ = tryFitPlayerAfterRoomEntryAt(player, room_index, fixedToPixel(player.x), fixedToPixel(player.y), y_bounds);
+    if (restoreAlignedEntryPosition(player, room_index, aligned_entry, y_bounds)) return true;
+    return fitPlayerNearAlignedX(player, room_index, aligned_entry, y_bounds);
 }
 
 fn fullEntryYBounds(room_index: usize) EntryYBounds {
@@ -545,6 +577,17 @@ fn verticalEntryYBounds(room_index: usize) EntryYBounds {
     return .{
         .min = -player_body_height + vertical_transition_overlap_px,
         .max = room.height_pixels - vertical_transition_overlap_px,
+    };
+}
+
+fn verticalEntryXBounds(room_index: usize, aligned_x: i16) EntryXBounds {
+    const room = rooms[room_index];
+    const room_min = @as(i16, 1);
+    const room_max = room.width_pixels - player_body_width - 1;
+    const start_x = clampI16(aligned_x, room_min, room_max);
+    return .{
+        .min = clampI16(start_x - vertical_line_entry_fit_x_px, room_min, room_max),
+        .max = clampI16(start_x + vertical_line_entry_fit_x_px, room_min, room_max),
     };
 }
 
@@ -585,6 +628,9 @@ fn fitPlayerAfterLineRoomEntry(player: *Player, room_index: usize, from_room: us
             .left, .right => fitPlayerWithinVerticalExitLine(player, room_index, exit_line, y_bounds),
         };
     }
+    if (entry_direction == .up or entry_direction == .down) {
+        return fitPlayerNearAlignedX(player, room_index, aligned_entry, y_bounds);
+    }
     return tryFitPlayerAfterRoomEntryAt(player, room_index, fixedToPixel(player.x), fixedToPixel(player.y), y_bounds);
 }
 
@@ -603,6 +649,16 @@ fn fitPlayerWithinHorizontalExitLine(player: *Player, room_index: usize, exit_li
     var max_x = clampI16(@max(exit_line.x1, exit_line.x2) - player_body_width, room_min, room_max);
     if (max_x < min_x) max_x = min_x;
     return tryFitPlayerInXRange(player, room_index, fixedToPixel(player.x), fixedToPixel(player.y), min_x, max_x, y_bounds);
+}
+
+fn fitPlayerNearAlignedX(player: *Player, room_index: usize, aligned_entry: EntryPosition, y_bounds: EntryYBounds) bool {
+    const room = rooms[room_index];
+    const room_min = @as(i16, 1);
+    const room_max = room.width_pixels - player_body_width - 1;
+    const start_x = clampI16(aligned_entry.x, room_min, room_max);
+    const min_x = clampI16(start_x - vertical_line_entry_fit_x_px, room_min, room_max);
+    const max_x = clampI16(start_x + vertical_line_entry_fit_x_px, room_min, room_max);
+    return tryFitPlayerInXRange(player, room_index, start_x, fixedToPixel(player.y), min_x, max_x, y_bounds);
 }
 
 fn fitPlayerWithinVerticalExitLine(player: *Player, room_index: usize, exit_line: room_data.ExitLine, y_bounds: EntryYBounds) bool {

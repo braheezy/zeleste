@@ -45,12 +45,13 @@ const RespawnPoint = room_data.RespawnPoint;
 const fixed_one = math.fixed_one;
 const fixedToPixel = math.fixedToPixel;
 const clampI16 = math.clampI16;
+const absI16 = math.absI16;
+const screen_width = video.screen_width;
 const screen_height = video.screen_height;
 
 const end_level_walk_frames: u8 = 28;
 const end_level_walk_speed: i32 = fixed_one;
 const end_level_camera_frames: u8 = 54;
-const end_level_camera_lift: i16 = 48;
 const end_level_black_frames: u8 = 18;
 
 const rooms = level.rooms;
@@ -79,13 +80,15 @@ pub fn startBridgeEndingHold(player: *Player) void {
     const player_x = fixedToPixel(player.x);
     const player_y = fixedToPixel(player.y);
     const hint = bridge.endingHintOrDefault(player_x, player_y);
-    bird_npc.startEndingFlyIn(player_x, player_y, hint.x, hint.y);
+    const bird_start = bridge.endingBirdStartOrDefault(player_x, player_y);
+    const bird_idle = bridge.endingBirdIdleOrDefault(player_x, player_y);
+    bird_npc.startEndingFlyInAt(bird_start, bird_idle, hint);
 }
 
 pub fn updateBridgeEndingHold(player: *Player, input: gba.input.BufferedKeysState, room_index: usize) void {
     const horizontal: i16 = @intCast(input.getAxisHorizontal());
     const vertical: i16 = @intCast(input.getAxisVertical());
-    if (input.isJustPressed(.B) and player_controller.tryStartDash(player, horizontal, vertical, true)) {
+    if (bird_npc.endingDashReady() and input.isJustPressed(.B) and player_controller.tryStartDash(player, horizontal, vertical, true)) {
         bridge.markEndingDashStarted();
         dash_unlocked = true;
         bird_npc.dismiss();
@@ -136,9 +139,11 @@ fn holdPlayerForBridgeEnding(player: *Player) void {
     player.vy = 0;
     player.dashes = 1;
     player.dash_timer = 0;
+    player.dash_cooldown_timer = 0;
     player.dash_refill_cooldown_timer = 0;
     player.grounded = false;
     player.moving = false;
+    player.facing_left = false;
     player.climbing = false;
     player.wall_sliding = false;
     player.climb_dangling = false;
@@ -154,12 +159,22 @@ fn updateEndLevelTransition(player: *Player, camera: *Camera, room_index: *usize
     switch (end_level_transition.phase) {
         .inactive => {},
         .walk => {
-            player.vx = end_level_walk_speed;
+            const walk_target = bridge.endingWalkTargetOrDefault(player.*);
+            const target_left = walk_target.x - player_mod.body_width / 2;
+            const player_left = fixedToPixel(player.x);
+            const dx = target_left - player_left;
+            const reached_target = absI16(dx) <= 1 or end_level_transition.timer >= end_level_walk_frames * 2;
+
+            player.vx = if (dx < 0) -end_level_walk_speed else end_level_walk_speed;
             player.vy = 0;
-            player.moving = true;
-            player.facing_left = false;
+            player.moving = !reached_target;
+            player.facing_left = dx < 0;
             player.grounded = true;
-            player_controller.moveHorizontal(player, player.vx, active_room_index);
+            if (!reached_target) {
+                player_controller.moveHorizontal(player, player.vx, active_room_index);
+            } else {
+                player.vx = 0;
+            }
             player_controller.updateAnimation(player);
             hair.update(player, endingHoldActive());
             dash_effects.update();
@@ -170,7 +185,7 @@ fn updateEndLevelTransition(player: *Player, camera: *Camera, room_index: *usize
             frame.sync();
             gameplay_scene.drawEndLevelTransition(player, render_camera, active_room_index, room_systems.animCounter());
 
-            if (end_level_transition.timer >= end_level_walk_frames) {
+            if (reached_target) {
                 player.vx = 0;
                 player.moving = false;
                 end_level_transition.phase = .camera_up;
@@ -190,14 +205,11 @@ fn updateEndLevelTransition(player: *Player, camera: *Camera, room_index: *usize
             dash_effects.update();
             room_systems.updateEndLevelEffects(active_room_index, camera.*);
 
-            const room = rooms[active_room_index];
             const progress = @min(end_level_transition.timer, end_level_camera_frames);
-            const lift: i16 = @intCast(@divTrunc(@as(u16, progress) * @as(u16, @intCast(end_level_camera_lift)), end_level_camera_frames));
-            const min_y = -end_level_camera_lift;
-            const max_y = room.height_pixels - screen_height;
+            const target_camera = endingTargetCamera(active_room_index, end_level_transition.start_camera);
             const render_camera = Camera{
-                .x = end_level_transition.start_camera.x,
-                .y = clampI16(end_level_transition.start_camera.y - lift, min_y, max_y),
+                .x = lerpI16(end_level_transition.start_camera.x, target_camera.x, progress, end_level_camera_frames),
+                .y = lerpI16(end_level_transition.start_camera.y, target_camera.y, progress, end_level_camera_frames),
             };
             camera.* = render_camera;
             frame.sync();
@@ -287,6 +299,22 @@ fn startGameplayFromOverworld(target_room: usize, player: *Player, camera: *Came
 
 fn updateCamera(player: Player, room_index: usize) Camera {
     return camera_mod.forPlayer(player.x, player.y, rooms[room_index]);
+}
+
+fn endingTargetCamera(room_index: usize, start_camera: Camera) Camera {
+    const room = rooms[room_index];
+    const target = bridge.endingCameraTargetOrDefault(start_camera);
+    const min_y: i16 = -@as(i16, @intCast(screen_height / 2));
+    return .{
+        .x = clampI16(target.x - screen_width / 2, 0, room.width_pixels - screen_width),
+        .y = clampI16(target.y - screen_height / 2, min_y, room.height_pixels - screen_height),
+    };
+}
+
+fn lerpI16(start: i16, target: i16, step: u8, total: u8) i16 {
+    const delta = @as(i32, target) - @as(i32, start);
+    const offset = @divTrunc(delta * @as(i32, step), @as(i32, total));
+    return @intCast(@as(i32, start) + offset);
 }
 
 fn isPrologueEndRoom(room_index: usize) bool {

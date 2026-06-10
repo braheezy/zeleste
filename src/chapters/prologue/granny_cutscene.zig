@@ -121,6 +121,7 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
             if (state.laugh_pause_timer > 0) {
                 state.laugh_pause_timer -= 1;
             } else {
+                laugh_text.stop();
                 startDialogue(4);
             }
         },
@@ -133,6 +134,10 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
         }
     }
     return state.active;
+}
+
+pub fn activeInRoom(room_index: usize) bool {
+    return state.active and state.room_index == room_index;
 }
 
 pub fn updateEffects(room_index: usize, camera: Camera) void {
@@ -170,7 +175,7 @@ pub fn drawNpc(camera: Camera, room_index: usize, object: usize, anim_counter: u
 pub fn drawOverlay(camera: Camera, room_index: usize, anim_counter: u16) void {
     if (state.active and state.room_index == room_index and state.phase == .dialogue) {
         if (rooms[room_index].granny_cutscene) |cutscene| {
-            renderDialogueTiles(cutscene);
+            renderDialogueTiles(cutscene, anim_counter);
             if (state.dialogue_index < cutscene.dialogue.len) {
                 cutscene_dialogue.drawObjects(camera, dialogue_first_object, cutscene.dialogue_box, cutscene.dialogue[state.dialogue_index], anim_counter);
             }
@@ -296,6 +301,7 @@ fn startDialogueInternal(index: u8, play_box_in: bool) void {
     if (rooms[state.room_index].granny_cutscene) |cutscene| {
         resetDialogueReveal(cutscene);
         if (play_box_in and index < cutscene.dialogue.len) {
+            cutscene_dialogue.resetTextboxGraphics();
             ui_sfx.dialogueBoxIn(pageSpeakerIsMadeline(cutscene.dialogue[index]));
         }
     }
@@ -412,9 +418,10 @@ fn playerTarget(point: Spawn) Spawn {
     };
 }
 
-fn renderDialogueTiles(cutscene: *const GrannyCutscene) void {
+fn renderDialogueTiles(cutscene: *const GrannyCutscene, anim_counter: u16) void {
     if (state.dialogue_index >= cutscene.dialogue.len) return;
     const page = cutscene.dialogue[state.dialogue_index];
+    cutscene_dialogue.preloadPortrait(page, anim_counter);
     state.dialogue_next_offset = cutscene_dialogue.renderPage(
         page,
         state.dialogue_index,

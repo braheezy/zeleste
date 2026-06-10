@@ -38,32 +38,13 @@ const scroll_y_step: i16 = 52;
 const scroll_animation_step: u16 = 2;
 const focused_scroll_step: i16 = 4;
 const scroll_open_frame: u16 = scroll_meta.frame_count - 1;
-const demo_file_select_values = true;
 const menu_action_play: u8 = 0;
 const menu_action_delete: u8 = 1;
-
-const DemoSlot = struct {
-    exists: bool,
-    name: []const u8,
-    location: []const u8,
-    strawberries: u16,
-    cassettes: u16,
-    deaths: u32,
-    completed_chapters: u32,
-    playtime_frames: u32,
-};
-
-const demo_slots = [_]DemoSlot{
-    .{ .exists = true, .name = "MADELINE", .location = "PROLOGUE", .strawberries = 7, .cassettes = 1, .deaths = 12, .completed_chapters = 0b01, .playtime_frames = 6 * 60 * 60 + 42 * 60 },
-    .{ .exists = true, .name = "MADDY", .location = "CITY 1-3", .strawberries = 18, .cassettes = 2, .deaths = 64, .completed_chapters = 0b11, .playtime_frames = 21 * 60 * 60 + 37 * 60 },
-    .{ .exists = false, .name = "NEW FILE", .location = "START", .strawberries = 0, .cassettes = 0, .deaths = 0, .completed_chapters = 0, .playtime_frames = 0 },
-};
 
 var screen_tiles: [screen_tile_count]gba.display.Tile8Bpp align(4) =
     [_]gba.display.Tile8Bpp{gba.display.Tile8Bpp.init([_]u8{0} ** 64)} ** screen_tile_count;
 var base_screen_tiles: [screen_tile_count]gba.display.Tile8Bpp align(4) =
     [_]gba.display.Tile8Bpp{gba.display.Tile8Bpp.init([_]u8{0} ** 64)} ** screen_tile_count;
-var demo_deleted_slots: [save.slot_count]bool = [_]bool{false} ** save.slot_count;
 
 const FileAction = enum {
     play,
@@ -327,26 +308,6 @@ fn drawClosedScroll(slot: u8, x: i16, y: i16) void {
 }
 
 fn drawSelectedScrollContents(slot: u8, x: i16, y: i16) void {
-    if (demo_file_select_values) {
-        const demo_index = demoSlotIndex(slot);
-        const demo = demo_slots[demo_index];
-        const exists = demo.exists and !demo_deleted_slots[demo_index];
-        drawSelectedSlotSummary(
-            slot,
-            x,
-            y,
-            exists,
-            if (exists) demo.name else "NEW FILE",
-            if (exists) demo.location else "START",
-            if (exists) demo.strawberries else 0,
-            if (exists) demo.cassettes else 0,
-            if (exists) demo.deaths else 0,
-            if (exists) demo.completed_chapters else 0,
-            if (exists) demo.playtime_frames else 0,
-        );
-        return;
-    }
-
     const summary = save.slotSummary(slot);
     if (summary.exists) {
         drawSelectedSlotSummary(
@@ -357,35 +318,16 @@ fn drawSelectedScrollContents(slot: u8, x: i16, y: i16) void {
             slotNameSlice(&summary),
             progressLabel(summary),
             summary.strawberry_count,
-            summary.cassette_count,
             summary.total_deaths,
             summary.completed_chapters,
             summary.playtime_frames,
         );
     } else {
-        drawSelectedSlotSummary(slot, x, y, false, "NEW FILE", "START", 0, 0, 0, 0, 0);
+        drawSelectedSlotSummary(slot, x, y, false, "NEW FILE", "START", 0, 0, 0, 0);
     }
 }
 
 fn drawActionScrollContents(slot: u8, x: i16, y: i16, selected_action: u8) void {
-    if (demo_file_select_values) {
-        const demo_index = demoSlotIndex(slot);
-        const demo = demo_slots[demo_index];
-        const exists = demo.exists and !demo_deleted_slots[demo_index];
-        drawActionSlotSummary(
-            slot,
-            x,
-            y,
-            exists,
-            if (exists) demo.name else "NEW FILE",
-            if (exists) demo.location else "START",
-            if (exists) demo.strawberries else 0,
-            if (exists) demo.deaths else 0,
-            selected_action,
-        );
-        return;
-    }
-
     const summary = save.slotSummary(slot);
     if (summary.exists) {
         drawActionSlotSummary(
@@ -412,7 +354,6 @@ fn drawSelectedSlotSummary(
     name: []const u8,
     location: []const u8,
     strawberries: u16,
-    cassettes: u16,
     deaths: u32,
     completed_chapters: u32,
     playtime_frames: u32,
@@ -423,6 +364,7 @@ fn drawSelectedSlotSummary(
     const stats_x = x + 64;
     const chapters_x = x + 92;
     const time_x = x + 92;
+    const deaths_x = x + 100;
     const file_y = y + 7;
     const name_y = y + 14;
     const location_y = y + 23;
@@ -436,9 +378,8 @@ fn drawSelectedSlotSummary(
     if (!exists) return;
     drawChapterBadges(completed_chapters, chapters_x, file_y - 1);
     drawBerryStat(strawberries, stats_x, stats_y, text_dark);
-    drawCassetteStat(cassettes, stats_x + 36, stats_y, text_dark);
-    drawDeathsStat(deaths, stats_x + 72, stats_y, text_dark);
     drawTimeStat(playtime_frames, time_x, time_y, text_dark);
+    drawDeathsStat(deaths, deaths_x, stats_y, text_dark);
 }
 
 fn drawActionSlotSummary(
@@ -486,24 +427,13 @@ fn drawMenuCursor(x: i16, y: i16, color: u8) void {
 fn deleteSelectedSlot(slot: u8) void {
     const slot_index: usize = @intCast(slot);
     if (slot_index >= save.slot_count) return;
-    if (demo_file_select_values) {
-        demo_deleted_slots[slot_index] = true;
-    }
     save.deleteSlot(slot_index);
 }
 
 fn slotHasSave(slot: u8) bool {
     const slot_index: usize = @intCast(slot);
     if (slot_index >= save.slot_count) return false;
-    if (demo_file_select_values) {
-        const demo = demo_slots[demoSlotIndex(slot)];
-        return demo.exists and !demo_deleted_slots[slot_index];
-    }
     return save.slotSummary(slot).exists;
-}
-
-fn demoSlotIndex(slot: u8) usize {
-    return @min(@as(usize, @intCast(slot)), demo_slots.len - 1);
 }
 
 fn scrollYForSlot(slot: u8) i16 {
@@ -587,12 +517,6 @@ fn drawBerryStat(count: u16, x: i16, y: i16, color: u8) void {
     drawBerryIcon(x, y - 2);
     text.drawSmallLine(setPixel, video.screen_width, "X", x + 8, y, color);
     drawNumberSmall(count, x + 13, y, color);
-}
-
-fn drawCassetteStat(count: u16, x: i16, y: i16, color: u8) void {
-    drawCassetteIcon(x, y - 1);
-    text.drawSmallLine(setPixel, video.screen_width, "X", x + 10, y, color);
-    drawNumberSmall(count, x + 15, y, color);
 }
 
 fn drawDeathsStat(count: u32, x: i16, y: i16, color: u8) void {
@@ -704,7 +628,7 @@ fn drawPortrait(x: i16, y: i16, exists: bool, frame_index: u16) void {
     if (!exists) {
         drawRect(x + 8, y + 7, 12, 12, portrait_shadow);
         drawRect(x + 9, y + 8, 10, 10, text_muted);
-        text.drawSmallLineTight(setPixel, video.screen_width, "NEW", x + 9, y + 21, text_dark);
+        text.drawLine(setPixel, video.screen_width, "NEW", x + 5, y + 20, text_dark);
         return;
     }
 
@@ -755,15 +679,6 @@ fn drawBerryIcon(x: i16, y: i16) void {
     setPixel(x + 2, y + 3, berry_seed);
     setPixel(x + 5, y + 4, berry_seed);
     setPixel(x + 3, y + 5, berry_seed);
-}
-
-fn drawCassetteIcon(x: i16, y: i16) void {
-    drawRect(x + 1, y, 7, 1, text_dark);
-    drawRect(x, y + 1, 9, 6, text_dark);
-    drawRect(x + 1, y + 2, 7, 4, text_muted);
-    drawRect(x + 2, y + 3, 2, 2, skull_fill);
-    drawRect(x + 5, y + 3, 2, 2, skull_fill);
-    drawRect(x + 3, y + 6, 3, 1, text_dark);
 }
 
 fn drawSkullIcon(x: i16, y: i16) void {

@@ -2,6 +2,8 @@ const gba = @import("gba");
 const background = @import("background.zig");
 const chapter_systems = @import("../chapters/systems.zig");
 const frame = @import("../core/frame.zig");
+const graphics_reset = @import("../core/graphics_reset.zig");
+const video = @import("../core/video.zig");
 const level = @import("../generated_rooms.zig");
 const room_systems = @import("room_systems.zig");
 
@@ -43,6 +45,7 @@ pub fn loadGameplayRoomStaticState(room_index: usize) void {
 }
 
 pub fn loadGameplayRoomObjectSprites(room_index: usize) void {
+    graphics_reset.clearObjectGraphics();
     room_systems.loadObjectSprites(room_index);
 }
 
@@ -63,9 +66,27 @@ pub fn hideGameplayDisplayForLoad() void {
 }
 
 pub fn showGameplayDisplay(room_index: usize) void {
-    gba.display.ctrl.bg0 = true;
-    gba.display.ctrl.bg1 = background.hasForegroundLayer(rooms[room_index]);
-    gba.display.ctrl.obj = true;
+    // Menus and overworld use different BG priorities. Restore gameplay
+    // priorities here so low-priority room sprites do not end up behind BG0.
+    gba.display.bg_ctrl[0] = .init(.{
+        .priority = 2,
+        .base_screenblock = video.bg_screenblock,
+        .size = .size_64x32,
+        .bpp = .bpp_8,
+    });
+    gba.display.bg_ctrl[1] = .init(.{
+        .priority = 0,
+        .base_charblock = video.parallax_charblock,
+        .base_screenblock = video.parallax_screenblock,
+        .size = .size_32x32,
+        .bpp = .bpp_4,
+    });
+    gba.display.ctrl.* = .initMode0(.{
+        .obj_mapping = .map_1d,
+        .bg0 = true,
+        .bg1 = background.hasForegroundLayer(rooms[room_index]),
+        .obj = true,
+    });
 }
 
 fn loadRoomBackground(room_index: usize) void {

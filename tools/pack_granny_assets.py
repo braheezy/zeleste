@@ -216,13 +216,28 @@ def pack_frame_with_indices(frame: Image, color_indices: dict[tuple[int, int, in
     return bytes(tiles)
 
 
-def pack_portraits(input_dir: Path, output_dir: Path) -> tuple[int, int]:
+def slice_portrait_asset(path: Path) -> list[Image]:
+    source = read_png_rgba(path)
+    if source.height == PORTRAIT_FRAME_HEIGHT and source.width % PORTRAIT_FRAME_WIDTH != 0:
+        if source.width % 29 == 0:
+            return slice_strip(path, 29, PORTRAIT_FRAME_HEIGHT, PORTRAIT_FRAME_WIDTH)
+        return slice_strip(path, PORTRAIT_FRAME_WIDTH, PORTRAIT_FRAME_HEIGHT, PORTRAIT_FRAME_WIDTH)
+    return slice_portrait_grid(path)
+
+
+def pack_portraits(granny_dir: Path, madeline_dir: Path, output_dir: Path) -> tuple[int, int]:
+    portrait_sources = [
+        ("madeline_idle", madeline_dir / "idle.png"),
+        ("normal", granny_dir / "normal.png"),
+        ("mock", granny_dir / "mock.png"),
+        ("laugh", granny_dir / "laugh.png"),
+    ]
     frames_by_expression: dict[str, list[Image]] = {}
     all_frames: list[Image] = []
-    for expression in PORTRAIT_EXPRESSIONS:
-        frames = slice_portrait_grid(input_dir / f"{expression}.png")
+    for expression, path in portrait_sources:
+        frames = slice_portrait_asset(path)
         if not frames:
-            raise ValueError(f"{expression}.png produced no portrait frames")
+            raise ValueError(f"{path} produced no portrait frames")
         frames_by_expression[expression] = frames
         all_frames.extend(frames)
 
@@ -230,7 +245,7 @@ def pack_portraits(input_dir: Path, output_dir: Path) -> tuple[int, int]:
     tiles = bytearray()
     ranges: dict[str, dict[str, int]] = {}
     frame_offset = 0
-    for expression in PORTRAIT_EXPRESSIONS:
+    for expression, _ in portrait_sources:
         frames = frames_by_expression[expression]
         ranges[expression] = {
             "firstFrame": frame_offset,
@@ -251,6 +266,8 @@ def pack_portraits(input_dir: Path, output_dir: Path) -> tuple[int, int]:
                 f"pub const frame_width: u8 = {PORTRAIT_FRAME_WIDTH};",
                 f"pub const frame_height: u8 = {PORTRAIT_FRAME_HEIGHT};",
                 f"pub const tiles_per_frame: u16 = {(PORTRAIT_FRAME_WIDTH // 8) * (PORTRAIT_FRAME_HEIGHT // 8)};",
+                f"pub const madeline_idle_first_frame: u16 = {ranges['madeline_idle']['firstFrame']};",
+                f"pub const madeline_idle_frame_count: u16 = {ranges['madeline_idle']['frameCount']};",
                 f"pub const normal_first_frame: u16 = {ranges['normal']['firstFrame']};",
                 f"pub const normal_frame_count: u16 = {ranges['normal']['frameCount']};",
                 f"pub const mock_first_frame: u16 = {ranges['mock']['firstFrame']};",
@@ -281,6 +298,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input-dir", type=Path, required=True)
     parser.add_argument("--portrait-dir", type=Path, required=True)
+    parser.add_argument("--madeline-portrait-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
 
@@ -338,7 +356,7 @@ def main() -> int:
         )
         + "\n"
     )
-    portrait_frame_count, portrait_color_count = pack_portraits(args.portrait_dir, args.output_dir)
+    portrait_frame_count, portrait_color_count = pack_portraits(args.portrait_dir, args.madeline_portrait_dir, args.output_dir)
     print(
         f"packed granny idle: {len(idle_frames)} frames, "
         f"laugh: {len(laugh_frames)} frames, "

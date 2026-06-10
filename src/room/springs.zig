@@ -155,7 +155,8 @@ pub fn hideObjects() void {
     last_drawn_objects = 0;
 }
 
-fn loadGraphics() void {
+pub fn loadGraphics() void {
+    if (spring_count == 0) return;
     gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(&palette_data), 16);
     gba.display.memcpyObjectTiles4Bpp(base_tile, @ptrCast(&tiles_data));
 }

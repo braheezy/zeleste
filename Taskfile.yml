@@ -16,6 +16,11 @@ tasks:
     cmds:
       - python3 tools/granny_cutscene_server.py
 
+  city-6zb-cutscene:
+    desc: Open the chapter 1 room 6zb NPC cutscene editor
+    cmds:
+      - python3 tools/city_6zb_cutscene_server.py
+
   hair:
     desc: Open the player hair anchor editor
     cmds:

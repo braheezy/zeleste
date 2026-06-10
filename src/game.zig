@@ -118,6 +118,7 @@ pub fn run() void {
         input.poll();
         save.tickPlaytime();
         save_indicator.update();
+        save_indicator.setSuppressed(false);
         if (chapter_flow.updateTransitionIfActive(&player, &camera, &room_index, &respawn, input)) {
             continue;
         }
@@ -164,6 +165,7 @@ pub fn run() void {
         }
 
         const cutscene_locked = room_systems.updateCutscenes(&player, input, room_index);
+        save_indicator.setSuppressed(cutscene_locked);
         room_systems.updateCutsceneEffects(room_index, camera);
 
         if (cutscene_locked) {

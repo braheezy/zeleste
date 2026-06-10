@@ -1,0 +1,778 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>City 6zb Cutscene Editor</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101419;
+      --panel: #171d24;
+      --panel-2: #202833;
+      --text: #e8edf2;
+      --muted: #97a3b3;
+      --line: #34404d;
+      --accent: #f0c96a;
+      --danger: #e35d6a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    header {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      background: #0d1116;
+      position: sticky;
+      top: 0;
+      z-index: 4;
+    }
+    h1 {
+      font-size: 14px;
+      margin: 0;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    button, select, input, textarea {
+      color: var(--text);
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      font: inherit;
+    }
+    button {
+      padding: 5px 8px;
+      cursor: pointer;
+    }
+    button.active {
+      border-color: var(--accent);
+      color: #111;
+      background: var(--accent);
+    }
+    button.danger { border-color: #79404a; color: #ffd7dd; }
+    input, select { padding: 4px 6px; }
+    textarea {
+      width: 100%;
+      min-height: 62px;
+      resize: vertical;
+      padding: 6px;
+    }
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      min-height: calc(100vh - 48px);
+    }
+    #stageWrap {
+      overflow: auto;
+      padding: 16px;
+    }
+    #stage {
+      position: relative;
+      image-rendering: pixelated;
+      transform-origin: top left;
+    }
+    canvas {
+      position: absolute;
+      inset: 0;
+      image-rendering: pixelated;
+    }
+    #side {
+      border-left: 1px solid var(--line);
+      background: var(--panel);
+      overflow: auto;
+      padding: 12px;
+    }
+    section {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px;
+      margin-bottom: 12px;
+      background: #141a21;
+    }
+    h2 {
+      margin: 0 0 8px;
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin: 6px 0;
+      flex-wrap: wrap;
+    }
+    .row label { color: var(--muted); min-width: 78px; }
+    #toolbar {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .dialogue-page {
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      padding: 8px;
+      margin-bottom: 8px;
+      background: #10161d;
+    }
+    .conversation {
+      border: 1px solid #263241;
+      border-radius: 5px;
+      padding: 8px;
+      margin-bottom: 10px;
+      background: #10161d;
+    }
+    .conversation-head {
+      display: grid;
+      grid-template-columns: 24px 1fr auto auto;
+      gap: 6px;
+      margin-bottom: 8px;
+      align-items: center;
+    }
+    .conversation .dialogue-page {
+      background: #0c1218;
+    }
+    .dialogue-head {
+      display: grid;
+      grid-template-columns: 24px 1fr 1fr auto;
+      gap: 6px;
+      margin-bottom: 6px;
+      align-items: center;
+    }
+    .script-list {
+      margin: 0;
+      padding-left: 20px;
+      color: var(--muted);
+    }
+    .script-list li {
+      padding: 2px 4px;
+      cursor: pointer;
+      border-radius: 3px;
+    }
+    .script-list li.active {
+      background: #313b49;
+      color: var(--text);
+    }
+    #status {
+      margin-left: auto;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .note {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 6px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>City 6zb Cutscene</h1>
+    <button id="saveBtn">Save</button>
+    <button id="reloadBtn">Reload</button>
+    <label>Zoom <input id="zoomInput" type="number" min="1" max="12" value="4"></label>
+    <label><input id="gridInput" type="checkbox" checked> Grid</label>
+    <span id="status">Loading...</span>
+  </header>
+  <main>
+    <div id="stageWrap">
+      <div id="stage">
+        <canvas id="base"></canvas>
+        <canvas id="overlay"></canvas>
+      </div>
+    </div>
+    <aside id="side">
+      <section>
+        <h2>Place</h2>
+        <div id="toolbar"></div>
+        <div class="row">
+          <label>Trigger</label>
+          <select id="triggerSelect"></select>
+          <button id="addTriggerBtn">Add</button>
+          <button id="deleteTriggerBtn" class="danger">Delete</button>
+        </div>
+        <div class="row">
+          <label>NPC facing</label>
+          <select id="npcFacingInput">
+            <option value="left">left</option>
+            <option value="right">right</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>NPC kind</label>
+          <input id="npcKindInput" value="theo">
+        </div>
+      </section>
+      <section>
+        <h2>Cutscene Dialogue</h2>
+        <button id="addDialogueBtn">Add Page</button>
+        <div id="dialogueList"></div>
+      </section>
+      <section>
+        <h2>Repeat Talk</h2>
+        <button id="addPostConversationBtn">Add Conversation</button>
+        <div id="postConversationsList"></div>
+        <div class="note">These conversations play in order after the cutscene flag is set. They are saved but not inserted into the forced cutscene script.</div>
+      </section>
+      <section>
+        <h2>Script Preview</h2>
+        <ol id="scriptList" class="script-list"></ol>
+      </section>
+    </aside>
+  </main>
+
+  <script>
+    const modeDefs = [
+      { id: "trigger", label: "Trigger", type: "rect", color: "#ff7a90" },
+      { id: "npc", label: "NPC", type: "point", color: "#f0c96a" },
+      { id: "madeline_talk", label: "Talk Target", type: "point", color: "#80d7ff" },
+      { id: "camera_focus", label: "Camera", type: "point", color: "#90f0a0" },
+      { id: "dialogue_box", label: "Dialogue Box", type: "rect", color: "#ffffff" },
+    ];
+
+    const stage = document.getElementById("stage");
+    const base = document.getElementById("base");
+    const overlay = document.getElementById("overlay");
+    const baseCtx = base.getContext("2d");
+    const overlayCtx = overlay.getContext("2d");
+    const toolbar = document.getElementById("toolbar");
+    const statusEl = document.getElementById("status");
+    const zoomInput = document.getElementById("zoomInput");
+    const gridInput = document.getElementById("gridInput");
+    const triggerSelect = document.getElementById("triggerSelect");
+    const npcFacingInput = document.getElementById("npcFacingInput");
+    const npcKindInput = document.getElementById("npcKindInput");
+    const dialogueList = document.getElementById("dialogueList");
+    const postConversationsList = document.getElementById("postConversationsList");
+    const scriptList = document.getElementById("scriptList");
+
+    let payload = null;
+    let data = null;
+    let image = null;
+    let zoom = Number(zoomInput.value);
+    let mode = "trigger";
+    let activeTrigger = 0;
+    let drag = null;
+    let previewStep = -1;
+
+    for (const def of modeDefs) {
+      const button = document.createElement("button");
+      button.textContent = def.label;
+      button.dataset.mode = def.id;
+      button.addEventListener("click", () => {
+        mode = def.id;
+        updateModeButtons();
+        drawOverlay();
+      });
+      toolbar.appendChild(button);
+    }
+
+    document.getElementById("saveBtn").addEventListener("click", save);
+    document.getElementById("reloadBtn").addEventListener("click", load);
+    document.getElementById("addTriggerBtn").addEventListener("click", addTrigger);
+    document.getElementById("deleteTriggerBtn").addEventListener("click", deleteTrigger);
+    document.getElementById("addDialogueBtn").addEventListener("click", () => addDialoguePage(data.dialogue, dialogueList, true));
+    document.getElementById("addPostConversationBtn").addEventListener("click", addPostConversation);
+    triggerSelect.addEventListener("change", () => {
+      activeTrigger = Number(triggerSelect.value) || 0;
+      mode = "trigger";
+      updateModeButtons();
+      drawOverlay();
+    });
+    npcFacingInput.addEventListener("change", () => {
+      npcActor().facing = npcFacingInput.value;
+      drawOverlay();
+    });
+    npcKindInput.addEventListener("input", () => {
+      const actor = npcActor();
+      actor.kind = npcKindInput.value || "npc";
+      actor.sprite = actor.kind;
+    });
+    zoomInput.addEventListener("change", () => {
+      zoom = clamp(Number(zoomInput.value) || 4, 1, 12);
+      zoomInput.value = zoom;
+      resizeCanvas();
+    });
+    gridInput.addEventListener("change", drawOverlay);
+    overlay.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", () => { drag = null; });
+
+    load();
+
+    async function load() {
+      setStatus("Loading...");
+      const response = await fetch("/api/city-6zb-cutscene");
+      payload = await response.json();
+      if (!payload.ok) throw new Error(payload.error || "load failed");
+      data = payload.data;
+      ensureDataShape();
+      image = new Image();
+      image.onload = () => {
+        resizeCanvas();
+        renderForm();
+        renderTriggers();
+        renderDialogue();
+        renderScript();
+        updateModeButtons();
+        setStatus(`Loaded ${payload.path}`);
+      };
+      image.src = `/${payload.image}?t=${Date.now()}`;
+    }
+
+    async function save() {
+      ensureDataShape();
+      rebuildScript();
+      setStatus("Saving...");
+      const response = await fetch("/api/city-6zb-cutscene/save", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ data }),
+      });
+      const result = await response.json();
+      if (!result.ok) {
+        setStatus(`Save failed: ${result.error}`);
+        return;
+      }
+      setStatus(`Saved ${result.path}`);
+      renderScript();
+    }
+
+    function ensureDataShape() {
+      data.triggers ||= [];
+      if (data.trigger && data.triggers.length === 0) data.triggers.push({ id: "approach", ...data.trigger });
+      if (data.triggers.length === 0) data.triggers.push({ id: "approach", x: 0, y: 0, w: 32, h: 32 });
+      data.actors ||= [];
+      data.markers ||= {};
+      data.dialogue ||= [];
+      data.postDialogue ||= [];
+      data.postConversations ||= [];
+      if (data.postDialogue.length > 0 && data.postConversations.length === 0) {
+        data.postConversations.push({ id: "repeat_1", title: "Repeat 1", pages: data.postDialogue });
+      }
+      data.postConversations.forEach((conversation, index) => {
+        conversation.id ||= `repeat_${index + 1}`;
+        conversation.title ||= `Repeat ${index + 1}`;
+        conversation.pages ||= [];
+      });
+      data.script ||= [];
+      npcActor();
+      data.markers.madeline_talk ||= { x: 0, y: 0 };
+      data.markers.camera_focus ||= { x: 0, y: 0 };
+      data.markers.dialogue_box ||= { x: 8, y: 8, w: 224, h: 56 };
+      activeTrigger = clamp(activeTrigger, 0, data.triggers.length - 1);
+      rebuildScript();
+    }
+
+    function renderForm() {
+      npcFacingInput.value = npcActor().facing || "left";
+      npcKindInput.value = npcActor().kind || "npc";
+    }
+
+    function renderTriggers() {
+      triggerSelect.innerHTML = "";
+      data.triggers.forEach((trigger, index) => {
+        const option = document.createElement("option");
+        option.value = String(index);
+        option.textContent = trigger.id || `trigger_${index + 1}`;
+        triggerSelect.appendChild(option);
+      });
+      triggerSelect.value = String(activeTrigger);
+    }
+
+    function addTrigger() {
+      const index = data.triggers.length + 1;
+      data.triggers.push({ id: `approach_${index}`, x: 16, y: 16, w: 32, h: 32 });
+      activeTrigger = data.triggers.length - 1;
+      renderTriggers();
+      mode = "trigger";
+      updateModeButtons();
+      drawOverlay();
+    }
+
+    function deleteTrigger() {
+      if (data.triggers.length <= 1) {
+        setStatus("Keep at least one trigger");
+        return;
+      }
+      data.triggers.splice(activeTrigger, 1);
+      activeTrigger = clamp(activeTrigger, 0, data.triggers.length - 1);
+      renderTriggers();
+      drawOverlay();
+    }
+
+    function addDialoguePage(list, container, scripted) {
+      list.push({ speaker: scripted ? "Madeline" : "Theo", portrait: scripted ? "madeline_neutral" : "theo_neutral", text: "" });
+      rebuildScript();
+      renderDialogue();
+      renderScript();
+    }
+
+    function renderDialogue() {
+      renderDialogueList(dialogueList, data.dialogue, true);
+      renderPostConversations();
+    }
+
+    function addPostConversation() {
+      const index = data.postConversations.length + 1;
+      data.postConversations.push({
+        id: `repeat_${index}`,
+        title: `Repeat ${index}`,
+        pages: [{ speaker: "Theo", portrait: "theo_neutral", text: "" }],
+      });
+      renderDialogue();
+    }
+
+    function renderPostConversations() {
+      postConversationsList.innerHTML = "";
+      data.postConversations.forEach((conversation, conversationIndex) => {
+        const div = document.createElement("div");
+        div.className = "conversation";
+
+        const head = document.createElement("div");
+        head.className = "conversation-head";
+
+        const number = document.createElement("div");
+        number.textContent = String(conversationIndex + 1);
+        number.style.color = "var(--muted)";
+
+        const title = document.createElement("input");
+        title.value = conversation.title || "";
+        title.placeholder = "Conversation title";
+        title.addEventListener("input", () => {
+          conversation.title = title.value;
+        });
+
+        const addPage = document.createElement("button");
+        addPage.textContent = "Add Page";
+        addPage.addEventListener("click", () => {
+          addDialoguePage(conversation.pages, postConversationsList, false);
+        });
+
+        const remove = document.createElement("button");
+        remove.textContent = "Remove";
+        remove.className = "danger";
+        remove.addEventListener("click", () => {
+          data.postConversations.splice(conversationIndex, 1);
+          renderDialogue();
+        });
+
+        const pages = document.createElement("div");
+        renderDialogueList(pages, conversation.pages, false);
+
+        head.append(number, title, addPage, remove);
+        div.append(head, pages);
+        postConversationsList.appendChild(div);
+      });
+    }
+
+    function renderDialogueList(container, list, scripted) {
+      container.innerHTML = "";
+      list.forEach((page, index) => {
+        const div = document.createElement("div");
+        div.className = "dialogue-page";
+
+        const head = document.createElement("div");
+        head.className = "dialogue-head";
+
+        const number = document.createElement("div");
+        number.textContent = String(index + 1);
+        number.style.color = "var(--muted)";
+
+        const speaker = document.createElement("input");
+        speaker.value = page.speaker || "";
+        speaker.placeholder = "Speaker";
+        speaker.addEventListener("input", () => {
+          page.speaker = speaker.value;
+          rebuildScript();
+          renderScript();
+        });
+
+        const portrait = document.createElement("input");
+        portrait.value = page.portrait || "";
+        portrait.placeholder = "Portrait";
+        portrait.addEventListener("input", () => {
+          page.portrait = portrait.value;
+          rebuildScript();
+          renderScript();
+        });
+
+        const remove = document.createElement("button");
+        remove.textContent = "Remove";
+        remove.className = "danger";
+        remove.addEventListener("click", () => {
+          list.splice(index, 1);
+          rebuildScript();
+          renderDialogue();
+          renderScript();
+        });
+
+        const text = document.createElement("textarea");
+        text.value = page.text || "";
+        text.placeholder = scripted ? "Forced cutscene dialogue" : "Repeat talk dialogue";
+        text.addEventListener("input", () => {
+          page.text = text.value;
+          rebuildScript();
+          renderScript();
+        });
+
+        head.append(number, speaker, portrait, remove);
+        div.append(head, text);
+        container.appendChild(div);
+      });
+    }
+
+    function rebuildScript() {
+      const script = [
+        { op: "lock_player" },
+        { op: "walk_player_to", marker: "madeline_talk" },
+        { op: "face", actor: "player", dir: "right" },
+        { op: "face", actor: "npc", dir: npcActor().facing === "left" ? "left" : "right" },
+        { op: "camera_to", marker: "camera_focus", frames: 24 },
+      ];
+      data.dialogue.forEach((page, index) => {
+        script.push({
+          op: "say",
+          dialogue: index,
+          speaker: page.speaker || "",
+          portrait: page.portrait || "",
+          text: page.text || "",
+        });
+      });
+      script.push({ op: "set_flag", flag: "city_6zb_intro_done" });
+      script.push({ op: "unlock_player" });
+      data.script = script;
+    }
+
+    function renderScript() {
+      scriptList.innerHTML = "";
+      data.script.forEach((step, index) => {
+        const li = document.createElement("li");
+        li.textContent = summarizeStep(step);
+        if (index === previewStep) li.className = "active";
+        li.addEventListener("click", () => {
+          previewStep = index;
+          renderScript();
+          drawOverlay();
+        });
+        scriptList.appendChild(li);
+      });
+    }
+
+    function summarizeStep(step) {
+      if (step.op === "say") return `say ${step.dialogue + 1}: ${step.speaker || "?"}`;
+      if (step.marker) return `${step.op} ${step.marker}`;
+      if (step.actor) return `${step.op} ${step.actor}`;
+      if (step.flag) return `${step.op} ${step.flag}`;
+      return step.op;
+    }
+
+    function resizeCanvas() {
+      const w = image.naturalWidth * zoom;
+      const h = image.naturalHeight * zoom;
+      stage.style.width = `${w}px`;
+      stage.style.height = `${h}px`;
+      for (const canvas of [base, overlay]) {
+        canvas.width = w;
+        canvas.height = h;
+        canvas.style.width = `${w}px`;
+        canvas.style.height = `${h}px`;
+      }
+      baseCtx.imageSmoothingEnabled = false;
+      overlayCtx.imageSmoothingEnabled = false;
+      baseCtx.clearRect(0, 0, base.width, base.height);
+      baseCtx.drawImage(image, 0, 0, w, h);
+      drawOverlay();
+    }
+
+    function drawOverlay() {
+      if (!image || !data) return;
+      overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+      if (gridInput.checked) drawGrid();
+      data.triggers.forEach((trigger, index) => {
+        drawRect(trigger, modeColor("trigger"), trigger.id || `trigger ${index + 1}`, mode === "trigger" && index === activeTrigger);
+      });
+      drawActor(npcActor(), modeColor("npc"), npcActor().kind || "npc", mode === "npc");
+      drawPoint(data.markers.madeline_talk, modeColor("madeline_talk"), "talk target", mode === "madeline_talk");
+      drawPoint(data.markers.camera_focus, modeColor("camera_focus"), "camera", mode === "camera_focus");
+      drawRect(data.markers.dialogue_box, modeColor("dialogue_box"), "dialogue box", mode === "dialogue_box");
+      drawPreviewStep();
+    }
+
+    function drawGrid() {
+      overlayCtx.save();
+      overlayCtx.strokeStyle = "rgb(255 255 255 / 0.2)";
+      overlayCtx.lineWidth = 1;
+      for (let x = 0; x <= image.naturalWidth; x += 8) line(x, 0, x, image.naturalHeight);
+      for (let y = 0; y <= image.naturalHeight; y += 8) line(0, y, image.naturalWidth, y);
+      overlayCtx.restore();
+    }
+
+    function drawRect(rect, color, label, selected) {
+      overlayCtx.save();
+      overlayCtx.fillStyle = colorWithAlpha(color, selected ? 0.28 : 0.13);
+      overlayCtx.strokeStyle = color;
+      overlayCtx.lineWidth = selected ? 3 : 2;
+      overlayCtx.fillRect(rect.x * zoom, rect.y * zoom, rect.w * zoom, rect.h * zoom);
+      overlayCtx.strokeRect(rect.x * zoom, rect.y * zoom, rect.w * zoom, rect.h * zoom);
+      labelText(label, rect.x, rect.y - 2, color);
+      overlayCtx.restore();
+    }
+
+    function drawActor(actor, color, label, selected) {
+      drawPoint(actor, color, label, selected);
+      const dx = actor.facing === "left" ? -12 : 12;
+      overlayCtx.save();
+      overlayCtx.strokeStyle = color;
+      overlayCtx.lineWidth = 2;
+      line(actor.x, actor.y, actor.x + dx, actor.y);
+      overlayCtx.restore();
+    }
+
+    function drawPoint(point, color, label, selected) {
+      overlayCtx.save();
+      const x = point.x * zoom;
+      const y = point.y * zoom;
+      overlayCtx.strokeStyle = color;
+      overlayCtx.fillStyle = colorWithAlpha(color, selected ? 0.45 : 0.28);
+      overlayCtx.lineWidth = selected ? 3 : 2;
+      overlayCtx.beginPath();
+      overlayCtx.arc(x, y, Math.max(4, 3 * zoom), 0, Math.PI * 2);
+      overlayCtx.fill();
+      overlayCtx.stroke();
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(x - 7 * zoom, y);
+      overlayCtx.lineTo(x + 7 * zoom, y);
+      overlayCtx.moveTo(x, y - 7 * zoom);
+      overlayCtx.lineTo(x, y + 7 * zoom);
+      overlayCtx.stroke();
+      labelText(label, point.x + 3, point.y - 3, color);
+      overlayCtx.restore();
+    }
+
+    function drawPreviewStep() {
+      const step = data.script[previewStep];
+      if (!step || !step.marker || !data.markers[step.marker]) return;
+      drawPoint(data.markers[step.marker], "#ffffff", `script ${previewStep + 1}`, true);
+    }
+
+    function labelText(label, x, y, color) {
+      overlayCtx.save();
+      overlayCtx.font = `${Math.max(11, 4 * zoom)}px ui-sans-serif, system-ui`;
+      overlayCtx.textBaseline = "bottom";
+      overlayCtx.fillStyle = "rgb(0 0 0 / 0.72)";
+      overlayCtx.fillText(label, x * zoom + 1, y * zoom + 1);
+      overlayCtx.fillStyle = color;
+      overlayCtx.fillText(label, x * zoom, y * zoom);
+      overlayCtx.restore();
+    }
+
+    function line(x1, y1, x2, y2) {
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(Math.round(x1 * zoom) + 0.5, Math.round(y1 * zoom) + 0.5);
+      overlayCtx.lineTo(Math.round(x2 * zoom) + 0.5, Math.round(y2 * zoom) + 0.5);
+      overlayCtx.stroke();
+    }
+
+    function onPointerDown(event) {
+      if (!data) return;
+      const def = modeDefs.find((item) => item.id === mode);
+      const point = canvasPoint(event);
+      if (def.type === "rect") {
+        const rect = getRect(mode);
+        rect.x = point.x;
+        rect.y = point.y;
+        rect.w = 1;
+        rect.h = 1;
+        drag = { type: "rect", mode, start: point };
+      } else {
+        const target = getPoint(mode);
+        target.x = point.x;
+        target.y = point.y;
+        drag = { type: "point", mode };
+      }
+      drawOverlay();
+      event.preventDefault();
+    }
+
+    function onPointerMove(event) {
+      if (!drag) return;
+      const point = canvasPoint(event);
+      if (drag.type === "rect") {
+        const rect = getRect(drag.mode);
+        rect.x = Math.min(drag.start.x, point.x);
+        rect.y = Math.min(drag.start.y, point.y);
+        rect.w = Math.max(1, Math.abs(point.x - drag.start.x));
+        rect.h = Math.max(1, Math.abs(point.y - drag.start.y));
+      } else {
+        const target = getPoint(drag.mode);
+        target.x = point.x;
+        target.y = point.y;
+      }
+      drawOverlay();
+      event.preventDefault();
+    }
+
+    function canvasPoint(event) {
+      const bounds = overlay.getBoundingClientRect();
+      return {
+        x: clamp(Math.round((event.clientX - bounds.left) / zoom), 0, image.naturalWidth - 1),
+        y: clamp(Math.round((event.clientY - bounds.top) / zoom), 0, image.naturalHeight - 1),
+      };
+    }
+
+    function getRect(key) {
+      if (key === "trigger") return data.triggers[activeTrigger];
+      if (key === "dialogue_box") return data.markers.dialogue_box;
+      throw new Error(`not a rect mode: ${key}`);
+    }
+
+    function getPoint(key) {
+      if (key === "npc") return npcActor();
+      return data.markers[key];
+    }
+
+    function npcActor() {
+      let actor = data.actors.find((item) => item.id === "npc");
+      if (!actor) {
+        actor = { id: "npc", kind: "theo", x: 0, y: 0, facing: "left", sprite: "theo" };
+        data.actors.push(actor);
+      }
+      return actor;
+    }
+
+    function updateModeButtons() {
+      for (const button of toolbar.querySelectorAll("button")) {
+        button.classList.toggle("active", button.dataset.mode === mode);
+      }
+    }
+
+    function modeColor(id) {
+      return modeDefs.find((item) => item.id === id).color;
+    }
+
+    function colorWithAlpha(hex, alpha) {
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      return `rgb(${r} ${g} ${b} / ${alpha})`;
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+  </script>
+</body>
+</html>

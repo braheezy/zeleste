@@ -1752,8 +1752,50 @@ def normalized_scene_rect(raw: dict | None) -> dict | None:
     return {"x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0}
 
 
+def normalized_scene_point(raw: dict | None) -> dict | None:
+    if not raw:
+        return None
+    return {"x": int(raw.get("x", 0)), "y": int(raw.get("y", 0))}
+
+
+def normalized_bridge_cutscene(raw: dict | None) -> dict | None:
+    if not raw:
+        return None
+    cutscene = {
+        "holdPoint": normalized_scene_point(raw.get("holdPoint")),
+        "birdStart": normalized_scene_point(raw.get("birdStart")),
+        "birdIdle": normalized_scene_point(raw.get("birdIdle")),
+        "walkTarget": normalized_scene_point(raw.get("walkTarget")),
+        "cameraTarget": normalized_scene_point(raw.get("cameraTarget")),
+    }
+    return cutscene if any(cutscene.values()) else None
+
+
+def normalized_prologue_end_cutscene(raw: dict | None) -> dict | None:
+    if not raw:
+        return None
+    cutscene = {
+        "takeoffPlatform": normalized_scene_rect(raw.get("takeoffPlatform")),
+        "takeoffPoint": normalized_scene_point(raw.get("takeoffPoint")),
+        "dashCuePoint": normalized_scene_point(raw.get("dashCuePoint")),
+        "dashTarget": normalized_scene_point(raw.get("dashTarget")),
+        "collapsePlatform": normalized_scene_rect(raw.get("collapsePlatform")),
+        "birdDashPrompt": normalized_scene_rect(raw.get("birdDashPrompt")),
+    }
+    required = (
+        "takeoffPlatform",
+        "takeoffPoint",
+        "dashCuePoint",
+        "dashTarget",
+        "collapsePlatform",
+        "birdDashPrompt",
+    )
+    return cutscene if all(cutscene.get(key) for key in required) else None
+
+
 def build_scene_bridge_ending(background_png: Path, output_dir: Path) -> None:
     scene_path = scene_path_for_background(background_png)
+    cutscene_path = background_png.with_name(f"{background_png.stem}_cutscene.json")
     output_path = output_dir / "bridge_ending.bin"
     json_output_path = output_dir / "bridge_ending.json"
     bridge = None
@@ -1764,13 +1806,47 @@ def build_scene_bridge_ending(background_png: Path, output_dir: Path) -> None:
             "platform": normalized_scene_rect(source.get("platform")),
             "trigger": normalized_scene_rect(source.get("trigger")),
             "hint": normalized_scene_rect(source.get("hint")),
+            "cutscene": normalized_bridge_cutscene(source.get("cutscene")),
             "scene": str(scene_path),
         }
+    prologue_end_cutscene = None
+    if cutscene_path.exists():
+        prologue_end_cutscene = normalized_prologue_end_cutscene(json.loads(cutscene_path.read_text()))
+        if bridge is None:
+            bridge = {
+                "platform": None,
+                "trigger": None,
+                "hint": None,
+                "cutscene": None,
+                "scene": str(scene_path) if scene_path.exists() else None,
+            }
+        bridge["prologueEndCutscene"] = prologue_end_cutscene
+        bridge["prologueEndCutsceneScene"] = str(cutscene_path)
     enabled = bool(bridge and bridge["platform"] and bridge["trigger"])
     binary = bytearray()
     binary.extend((1 if enabled else 0).to_bytes(2, "little"))
     for key in ("platform", "trigger", "hint"):
         rect = (bridge or {}).get(key) or {"x": 0, "y": 0, "w": 0, "h": 0}
+        for field in ("x", "y", "w", "h"):
+            binary.extend(int(rect.get(field, 0)).to_bytes(2, "little", signed=True))
+    cutscene = (bridge or {}).get("cutscene") or {}
+    binary.extend((1 if cutscene else 0).to_bytes(2, "little"))
+    for key in ("holdPoint", "birdStart", "birdIdle", "walkTarget", "cameraTarget"):
+        point = cutscene.get(key) or {"x": 0, "y": 0}
+        for field in ("x", "y"):
+            binary.extend(int(point.get(field, 0)).to_bytes(2, "little", signed=True))
+    scripted = prologue_end_cutscene or {}
+    binary.extend((1 if scripted else 0).to_bytes(2, "little"))
+    for key in ("takeoffPlatform",):
+        rect = scripted.get(key) or {"x": 0, "y": 0, "w": 0, "h": 0}
+        for field in ("x", "y", "w", "h"):
+            binary.extend(int(rect.get(field, 0)).to_bytes(2, "little", signed=True))
+    for key in ("takeoffPoint", "dashCuePoint", "dashTarget"):
+        point = scripted.get(key) or {"x": 0, "y": 0}
+        for field in ("x", "y"):
+            binary.extend(int(point.get(field, 0)).to_bytes(2, "little", signed=True))
+    for key in ("collapsePlatform", "birdDashPrompt"):
+        rect = scripted.get(key) or {"x": 0, "y": 0, "w": 0, "h": 0}
         for field in ("x", "y", "w", "h"):
             binary.extend(int(rect.get(field, 0)).to_bytes(2, "little", signed=True))
     output_path.write_bytes(bytes(binary))
@@ -1779,6 +1855,8 @@ def build_scene_bridge_ending(background_png: Path, output_dir: Path) -> None:
             {
                 "count": 1 if enabled else 0,
                 "recordBytes": 24,
+                "cutsceneRecordBytes": 22,
+                "prologueEndCutsceneRecordBytes": 38,
                 "binary": "bridge_ending.bin",
                 "bridgeEnding": bridge,
             },

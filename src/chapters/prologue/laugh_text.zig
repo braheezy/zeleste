@@ -1,7 +1,7 @@
 const gba = @import("gba");
 const assets = @import("../../core/assets.zig");
 const camera_mod = @import("../../world/camera.zig");
-const cutscene_dialogue = @import("../../cutscene/dialogue.zig");
+const dynamic_object_slots = @import("../../room/dynamic_object_slots.zig");
 const level = @import("../../generated_rooms.zig");
 const math = @import("../../core/math.zig");
 const oam = @import("../../core/oam.zig");
@@ -17,9 +17,10 @@ const objY = oam.objY;
 
 const tiles_data align(4) = assets.granny_haha_tiles_data;
 
-pub const first_object = 93;
+pub const first_object = dynamic_object_slots.first_object;
 pub const object_count = 3;
 pub const base_tile: u10 = 400;
+pub const palette_bank: u4 = 6;
 pub const pause_frames: u8 = 112;
 
 const haha_frame_count: u8 = 9;
@@ -140,7 +141,7 @@ pub fn draw(camera: Camera, room_index: usize) void {
             .y = objY(screen_y),
             .base_tile = base_tile + @as(u10, @intCast(frame)) * tiles_per_frame,
             .priority = 0,
-            .palette = cutscene_dialogue.palette_bank,
+            .palette = palette_bank,
         });
     }
     visible = true;
@@ -210,8 +211,17 @@ fn firstFreeParticle() ?usize {
 
 fn loadTiles() void {
     if (tiles_loaded) return;
+    loadPalette();
     gba.display.memcpyObjectTiles4Bpp(base_tile, @ptrCast(&tiles_data));
     tiles_loaded = true;
+}
+
+fn loadPalette() void {
+    const base = @as(usize, palette_bank) * 16;
+    gba.display.obj_palette.colors[base + 0] = .black;
+    gba.display.obj_palette.colors[base + 1] = .white;
+    gba.display.obj_palette.colors[base + 5] = .black;
+    gba.display.obj_palette.colors[base + 9] = gba.ColorRgb555.rgb(21, 21, 21);
 }
 
 fn frameForAge(age: u8) u8 {

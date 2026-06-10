@@ -12,6 +12,8 @@ const player_mod = @import("../../player/state.zig");
 const room_data = @import("../../world/room_data.zig");
 const video = @import("../../core/video.zig");
 
+const falling_blocks = @import("falling_blocks.zig");
+
 const Camera = camera_mod.Camera;
 const Player = player_mod.State;
 const SceneRect = room_data.SceneRect;
@@ -47,12 +49,18 @@ const ending_early_shake_frames: u8 = 12;
 const ending_gap_chunks = 3;
 const ending_hold_left_margin: i16 = 16;
 const ending_hold_right_margin: i16 = 96;
-const ending_hold_fall_depth: i16 = 8;
-const ending_hold_delay_frames: u8 = 12;
-const collapse_keep_behind_px: i16 = 40;
+const ending_dash_cue_before_platform: i16 = 2;
+const ending_dash_cue_clearance: i16 = 2;
+const ending_hold_min_bottom: i16 = 80;
+const ending_approach_protect_margin: i16 = 8;
+const ending_cutscene_trigger_before_platform: i16 = 8;
+const scripted_scene_record_offset: usize = 48;
+const scripted_scene_record_len: usize = 38;
+const collapse_keep_behind_px: i16 = 160;
 const max_chunks = 128;
-const max_objects = 30;
-const first_object = foreground_stamps.behind_first_object;
+const extra_first_object = foreground_stamps.behind_first_object + foreground_stamps.max_stamps;
+const extra_object_count = 6;
+const max_objects = falling_blocks.object_capacity + extra_object_count;
 const shake_frames: u8 = 34;
 const fall_gravity: i32 = 0x48;
 const fall_max_speed: i32 = 0x4C0;
@@ -82,6 +90,19 @@ const Ending = struct {
     platform: SceneRect = .{},
     trigger: SceneRect = .{},
     hint: SceneRect = .{},
+    has_cutscene: bool = false,
+    hold_point: Spawn = .{ .x = 0, .y = 0 },
+    bird_start: Spawn = .{ .x = 0, .y = 0 },
+    bird_idle: Spawn = .{ .x = 0, .y = 0 },
+    walk_target: Spawn = .{ .x = 0, .y = 0 },
+    camera_target: Spawn = .{ .x = 0, .y = 0 },
+    has_scripted_scene: bool = false,
+    takeoff_platform: SceneRect = .{},
+    takeoff_point: Spawn = .{ .x = 0, .y = 0 },
+    dash_cue_point: Spawn = .{ .x = 0, .y = 0 },
+    dash_target: Spawn = .{ .x = 0, .y = 0 },
+    collapse_platform: SceneRect = .{},
+    bird_dash_prompt: SceneRect = .{},
     start_index: usize = max_chunks,
     end_index: usize = max_chunks,
 };
@@ -94,6 +115,8 @@ var sequence_started: bool = false;
 var ending_hold: bool = false;
 var ending_hold_candidate_frames: u8 = 0;
 var ending_dash_started: bool = false;
+var ending_gap_open: bool = false;
+var ending_collapse_started: bool = false;
 var collapse_shake_tick: u8 = 0;
 var ending_start_index: usize = max_chunks;
 var ending: Ending = .{};
@@ -107,6 +130,8 @@ pub fn load(room_index: usize, active_room: bool) void {
     ending_hold = false;
     ending_hold_candidate_frames = 0;
     ending_dash_started = false;
+    ending_gap_open = false;
+    ending_collapse_started = false;
     collapse_shake_tick = 0;
     ending_start_index = max_chunks;
     ending = .{};
@@ -147,6 +172,9 @@ pub fn update(player: *Player, active_room: bool) void {
     var live_chunks: usize = 0;
     const player_center_x = fixedToPixel(player.x) + player_mod.body_width / 2;
     const player_bottom = fixedToPixel(player.y) + player_mod.body_height;
+    if (scriptedCollapseTriggerActive(player.*)) {
+        triggerEndingCollapsePlatform();
+    }
     if (endingTriggerActive(player.*)) {
         triggerEndingPlatformEarly();
     }
@@ -167,13 +195,20 @@ pub fn update(player: *Player, active_room: bool) void {
         switch (chunk.state) {
             .inactive, .gone => {},
             .solid => {
-                if (sequence_started and chunk.x + chunk_width < player_center_x - collapse_keep_behind_px) {
+                if (sequence_started and !endingApproachProtected(chunk.*) and chunk.x + chunk_width < player_center_x - collapse_keep_behind_px) {
                     chunk.state = .gone;
                 } else {
                     live_chunks += 1;
                 }
             },
             .shaking => {
+                if (endingApproachProtected(chunk.*)) {
+                    chunk.state = .solid;
+                    chunk.y = pixelToFixed(world_y);
+                    chunk.vy = 0;
+                    live_chunks += 1;
+                    continue;
+                }
                 live_chunks += 1;
                 if (chunk.timer > 0) {
                     chunk.timer -= 1;
@@ -184,6 +219,13 @@ pub fn update(player: *Player, active_room: bool) void {
                 }
             },
             .falling => {
+                if (endingApproachProtected(chunk.*)) {
+                    chunk.state = .solid;
+                    chunk.y = pixelToFixed(world_y);
+                    chunk.vy = 0;
+                    live_chunks += 1;
+                    continue;
+                }
                 if (sequence_started and chunk.x + chunk_width < player_center_x - collapse_keep_behind_px) {
                     chunk.state = .gone;
                     continue;
@@ -211,35 +253,26 @@ pub fn draw(camera: Camera) void {
     }
 
     var object_offset: usize = 0;
+
     var index: usize = 0;
     while (index < chunk_count and object_offset < max_objects) : (index += 1) {
         const chunk = chunks[index];
-        if (chunk.state == .inactive or chunk.state == .gone or chunk.variant == empty_chunk) continue;
+        if (chunk.state == .falling) continue;
+        if (!chunkDrawable(chunk, camera)) continue;
+        drawChunkObject(chunk, camera, &object_offset);
+    }
 
-        const screen_x = chunk.x - camera.x;
-        if (screen_x < -chunk_width or screen_x >= video.screen_width) continue;
-
-        const shake_x: i16 = if (chunk.state == .shaking and (chunk.timer & 3) == 0) -1 else 0;
-        const shake_y: i16 = if (chunk.state == .shaking and (chunk.timer & 7) == 0) 1 else 0;
-        const screen_y = fixedToPixel(chunk.y) - camera.y;
-        if (screen_y < -chunk_height or screen_y >= video.screen_height) continue;
-
-        const tile = base_tile + @as(u10, @intCast(@as(u16, chunk.variant) * tiles_per_chunk));
-        const palette = if (chunk.state == .falling) falling_palette_bank else palette_bank;
-        gba.display.objects[first_object + object_offset] = gba.display.Object.init(.{
-            .size = .size_8x32,
-            .x = objX(screen_x + shake_x),
-            .y = objY(screen_y + shake_y),
-            .base_tile = tile,
-            .priority = 1,
-            .palette = palette,
-        });
-        object_offset += 1;
+    index = 0;
+    while (index < chunk_count and object_offset < max_objects) : (index += 1) {
+        const chunk = chunks[index];
+        if (chunk.state != .falling) continue;
+        if (!chunkDrawable(chunk, camera)) continue;
+        drawChunkObject(chunk, camera, &object_offset);
     }
 
     var hide_offset = object_offset;
     while (hide_offset < drawn_object_count) : (hide_offset += 1) {
-        hideObject(first_object + hide_offset);
+        hideObject(objectIndex(hide_offset));
     }
     drawn_object_count = object_offset;
 }
@@ -247,7 +280,7 @@ pub fn draw(camera: Camera) void {
 pub fn hideObjects() void {
     var index: usize = 0;
     while (index < max_objects) : (index += 1) {
-        hideObject(first_object + index);
+        hideObject(objectIndex(index));
     }
     drawn_object_count = 0;
 }
@@ -265,26 +298,24 @@ pub fn endingHoldActive() bool {
 }
 
 pub fn shouldStartEndingHold(player: Player, active_room: bool) bool {
-    if (!bridge_active or !active_room or !ending.active or !ending.final_triggered) {
+    if (!active_room or !bridge_active or !ending.active or !ending.has_cutscene) {
         ending_hold_candidate_frames = 0;
         return false;
     }
-    const player_center_x = fixedToPixel(player.x) + player_mod.body_width / 2;
-    const player_top = fixedToPixel(player.y);
-    const player_bottom = player_top + player_mod.body_height;
-    const platform = ending.platform;
-    const in_hold_x = player_center_x >= platform.x - ending_hold_left_margin and
-        player_center_x <= platform.right() + ending_hold_right_margin and
-        player_top <= platform.y + visual_height + 72;
-    const falling_short = player.vy > 0 and player_bottom >= platform.y + ending_hold_fall_depth;
-    if (!in_hold_x or !falling_short) {
+    if (ending_hold or ending_dash_started) {
+        ending_hold_candidate_frames = 0;
+        return false;
+    }
+    if (!ending.final_triggered and !endingTriggerActive(player)) {
         ending_hold_candidate_frames = 0;
         return false;
     }
 
-    if (ending_hold_candidate_frames >= ending_hold_delay_frames) return true;
-    ending_hold_candidate_frames += 1;
-    return false;
+    if (ending_hold_candidate_frames < 1) {
+        ending_hold_candidate_frames += 1;
+        return false;
+    }
+    return true;
 }
 
 pub fn startEndingHold(player: *Player) void {
@@ -301,15 +332,47 @@ pub fn markEndingDashStarted() void {
 
 pub fn shouldStartEndLevelTransition(player: Player, active_room: bool, transition_active: bool) bool {
     if (transition_active) return false;
-    if (!active_room or !ending.active or !ending.final_triggered) return false;
-    if (!ending_dash_started) return false;
+    if (!active_room or !ending.active) return false;
+    if (ending.has_scripted_scene) {
+        if (!ending_dash_started) return false;
+        if (!player.grounded) return false;
+    } else if (ending.has_cutscene and (!ending_dash_started or !player.grounded)) return false;
     return playerReachedEndingExitZone(player);
 }
 
 pub fn endingHintOrDefault(player_x: i16, player_y: i16) Spawn {
+    if (ending.active and ending.has_scripted_scene and ending.bird_dash_prompt.w > 0 and ending.bird_dash_prompt.h > 0) {
+        return .{ .x = ending.bird_dash_prompt.x, .y = ending.bird_dash_prompt.y };
+    }
     return .{
         .x = if (ending.hint.w > 0) ending.hint.x else player_x - 32,
         .y = if (ending.hint.h > 0) ending.hint.y else player_y - 72,
+    };
+}
+
+pub fn endingBirdStartOrDefault(player_x: i16, player_y: i16) Spawn {
+    if (ending.active and ending.has_cutscene) return ending.bird_start;
+    return .{ .x = player_x + 140, .y = player_y - 42 };
+}
+
+pub fn endingBirdIdleOrDefault(player_x: i16, player_y: i16) Spawn {
+    if (ending.active and ending.has_cutscene) return ending.bird_idle;
+    return .{ .x = player_x + 34, .y = player_y - 18 };
+}
+
+pub fn endingWalkTargetOrDefault(player: Player) Spawn {
+    if (ending.active and ending.has_cutscene) return ending.walk_target;
+    return .{
+        .x = fixedToPixel(player.x) + player_mod.body_width / 2 + 28,
+        .y = fixedToPixel(player.y) + player_mod.body_height / 2,
+    };
+}
+
+pub fn endingCameraTargetOrDefault(camera: Camera) Spawn {
+    if (ending.active and ending.has_cutscene) return ending.camera_target;
+    return .{
+        .x = camera.x + video.screen_width / 2,
+        .y = camera.y + video.screen_height / 2 - 48,
     };
 }
 
@@ -318,6 +381,8 @@ pub fn deactivateForOverworld() void {
     ending_hold = false;
     ending_hold_candidate_frames = 0;
     ending_dash_started = false;
+    ending_gap_open = false;
+    ending_collapse_started = false;
     ending = .{};
     collapse_shake_tick = 0;
     hideObjects();
@@ -386,29 +451,48 @@ fn loadEnding(room_index: usize) void {
     const platform = readSceneRect(data, 2);
     const trigger = readSceneRect(data, 10);
     const hint = readSceneRect(data, 18);
-    if (platform.w <= 0 or platform.h <= 0 or trigger.w <= 0 or trigger.h <= 0) return;
+    const has_cutscene = data.len >= 48 and readU16Le(data, 26) != 0;
+    const hold_point = if (has_cutscene) readSpawn(data, 28) else Spawn{ .x = 0, .y = 0 };
+    const bird_start = if (has_cutscene) readSpawn(data, 32) else Spawn{ .x = 0, .y = 0 };
+    const bird_idle = if (has_cutscene) readSpawn(data, 36) else Spawn{ .x = 0, .y = 0 };
+    const walk_target = if (has_cutscene) readSpawn(data, 40) else Spawn{ .x = 0, .y = 0 };
+    const camera_target = if (has_cutscene) readSpawn(data, 44) else Spawn{ .x = 0, .y = 0 };
+    const has_scripted_scene = data.len >= scripted_scene_record_offset + scripted_scene_record_len and readU16Le(data, scripted_scene_record_offset) != 0;
+    const takeoff_platform = if (has_scripted_scene) readSceneRect(data, 50) else SceneRect{};
+    const takeoff_point = if (has_scripted_scene) readSpawn(data, 58) else Spawn{ .x = 0, .y = 0 };
+    const dash_cue_point = if (has_scripted_scene) readSpawn(data, 62) else Spawn{ .x = 0, .y = 0 };
+    const dash_target = if (has_scripted_scene) readSpawn(data, 66) else Spawn{ .x = 0, .y = 0 };
+    const collapse_platform = if (has_scripted_scene) readSceneRect(data, 70) else SceneRect{};
+    const bird_dash_prompt = if (has_scripted_scene) readSceneRect(data, 78) else SceneRect{};
+    const authored_platform = if (has_scripted_scene and collapse_platform.w > 0 and collapse_platform.h > 0)
+        collapse_platform
+    else
+        platform;
+    if (authored_platform.w <= 0 or authored_platform.h <= 0 or trigger.w <= 0 or trigger.h <= 0) return;
 
     const start = ending_start_index;
     if (start >= chunk_count) return;
-    const platform_chunks: usize = @intCast(@max(1, @divTrunc(platform.w + chunk_width - 1, chunk_width)));
+    const platform_chunks: usize = @intCast(@max(1, @divTrunc(authored_platform.w + chunk_width - 1, chunk_width)));
     const end = @min(chunk_count - 1, start + platform_chunks - 1);
     const actual_chunks = end - start + 1;
     const platform_width: i16 = @intCast(actual_chunks * chunk_width);
-    const platform_x = platform.right() - platform_width;
-    const gap_left = platform_x - ending_gap_chunks * chunk_width;
+    const platform_x = if (has_scripted_scene) authored_platform.x else authored_platform.right() - platform_width;
     const platform_right = platform_x + platform_width;
 
     var index = start;
     while (index <= end) : (index += 1) {
         chunks[index].x = platform_x + @as(i16, @intCast((index - start) * chunk_width));
-        chunks[index].y = pixelToFixed(platform.y);
+        chunks[index].y = pixelToFixed(authored_platform.y);
     }
 
+    const clear_left = if (has_scripted_scene and takeoff_platform.w > 0)
+        takeoff_platform.right()
+    else
+        platform_x;
     index = 0;
     while (index < chunk_count) : (index += 1) {
         if (index >= start and index <= end) continue;
-        const chunk_right = chunks[index].x + chunk_width;
-        if (chunk_right > gap_left and chunks[index].x < platform_right) {
+        if (chunks[index].x >= clear_left and chunks[index].x < platform_right) {
             chunks[index].state = .inactive;
             chunks[index].variant = empty_chunk;
             chunks[index].group = no_group;
@@ -417,9 +501,22 @@ fn loadEnding(room_index: usize) void {
 
     ending = .{
         .active = true,
-        .platform = .{ .x = platform_x, .y = platform.y, .w = platform_width, .h = platform.h },
+        .platform = .{ .x = platform_x, .y = authored_platform.y, .w = platform_width, .h = authored_platform.h },
         .trigger = trigger,
         .hint = hint,
+        .has_cutscene = has_cutscene,
+        .hold_point = hold_point,
+        .bird_start = bird_start,
+        .bird_idle = bird_idle,
+        .walk_target = walk_target,
+        .camera_target = camera_target,
+        .has_scripted_scene = has_scripted_scene,
+        .takeoff_platform = takeoff_platform,
+        .takeoff_point = takeoff_point,
+        .dash_cue_point = dash_cue_point,
+        .dash_target = dash_target,
+        .collapse_platform = collapse_platform,
+        .bird_dash_prompt = bird_dash_prompt,
         .start_index = start,
         .end_index = end,
     };
@@ -431,6 +528,13 @@ fn readSceneRect(data: []align(4) const u8, offset: usize) SceneRect {
         .y = readI16Le(data, offset + 2),
         .w = readI16Le(data, offset + 4),
         .h = readI16Le(data, offset + 6),
+    };
+}
+
+fn readSpawn(data: []align(4) const u8, offset: usize) Spawn {
+    return .{
+        .x = readI16Le(data, offset),
+        .y = readI16Le(data, offset + 2),
     };
 }
 
@@ -467,15 +571,8 @@ fn darkenColor(color: gba.ColorRgb555) gba.ColorRgb555 {
 }
 
 fn triggerChunkRun(start_index: usize) void {
-    const group = chunks[start_index].group;
-    if (group == no_group) {
-        triggerChunk(start_index, 0);
-        return;
-    }
-
     var index: usize = 0;
-    while (index < chunk_count) : (index += 1) {
-        if (chunks[index].group != group) continue;
+    while (index <= start_index and index < chunk_count) : (index += 1) {
         triggerChunk(index, 0);
     }
 }
@@ -483,6 +580,7 @@ fn triggerChunkRun(start_index: usize) void {
 fn triggerChunk(index: usize, delay: u8) void {
     const chunk = &chunks[index];
     if (chunk.state != .solid) return;
+    if (endingApproachProtected(chunk.*)) return;
     beginSequence();
     chunk.state = .shaking;
     chunk.timer = shake_frames + delay;
@@ -506,16 +604,87 @@ fn collapseShakeActive(active_room: bool) bool {
     return false;
 }
 
+fn chunkDrawable(chunk: Chunk, camera: Camera) bool {
+    if (chunk.state == .inactive or chunk.state == .gone or chunk.variant == empty_chunk) return false;
+
+    const screen_x = chunk.x - camera.x;
+    if (screen_x < -chunk_width or screen_x >= video.screen_width) return false;
+
+    const screen_y = fixedToPixel(chunk.y) - camera.y;
+    return screen_y >= -chunk_height and screen_y < video.screen_height;
+}
+
+fn drawChunkObject(chunk: Chunk, camera: Camera, object_offset: *usize) void {
+    const screen_x = chunk.x - camera.x;
+    const shake_x: i16 = if (chunk.state == .shaking and (chunk.timer & 3) == 0) -1 else 0;
+    const shake_y: i16 = if (chunk.state == .shaking and (chunk.timer & 7) == 0) 1 else 0;
+    const screen_y = fixedToPixel(chunk.y) - camera.y;
+
+    const tile = base_tile + @as(u10, @intCast(@as(u16, chunk.variant) * tiles_per_chunk));
+    const palette = if (chunk.state == .falling) falling_palette_bank else palette_bank;
+    gba.display.objects[objectIndex(object_offset.*)] = gba.display.Object.init(.{
+        .size = .size_8x32,
+        .x = objX(screen_x + shake_x),
+        .y = objY(screen_y + shake_y),
+        .base_tile = tile,
+        .priority = 1,
+        .palette = palette,
+    });
+    object_offset.* += 1;
+}
+
+fn objectIndex(offset: usize) usize {
+    if (offset < falling_blocks.object_capacity) {
+        return falling_blocks.first_object + offset;
+    }
+    return extra_first_object + (offset - falling_blocks.object_capacity);
+}
+
 fn triggerEndingPlatformEarly() void {
     if (!ending.active or ending.final_triggered) return;
-    if (ending.start_index >= chunk_count or ending.end_index >= chunk_count) return;
     ending.final_triggered = true;
-    var index: usize = ending.start_index;
-    while (index <= ending.end_index) : (index += 1) {
+}
+
+fn triggerEndingCollapsePlatform() void {
+    if (!ending.active or ending_collapse_started) return;
+    ending_collapse_started = true;
+    beginSequence();
+
+    var index = ending.start_index;
+    while (index <= ending.end_index and index < chunk_count) : (index += 1) {
         const chunk = &chunks[index];
-        if (chunk.state != .solid) continue;
+        if (chunk.state != .solid and chunk.state != .shaking) continue;
         chunk.state = .shaking;
         chunk.timer = ending_early_shake_frames;
+        chunk.vy = 0;
+    }
+}
+
+fn endingApproachProtected(chunk: Chunk) bool {
+    if (!ending.active or ending_gap_open) return false;
+    if (chunk.variant == empty_chunk or chunk.state == .inactive or chunk.state == .gone) return false;
+    const protect_left = if (ending.has_cutscene)
+        ending.platform.x - 32
+    else
+        ending.trigger.x - ending_approach_protect_margin;
+    return chunk.x + chunk_width > protect_left and chunk.x < ending.platform.x;
+}
+
+fn openEndingGap() void {
+    if (ending_gap_open or !ending.active or ending_gap_chunks == 0) return;
+    ending_gap_open = true;
+
+    const gap_left = ending.platform.x - ending_gap_chunks * chunk_width;
+    var index: usize = 0;
+    while (index < chunk_count) : (index += 1) {
+        if (index >= ending.start_index and index <= ending.end_index) continue;
+        const chunk = &chunks[index];
+        if (chunk.variant == empty_chunk or chunk.state == .inactive or chunk.state == .gone) continue;
+        const chunk_right = chunk.x + chunk_width;
+        if (chunk_right > gap_left and chunk.x < ending.platform.x) {
+            spawnSnow(chunk.*);
+            chunk.state = .gone;
+        }
     }
 }
 
@@ -527,8 +696,11 @@ fn endingTriggerActive(player: Player) bool {
     const player_bottom = player_top + player_mod.body_height;
     const trigger = ending.trigger;
     if (rectsOverlap(player_left, player_top, player_right, player_bottom, trigger.x, trigger.y, trigger.right(), trigger.bottom())) {
-        return true;
+        if (!ending.has_cutscene) return true;
+        const player_center_x = player_left + player_mod.body_width / 2;
+        return player_center_x >= ending.platform.x - ending_cutscene_trigger_before_platform;
     }
+    if (ending.has_cutscene) return false;
 
     const platform = ending.platform;
     const player_center_x = player_left + player_mod.body_width / 2;
@@ -538,14 +710,47 @@ fn endingTriggerActive(player: Player) bool {
         player_top <= platform.y + visual_height + 96;
 }
 
+fn scriptedCollapseTriggerActive(player: Player) bool {
+    if (!ending.active or !ending.has_scripted_scene or ending_collapse_started) return false;
+
+    const player_left = fixedToPixel(player.x);
+    const player_top = fixedToPixel(player.y);
+    const player_center_x = player_left + player_mod.body_width / 2;
+    const player_bottom = player_top + player_mod.body_height;
+    const takeoff = ending.takeoff_platform;
+    const takeoff_x = if (ending.takeoff_point.x != 0) ending.takeoff_point.x else takeoff.right();
+    return player_center_x >= takeoff_x - 2 and
+        player_center_x <= ending.platform.x + 8 and
+        player_bottom >= takeoff.y - 40 and
+        player_top <= takeoff.bottom() + 48;
+}
+
 fn snapPlayerForEndingHold(player: *Player) void {
     if (!ending.active) return;
 
+    if (ending.has_scripted_scene) {
+        return;
+    }
+
+    if (ending.has_cutscene) {
+        player.x = pixelToFixed(ending.hold_point.x - player_mod.body_width / 2);
+        player.y = pixelToFixed(ending.hold_point.y - player_mod.body_height / 2);
+        return;
+    }
+
     const platform = ending.platform;
-    const player_x = fixedToPixel(player.x);
-    const hold_x = clampI16(player_x, platform.x - ending_hold_left_margin, platform.right() + 32);
+    const cue = endingDashCue(platform);
+    const hold_x = clampI16(cue.x - player_mod.body_width / 2, platform.x - ending_hold_left_margin, platform.right() + 32);
 
     player.x = pixelToFixed(hold_x);
+    player.y = pixelToFixed(cue.y);
+}
+
+fn endingDashCue(platform: SceneRect) Spawn {
+    return .{
+        .x = platform.x - ending_dash_cue_before_platform,
+        .y = platform.y - player_mod.body_height - ending_dash_cue_clearance,
+    };
 }
 
 fn chunkIndexAtX(x: i16) ?usize {
@@ -563,7 +768,7 @@ fn spawnSnow(chunk: Chunk) void {
 fn floorAt(x: i16, bottom_y: i16) bool {
     if (!bridge_active) return false;
     if (ending.active and bottom_y >= ending.platform.y and bottom_y < ending.platform.y + 4 and x >= ending.platform.x and x < ending.platform.right()) {
-        return true;
+        return endingFloorAt(x, bottom_y);
     }
 
     const chunk_index = chunkIndexAtX(x) orelse return false;
@@ -574,19 +779,45 @@ fn floorAt(x: i16, bottom_y: i16) bool {
     return bottom_y >= chunk_y and bottom_y < chunk_y + 4;
 }
 
+fn endingFloorAt(x: i16, bottom_y: i16) bool {
+    var index = ending.start_index;
+    while (index <= ending.end_index and index < chunk_count) : (index += 1) {
+        const chunk = chunks[index];
+        if (chunk.state != .solid and chunk.state != .shaking) continue;
+        const chunk_y = fixedToPixel(chunk.y);
+        if (x >= chunk.x and x < chunk.x + chunk_width and bottom_y >= chunk_y and bottom_y < chunk_y + 4) {
+            return true;
+        }
+    }
+    return false;
+}
+
 fn playerReachedEndingExitZone(player: Player) bool {
     const player_left = fixedToPixel(player.x);
     const player_top = fixedToPixel(player.y);
+    const player_right = player_left + player_mod.body_width;
     const player_bottom = player_top + player_mod.body_height;
     const player_center_x = fixedToPixel(player.x) + player_mod.body_width / 2;
+    if (ending.has_scripted_scene) {
+        const player_center_y = player_top + player_mod.body_height / 2;
+        return player.dash_timer == 0 and
+            player_center_x >= ending.dash_target.x - 4 and
+            player_left <= ending.dash_target.x + 40 and
+            player_center_y >= ending.dash_target.y - 48 and
+            player_center_y <= ending.dash_target.y + 48;
+    }
+
     const platform = ending.platform;
     const platform_bottom = platform.y + visual_height;
     const dash_finished = player.dash_timer == 0;
     const crosses_end_zone = player_center_x >= platform.x - 8 and
-        player_left <= platform.right() + 24;
+        player_left <= platform.right() + 32;
     const near_end_height = player_bottom >= platform.y - 64 and
         player_top <= platform_bottom + 56;
-    return dash_finished and player.grounded and crosses_end_zone and near_end_height;
+    const committed_to_exit = player.grounded or
+        player_center_x >= platform.x + 8 or
+        player_right >= platform.right() - 4;
+    return dash_finished and crosses_end_zone and near_end_height and committed_to_exit;
 }
 
 fn endingSolidRectAt(x: i16, y: i16, right: i16, bottom: i16) bool {

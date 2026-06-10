@@ -4,6 +4,7 @@ const player_mod = @import("../../player/state.zig");
 const room_data = @import("../../world/room_data.zig");
 const object_slots = @import("../../room/object_slots.zig");
 const entities = @import("entities.zig");
+const theo_dialogue = @import("theo_dialogue.zig");
 
 const Camera = camera_mod.Camera;
 const Player = player_mod.State;
@@ -20,18 +21,21 @@ pub fn loadBeforeObjectSprites(room_index: usize, slots: SceneSlots) void {
 }
 
 pub fn loadObjectGraphics(room_index: usize) void {
-    _ = room_index;
+    theo_dialogue.loadGraphics(room_index);
 }
 
-pub fn invalidateObjectTileCaches() void {}
+pub fn invalidateObjectTileCaches() void {
+    entities.invalidateObjectGraphics();
+}
 
 pub fn loadAfterObjectSprites(room_index: usize, reset_cutscenes: bool) void {
-    _ = room_index;
     _ = reset_cutscenes;
+    theo_dialogue.resetOnRoomLoad(room_index);
+    entities.loadObjectGraphics(room_index);
 }
 
 pub fn updateCutscenes(player: *Player, input: gba.input.BufferedKeysState, room_index: usize) bool {
-    _ = input;
+    if (theo_dialogue.update(player, input, room_index)) return true;
     return entities.updateCutscenes(player, room_index);
 }
 
@@ -110,12 +114,12 @@ pub fn endingHairOverrideActive(room_index: usize) bool {
 }
 
 pub fn handleRoomTransition(from_room: usize, to_room: usize) void {
-    _ = from_room;
-    _ = to_room;
+    theo_dialogue.handleRoomTransition(from_room, to_room);
 }
 
 pub fn handlePlayerDeathStart(room_index: usize) void {
     _ = room_index;
+    theo_dialogue.handlePlayerDeathStart();
 }
 
 pub fn cameraShakeOffset(room_index: usize) ?Spawn {
@@ -189,7 +193,5 @@ pub fn drawAmbientNpcs(camera: Camera, room_index: usize, anim_counter: u16) voi
 }
 
 pub fn drawCutsceneOverlay(camera: Camera, room_index: usize, anim_counter: u16) void {
-    _ = camera;
-    _ = room_index;
-    _ = anim_counter;
+    theo_dialogue.drawOverlay(camera, room_index, anim_counter);
 }

@@ -26,6 +26,7 @@ var observed_commit_serial: u32 = 0;
 var timer: u8 = 0;
 var palette_loaded = false;
 var loaded_frame: u16 = 0xffff;
+var suppressed = false;
 
 pub fn reset() void {
     observed_commit_serial = save.commitSerial();
@@ -49,8 +50,13 @@ pub fn update() void {
     }
 }
 
+pub fn setSuppressed(value: bool) void {
+    suppressed = value;
+    if (suppressed) hideObjects();
+}
+
 pub fn draw() void {
-    if (timer == 0) {
+    if (suppressed or timer == 0) {
         hideObjects();
         return;
     }

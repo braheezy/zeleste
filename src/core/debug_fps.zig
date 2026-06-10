@@ -14,6 +14,7 @@ var last_timer: u16 = 0;
 var tick_accum: u32 = 0;
 var frame_count: u16 = 0;
 var value: u8 = 0;
+var initialized: bool = false;
 
 pub fn init(object_palette_bank: u4) void {
     if (!enabled) return;
@@ -42,13 +43,19 @@ pub fn init(object_palette_bank: u4) void {
             }
         }
     }
-    gba.display.memcpyObjectTiles4Bpp(base_tile, &digit_tiles);
+    uploadTiles();
     gba.timers[timer_index] = gba.Timer.init(0, .{});
     gba.timers[timer_index] = gba.Timer.init(0, .{
         .freq = .cycles_1024,
         .enable = true,
     });
     last_timer = gba.timers[timer_index].counter;
+    initialized = true;
+}
+
+pub fn reloadGraphics() void {
+    if (!enabled or !initialized) return;
+    uploadTiles();
 }
 
 pub fn update() void {
@@ -87,6 +94,10 @@ fn setDigitPixel(digit: usize, x: u8, y: u8, color: u8) void {
     } else {
         digit_tiles[digit].data_8[byte_index] = (digit_tiles[digit].data_8[byte_index] & 0x0f) | (@as(u8, color) << 4);
     }
+}
+
+fn uploadTiles() void {
+    gba.display.memcpyObjectTiles4Bpp(base_tile, &digit_tiles);
 }
 
 fn objX(x: i16) u9 {
