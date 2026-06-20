@@ -247,7 +247,7 @@ fn hasVisibleSprites() bool {
 }
 
 fn startReturn(player: *Player, room_index: usize, cassette: *Cassette, global_id: u16) void {
-    cassette.collected = true;
+    cassette.active = false;
     if (collectibles.markCassetteCollected(global_id)) {
         save.commitProgress();
     }

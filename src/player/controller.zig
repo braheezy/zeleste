@@ -317,7 +317,7 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
         player.var_jump_timer = 0;
         player.wall_slide_timer = player_wall_slide_frames;
         player.wall_sliding = false;
-        if (!grab_held or vertical >= 0) {
+        if (!grab_held or vertical > 0) {
             player.climbing = false;
             player.climb_dir = 0;
         }

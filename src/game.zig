@@ -116,12 +116,12 @@ pub fn run() void {
 
     while (true) {
         input.poll();
-        save.tickPlaytime();
         save_indicator.update();
         save_indicator.setSuppressed(false);
         if (chapter_flow.updateTransitionIfActive(&player, &camera, &room_index, &respawn, input)) {
             continue;
         }
+        save.tickPlaytime(room_index, false);
         if (respawn_burst_timer > 0) {
             respawn_burst_timer -= 1;
             frame.sync();

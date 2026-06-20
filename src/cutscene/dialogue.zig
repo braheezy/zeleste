@@ -65,6 +65,13 @@ const body_y: i16 = 28;
 const portrait_x: i16 = 10;
 const portrait_y: i16 = 16;
 const portrait_frame_ticks: u16 = 8;
+const box_offset_x: i16 = -24;
+const box_offset_y: i16 = 2;
+const advance_indicator_x: i16 = 207;
+const advance_indicator_y: i16 = 55;
+const advance_indicator_width: i16 = 5;
+const advance_indicator_height: i16 = 3;
+const advance_indicator_bob_ticks: u16 = 32;
 
 var visible: bool = false;
 var tiles: [tile_count]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** tile_count;
@@ -73,20 +80,22 @@ var upload_tiles_dirty: [tile_count]bool = [_]bool{false} ** tile_count;
 var textbox_tiles_loaded: bool = false;
 var loaded_portrait_frame: u16 = 0xffff;
 var portrait_palette_loaded: bool = false;
+var advance_indicator_visible: bool = false;
+var advance_indicator_frame: u8 = 0xff;
 
 pub fn invalidateGraphics() void {
     textbox_tiles_loaded = false;
     loaded_portrait_frame = 0xffff;
     portrait_palette_loaded = false;
+    advance_indicator_visible = false;
+    advance_indicator_frame = 0xff;
 }
 
 pub fn renderPage(page: CutsceneDialoguePage, dialogue_index: u8, dialogue_offset: usize, dialogue_reveal_offset: usize, typewriter: bool, cache: *Cache) usize {
+    _ = typewriter;
     const layout = layoutFor(page);
     const page_end = wrappedNextOffset(page, dialogue_offset);
-    const reveal_end = if (typewriter)
-        @min(dialogue_reveal_offset, page_end)
-    else
-        page_end;
+    const reveal_end = @min(dialogue_reveal_offset, page_end);
     if (cache.rendered_index == dialogue_index and
         cache.rendered_offset == dialogue_offset and
         cache.rendered_reveal_offset == reveal_end and
@@ -97,6 +106,8 @@ pub fn renderPage(page: CutsceneDialoguePage, dialogue_index: u8, dialogue_offse
 
     preloadTextbox();
     beginTextTileUpdate();
+    advance_indicator_visible = false;
+    advance_indicator_frame = 0xff;
     text_mod.drawLine(setPixel, width, page.speaker, layout.text_start_x, name_y, speakerNameColor(page.speaker));
     text_mod.drawWrappedUntil(setPixel, width, page.text, dialogue_offset, reveal_end, layout.text_start_x, body_y, layout.max_chars, text_max_lines, body_text_color);
     uploadDirtyTextTiles();
@@ -125,24 +136,27 @@ pub fn resetTextboxGraphics() void {
     text_tiles_dirty = [_]bool{false} ** tile_count;
     upload_tiles_dirty = [_]bool{false} ** tile_count;
     textbox_tiles_loaded = true;
+    advance_indicator_visible = false;
+    advance_indicator_frame = 0xff;
 }
 
-pub fn preloadPortrait(page: CutsceneDialoguePage, anim_counter: u16) void {
+pub fn preloadPortrait(page: CutsceneDialoguePage, portrait_timer: u16, text_revealing: bool) void {
     const portrait = effectivePortrait(page);
     if (portraitRange(portrait) == null) return;
     loadPortraitPalette();
-    loadPortraitFrame(portrait, anim_counter, false);
+    loadPortraitFrame(portrait, portrait_timer, text_revealing, false);
 }
 
-pub fn drawObjects(camera: Camera, first_object: usize, dialogue_box: SceneRect, page: CutsceneDialoguePage, anim_counter: u16) void {
+pub fn drawObjects(camera: Camera, first_object: usize, dialogue_box: SceneRect, page: CutsceneDialoguePage, portrait_timer: u16, text_revealing: bool) void {
     const portrait = effectivePortrait(page);
     const has_portrait = portraitRange(portrait) != null;
     const position = room_data.Spawn{
-        .x = clampI16(dialogue_box.x - camera.x, 0, video.screen_width - width),
-        .y = clampI16(dialogue_box.y - camera.y, 0, video.screen_height - height),
+        .x = clampI16(dialogue_box.x - camera.x + box_offset_x, 0, video.screen_width - width),
+        .y = clampI16(dialogue_box.y - camera.y + box_offset_y, 0, video.screen_height - height),
     };
+    updateAdvanceIndicator(!text_revealing, portrait_timer);
     if (has_portrait) {
-        drawPortrait(portraitObject(first_object), position, portrait, anim_counter);
+        drawPortrait(portraitObject(first_object), position, portrait, portrait_timer, text_revealing);
     } else {
         hideObject(portraitObject(first_object));
     }
@@ -232,6 +246,62 @@ fn uploadDirtyTextTiles() void {
     }
 }
 
+fn updateAdvanceIndicator(show: bool, anim_timer: u16) void {
+    const next_frame: u8 = if (show) @intCast((anim_timer / advance_indicator_bob_ticks) & 1) else 0xff;
+    if (advance_indicator_visible == show and advance_indicator_frame == next_frame) return;
+
+    if (advance_indicator_visible) {
+        restoreAdvanceIndicatorTiles();
+    }
+    advance_indicator_visible = false;
+    advance_indicator_frame = 0xff;
+
+    if (show) {
+        drawAdvanceIndicator(next_frame);
+        advance_indicator_visible = true;
+        advance_indicator_frame = next_frame;
+    }
+    uploadDirtyTextTiles();
+}
+
+fn restoreAdvanceIndicatorTiles() void {
+    const min_x = advance_indicator_x;
+    const max_x = advance_indicator_x + advance_indicator_width - 1;
+    const min_y = advance_indicator_y;
+    const max_y = advance_indicator_y + advance_indicator_height;
+    const start_tile_x: usize = @intCast(@divTrunc(min_x, 8));
+    const end_tile_x: usize = @intCast(@divTrunc(max_x, 8));
+    const start_tile_y: usize = @intCast(@divTrunc(min_y, 8));
+    const end_tile_y: usize = @intCast(@divTrunc(max_y, 8));
+
+    var tile_y = start_tile_y;
+    while (tile_y <= end_tile_y) : (tile_y += 1) {
+        var tile_x = start_tile_x;
+        while (tile_x <= end_tile_x) : (tile_x += 1) {
+            const chunk_x = tile_x / 4;
+            const chunk_y = tile_y / 2;
+            const tile_index = (chunk_y * cols + chunk_x) * tiles_per_object + (tile_y & 1) * 4 + (tile_x & 3);
+            restoreStaticTextboxTile(tile_index);
+            upload_tiles_dirty[tile_index] = true;
+            text_tiles_dirty[tile_index] = false;
+        }
+    }
+}
+
+fn drawAdvanceIndicator(frame: u8) void {
+    const y = advance_indicator_y + @as(i16, frame);
+    drawHorizontalLine(advance_indicator_x, y, advance_indicator_width, body_text_color);
+    drawHorizontalLine(advance_indicator_x + 1, y + 1, advance_indicator_width - 2, body_text_color);
+    setPixel(advance_indicator_x + 2, y + 2, body_text_color);
+}
+
+fn drawHorizontalLine(x: i16, y: i16, len: i16, color: u8) void {
+    var offset: i16 = 0;
+    while (offset < len) : (offset += 1) {
+        setPixel(x + offset, y, color);
+    }
+}
+
 const Layout = struct {
     has_portrait: bool,
     text_start_x: i16,
@@ -249,12 +319,15 @@ fn layoutFor(page: CutsceneDialoguePage) Layout {
 
 fn effectivePortrait(page: CutsceneDialoguePage) DialoguePortrait {
     if (page.portrait != .none) return page.portrait;
-    return .madeline_idle;
+    if (text_mod.startsWith(page.speaker, "Madeline")) return .madeline_idle;
+    return .none;
 }
 
 const PortraitRange = struct {
     first_frame: u16,
     frame_count: u16,
+    talk_frame_count: u16 = 0,
+    loop: bool = false,
 };
 
 fn portraitRange(portrait: DialoguePortrait) ?PortraitRange {
@@ -262,6 +335,22 @@ fn portraitRange(portrait: DialoguePortrait) ?PortraitRange {
         .madeline_idle => .{
             .first_frame = portrait_meta.madeline_idle_first_frame,
             .frame_count = portrait_meta.madeline_idle_frame_count,
+            .talk_frame_count = 3,
+        },
+        .madeline_angry => .{
+            .first_frame = portrait_meta.madeline_angry_first_frame,
+            .frame_count = portrait_meta.madeline_angry_frame_count,
+            .talk_frame_count = 3,
+        },
+        .madeline_sad => .{
+            .first_frame = portrait_meta.madeline_sad_first_frame,
+            .frame_count = portrait_meta.madeline_sad_frame_count,
+            .talk_frame_count = 3,
+        },
+        .madeline_upset => .{
+            .first_frame = portrait_meta.madeline_upset_first_frame,
+            .frame_count = portrait_meta.madeline_upset_frame_count,
+            .talk_frame_count = 3,
         },
         .granny_normal => .{
             .first_frame = portrait_meta.normal_first_frame,
@@ -274,14 +363,23 @@ fn portraitRange(portrait: DialoguePortrait) ?PortraitRange {
         .granny_laugh => .{
             .first_frame = portrait_meta.laugh_first_frame,
             .frame_count = portrait_meta.laugh_frame_count,
+            .loop = true,
+        },
+        .granny_creep_a => .{
+            .first_frame = portrait_meta.creep_a_first_frame,
+            .frame_count = portrait_meta.creep_a_frame_count,
+        },
+        .granny_creep_b => .{
+            .first_frame = portrait_meta.creep_b_first_frame,
+            .frame_count = portrait_meta.creep_b_frame_count,
         },
         else => null,
     };
 }
 
-fn drawPortrait(first_object: usize, position: room_data.Spawn, portrait: DialoguePortrait, anim_counter: u16) void {
+fn drawPortrait(first_object: usize, position: room_data.Spawn, portrait: DialoguePortrait, portrait_timer: u16, text_revealing: bool) void {
     loadPortraitPalette();
-    loadPortraitFrame(portrait, anim_counter, false);
+    loadPortraitFrame(portrait, portrait_timer, text_revealing, false);
     gba.display.objects[first_object] = gba.display.Object.init(.{
         .size = .size_32x32,
         .x = objX(position.x + portrait_x),
@@ -306,11 +404,11 @@ fn loadPortraitPalette() void {
     portrait_palette_loaded = true;
 }
 
-fn loadPortraitFrame(portrait: DialoguePortrait, anim_counter: u16, force: bool) void {
+fn loadPortraitFrame(portrait: DialoguePortrait, portrait_timer: u16, text_revealing: bool, force: bool) void {
     const range = portraitRange(portrait) orelse return;
     if (range.frame_count == 0) return;
 
-    const local_frame: u16 = @intCast((anim_counter / portrait_frame_ticks) % range.frame_count);
+    const local_frame = portraitLocalFrame(range, portrait_timer, text_revealing);
     const frame = range.first_frame + local_frame;
     if (!force and loaded_portrait_frame == frame) return;
 
@@ -319,6 +417,17 @@ fn loadPortraitFrame(portrait: DialoguePortrait, anim_counter: u16, force: bool)
     const frame_bytes = portrait_tiles_data[start .. start + bytes_per_frame];
     gba.display.memcpyObjectTiles4Bpp(portrait_base_tile, @ptrCast(@alignCast(frame_bytes)));
     loaded_portrait_frame = frame;
+}
+
+fn portraitLocalFrame(range: PortraitRange, portrait_timer: u16, text_revealing: bool) u16 {
+    const timed_frame = portrait_timer / portrait_frame_ticks;
+    if (range.loop) return timed_frame % range.frame_count;
+    if (timed_frame < range.frame_count) return timed_frame;
+    if (text_revealing and range.talk_frame_count > 0 and range.frame_count >= range.talk_frame_count) {
+        const talk_start = range.frame_count - range.talk_frame_count;
+        return talk_start + ((timed_frame - range.frame_count) % range.talk_frame_count);
+    }
+    return range.frame_count - 1;
 }
 
 fn setPixel(x: i16, y: i16, color: u8) void {

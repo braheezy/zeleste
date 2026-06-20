@@ -546,13 +546,14 @@ fn drawBadgeFrame(x: i16, y: i16, color: u8) void {
 
 fn drawTimeStat(playtime_frames: u32, x: i16, y: i16, color: u8) void {
     drawClockIcon(x, y - 1);
-    var buffer: [8]u8 = undefined;
+    var buffer: [10]u8 = undefined;
     const len = timeLabel(playtime_frames, &buffer);
     text.drawSmallLine(setPixel, video.screen_width, buffer[0..len], x + 9, y, color);
 }
 
-fn timeLabel(playtime_frames: u32, out: *[8]u8) usize {
+fn timeLabel(playtime_frames: u32, out: *[10]u8) usize {
     const total_seconds = playtime_frames / 60;
+    const tenths: u8 = @intCast((playtime_frames % 60) / 6);
     const seconds: u8 = @intCast(total_seconds % 60);
     const total_minutes = total_seconds / 60;
     const minutes: u8 = @intCast(total_minutes % 60);
@@ -574,10 +575,14 @@ fn timeLabel(playtime_frames: u32, out: *[8]u8) usize {
         len += 1;
         appendTwoDigits(seconds, out, &len);
     }
+    out[len] = '.';
+    len += 1;
+    out[len] = '0' + tenths;
+    len += 1;
     return len;
 }
 
-fn appendDecimal(value: u32, out: *[8]u8, start: usize) usize {
+fn appendDecimal(value: u32, out: *[10]u8, start: usize) usize {
     var digits: [10]u8 = undefined;
     const len = decimalDigits(value, &digits);
     var index: usize = 0;
@@ -587,7 +592,7 @@ fn appendDecimal(value: u32, out: *[8]u8, start: usize) usize {
     return index;
 }
 
-fn appendTwoDigits(value: u8, out: *[8]u8, len: *usize) void {
+fn appendTwoDigits(value: u8, out: *[10]u8, len: *usize) void {
     out[len.*] = '0' + value / 10;
     len.* += 1;
     out[len.*] = '0' + value % 10;

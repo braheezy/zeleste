@@ -36,7 +36,9 @@ const slot_strawberry_score_offset: usize = 32;
 const slot_strawberry_flags_offset: usize = 36;
 const slot_cassette_flags_offset: usize = slot_strawberry_flags_offset + collectibles.flag_word_count * 4;
 const slot_player_name_offset: usize = slot_cassette_flags_offset + collectibles.cassette_flag_word_count * 4;
+const slot_chapter_playtime_offset: usize = slot_player_name_offset + player_name_len;
 pub const player_name_len: usize = 8;
+const max_timed_chapters: usize = 8;
 
 const default_player_name = [_]u8{ 'M', 'A', 'D', 'E', 'L', 'I', 'N', 'E' };
 
@@ -54,6 +56,7 @@ const SaveSlot = struct {
     respawn: Spawn = .{ .x = 0, .y = 0 },
     total_deaths: u32 = 0,
     playtime_frames: u32 = 0,
+    chapter_playtime_frames: [max_timed_chapters]u32 = [_]u32{0} ** max_timed_chapters,
     unlocked_chapters: u32 = 1,
     completed_chapters: u32 = 0,
     strawberry_count: u16 = 0,
@@ -89,6 +92,7 @@ pub const ChapterStats = struct {
     strawberries: CollectibleCount = .{},
     cassettes: CollectibleCount = .{},
     future: CollectibleCount = .{},
+    playtime_frames: u32 = 0,
 };
 
 pub const ChapterAreaSummary = struct {
@@ -182,7 +186,12 @@ pub fn commitProgress() void {
 
 pub fn beginChapterRunForRoom(room_index: usize) void {
     ensureInitialized();
-    _ = room_index;
+    var slot = activeSlotPtr();
+    const chapter = chapterForRoom(room_index);
+    slot.exists = true;
+    slot.current_chapter = chapter;
+    slot.current_room_index = @intCast(@min(room_index, 0xffff));
+    slot.unlocked_chapters |= chapterBit(chapter);
     collectibles.beginChapterRun();
 }
 
@@ -197,11 +206,17 @@ pub fn noteDeath() void {
     if (slot.total_deaths != 0xffffffff) slot.total_deaths += 1;
 }
 
-pub fn tickPlaytime() void {
+pub fn tickPlaytime(room_index: usize, paused: bool) void {
+    if (paused) return;
     if (!initialized) return;
     var slot = activeSlotPtr();
     if (!slot.exists) return;
+    const chapter = chapterForRoom(room_index);
+    slot.current_chapter = chapter;
     if (slot.playtime_frames != 0xffffffff) slot.playtime_frames += 1;
+    if (chapter < max_timed_chapters and slot.chapter_playtime_frames[chapter] != 0xffffffff) {
+        slot.chapter_playtime_frames[chapter] += 1;
+    }
 }
 
 pub fn finishChapter(chapter: u8) void {
@@ -412,7 +427,7 @@ const ChapterAreaDef = struct {
 };
 
 const prologue_area_defs = [_]ChapterAreaDef{
-    .{ .label = "PROLOGUE", .start_room_id = "-1" },
+    .{ .label = "PROLOGUE", .start_room_id = "0" },
 };
 
 const city_area_defs = [_]ChapterAreaDef{
@@ -430,7 +445,9 @@ fn chapterAreaDefs(chapter: u8) []const ChapterAreaDef {
 }
 
 fn chapterStatsForSlot(slot: *const SaveSlot, chapter: u8) ChapterStats {
-    var stats: ChapterStats = .{};
+    var stats: ChapterStats = .{
+        .playtime_frames = chapterPlaytimeForSlot(slot, chapter),
+    };
     var room_index: usize = 0;
     while (room_index < level.rooms.len) : (room_index += 1) {
         if (!roomBelongsToChapter(room_index, chapter)) continue;
@@ -438,6 +455,15 @@ fn chapterStatsForSlot(slot: *const SaveSlot, chapter: u8) ChapterStats {
         addCollectibleCount(&stats.cassettes, cassetteCountForRoom(slot, room_index));
     }
     return stats;
+}
+
+fn chapterPlaytimeForSlot(slot: *const SaveSlot, chapter: u8) u32 {
+    if (chapter < max_timed_chapters) {
+        const stored = slot.chapter_playtime_frames[chapter];
+        if (stored != 0 or slot.playtime_frames == 0) return stored;
+    }
+    if (slot.current_chapter == chapter and slot.completed_chapters == 0) return slot.playtime_frames;
+    return 0;
 }
 
 fn chapterAreaSummaryForSlot(slot: *const SaveSlot, chapter: u8, area_index: usize, def: ChapterAreaDef) ChapterAreaSummary {
@@ -597,6 +623,10 @@ fn readSlot(base: usize) SaveSlot {
     };
     slot.total_deaths = readU32(base + slot_deaths_offset);
     slot.playtime_frames = readU32(base + slot_playtime_offset);
+    var chapter_index: usize = 0;
+    while (chapter_index < max_timed_chapters) : (chapter_index += 1) {
+        slot.chapter_playtime_frames[chapter_index] = readU32(base + slot_chapter_playtime_offset + chapter_index * 4);
+    }
     slot.unlocked_chapters = readU32(base + slot_unlocked_offset);
     slot.completed_chapters = readU32(base + slot_completed_offset);
     slot.strawberry_count = readU16(base + slot_strawberry_count_offset);
@@ -675,6 +705,11 @@ fn writeSlot(base: usize, slot: SaveSlot) void {
     var name_index: usize = 0;
     while (name_index < player_name_len) : (name_index += 1) {
         writeByte(base + slot_player_name_offset + name_index, slot.player_name[name_index]);
+    }
+
+    var chapter_index: usize = 0;
+    while (chapter_index < max_timed_chapters) : (chapter_index += 1) {
+        writeU32(base + slot_chapter_playtime_offset + chapter_index * 4, slot.chapter_playtime_frames[chapter_index]);
     }
 }
 

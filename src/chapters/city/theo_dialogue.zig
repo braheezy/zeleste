@@ -33,6 +33,8 @@ const dialogue_first_object = object_slots.cutscene_dialogue_first_object;
 const bubble_object = 127;
 const bubble_base_tile: u10 = 992;
 const bubble_palette_bank: u4 = 6;
+const dialogue_reveal_interval_frames: u8 = 5;
+const dialogue_words_per_tick: u8 = 1;
 const prompt_distance_x: i16 = 28;
 const prompt_distance_y: i16 = 24;
 const theo_feet: Spawn = .{ .x = 82, .y = 146 };
@@ -109,7 +111,9 @@ const State = struct {
     page_index: u8 = 0,
     dialogue_offset: usize = 0,
     dialogue_reveal_offset: usize = 0,
+    dialogue_reveal_timer: u8 = 0,
     dialogue_next_offset: usize = 0,
+    dialogue_portrait_timer: u16 = 0,
     dialogue_cache: cutscene_dialogue.Cache = .{},
     near_prompt: bool = false,
 };
@@ -157,11 +161,14 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
     if (!state.active) return false;
 
     lockPlayer(player);
+    state.dialogue_portrait_timer +|= 1;
+    updateDialogueReveal();
     updateDialogue(input);
     return state.active;
 }
 
 pub fn drawOverlay(camera: Camera, room_index: usize, anim_counter: u16) void {
+    _ = anim_counter;
     if (!isTheoRoom(room_index)) {
         cutscene_dialogue.hideObjects(dialogue_first_object);
         hideBubble();
@@ -173,7 +180,7 @@ pub fn drawOverlay(camera: Camera, room_index: usize, anim_counter: u16) void {
         renderDialogueTiles();
         const pages = currentPages();
         if (state.page_index < pages.len) {
-            cutscene_dialogue.drawObjects(camera, dialogue_first_object, dialogue_box, pages[state.page_index], anim_counter);
+            cutscene_dialogue.drawObjects(camera, dialogue_first_object, dialogue_box, pages[state.page_index], state.dialogue_portrait_timer, dialogueTextRevealing());
         }
         return;
     }
@@ -194,8 +201,9 @@ fn startDialogue() void {
     state.active = true;
     state.page_index = 0;
     state.dialogue_offset = 0;
-    state.dialogue_reveal_offset = currentPage().text.len;
+    resetDialogueReveal(currentPage());
     state.dialogue_next_offset = 0;
+    state.dialogue_portrait_timer = 0;
     state.dialogue_cache.invalidate();
     hideBubble();
     cutscene_dialogue.resetTextboxGraphics();
@@ -212,10 +220,16 @@ fn updateDialogue(input: gba.input.BufferedKeysState) void {
 
     const page_data = pages[state.page_index];
     const page_end = cutscene_dialogue.wrappedNextOffset(page_data, state.dialogue_offset);
+    if (state.dialogue_reveal_offset < page_end) {
+        ui_sfx.dialogueAdvance(pageSpeakerIsMadeline(page_data));
+        revealDialogueTo(page_data, page_end);
+        return;
+    }
+
     if (page_end < page_data.text.len) {
         ui_sfx.dialogueAdvance(pageSpeakerIsMadeline(page_data));
         state.dialogue_offset = page_end;
-        state.dialogue_reveal_offset = page_data.text.len;
+        resetDialogueReveal(page_data);
         state.dialogue_cache.invalidate();
         return;
     }
@@ -228,8 +242,9 @@ fn updateDialogue(input: gba.input.BufferedKeysState) void {
         ui_sfx.dialogueAdvance(pageSpeakerIsMadeline(page_data));
         state.page_index = @intCast(next_page);
         state.dialogue_offset = 0;
-        state.dialogue_reveal_offset = pages[next_page].text.len;
+        resetDialogueReveal(pages[next_page]);
         state.dialogue_cache.invalidate();
+        state.dialogue_portrait_timer = 0;
     }
 }
 
@@ -241,7 +256,9 @@ fn finishDialogue() void {
     state.page_index = 0;
     state.dialogue_offset = 0;
     state.dialogue_reveal_offset = 0;
+    state.dialogue_reveal_timer = 0;
     state.dialogue_next_offset = 0;
+    state.dialogue_portrait_timer = 0;
     state.dialogue_cache.invalidate();
     cutscene_dialogue.hideObjects(dialogue_first_object);
 }
@@ -252,7 +269,9 @@ fn abortDialogue() void {
     state.page_index = 0;
     state.dialogue_offset = 0;
     state.dialogue_reveal_offset = 0;
+    state.dialogue_reveal_timer = 0;
     state.dialogue_next_offset = 0;
+    state.dialogue_portrait_timer = 0;
     state.dialogue_cache.invalidate();
     cutscene_dialogue.hideObjects(dialogue_first_object);
 }
@@ -274,6 +293,8 @@ fn renderDialogueTiles() void {
     const pages = currentPages();
     if (state.page_index >= pages.len) return;
     const page_data = pages[state.page_index];
+    const page_end = cutscene_dialogue.wrappedNextOffset(page_data, state.dialogue_offset);
+    cutscene_dialogue.preloadPortrait(page_data, state.dialogue_portrait_timer, state.dialogue_reveal_offset < page_end);
     state.dialogue_next_offset = cutscene_dialogue.renderPage(
         page_data,
         state.page_index,
@@ -282,6 +303,42 @@ fn renderDialogueTiles() void {
         false,
         &state.dialogue_cache,
     );
+}
+
+fn dialogueTextRevealing() bool {
+    return state.dialogue_reveal_offset < state.dialogue_next_offset;
+}
+
+fn resetDialogueReveal(page_data: CutsceneDialoguePage) void {
+    state.dialogue_reveal_offset = text_mod.skipSpaces(page_data.text, state.dialogue_offset);
+    state.dialogue_reveal_timer = 0;
+    state.dialogue_cache.invalidate();
+}
+
+fn updateDialogueReveal() void {
+    const pages = currentPages();
+    if (state.page_index >= pages.len) return;
+    const page_data = pages[state.page_index];
+    const target = cutscene_dialogue.wrappedNextOffset(page_data, state.dialogue_offset);
+    if (state.dialogue_reveal_offset < state.dialogue_offset) {
+        state.dialogue_reveal_offset = text_mod.skipSpaces(page_data.text, state.dialogue_offset);
+    }
+    if (state.dialogue_reveal_offset >= target) return;
+
+    state.dialogue_reveal_timer +%= 1;
+    if (state.dialogue_reveal_timer < dialogue_reveal_interval_frames) return;
+    state.dialogue_reveal_timer = 0;
+
+    const old_offset = state.dialogue_reveal_offset;
+    const new_offset = text_mod.advanceRevealByWords(page_data.text, old_offset, target, dialogue_words_per_tick);
+    revealDialogueTo(page_data, new_offset);
+    if (new_offset != old_offset) ui_sfx.dialogueText(dialogueVoice(page_data));
+}
+
+fn revealDialogueTo(page_data: CutsceneDialoguePage, offset: usize) void {
+    _ = page_data;
+    state.dialogue_reveal_offset = offset;
+    state.dialogue_cache.invalidate();
 }
 
 fn currentPages() []const CutsceneDialoguePage {
@@ -329,6 +386,10 @@ fn hideBubble() void {
 
 fn pageSpeakerIsMadeline(page_data: CutsceneDialoguePage) bool {
     return text_mod.startsWith(page_data.speaker, "Madeline");
+}
+
+fn dialogueVoice(page_data: CutsceneDialoguePage) ui_sfx.DialogueVoice {
+    return if (pageSpeakerIsMadeline(page_data)) .madeline_normal else .generic;
 }
 
 fn isTheoRoom(room_index: usize) bool {

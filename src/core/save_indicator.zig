@@ -15,7 +15,7 @@ const meta = assets.save_icon_meta;
 
 const first_object_index = 4;
 const object_count = 4;
-const base_tile: u10 = 784;
+const base_tile: u10 = 856;
 const palette_bank: u4 = 14;
 const frame_ticks: u8 = 8;
 const hold_frames: u8 = 30;

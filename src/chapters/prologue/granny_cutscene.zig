@@ -34,6 +34,8 @@ const player_body_height = player_mod.body_height;
 const dialogue_first_object = falling_blocks.first_object;
 const granny_scene_room_index = level.roomIndexFor(level.chapter_index, "2") orelse rooms.len;
 const granny_laugh_carry_room_index = level.roomIndexFor(level.chapter_index, "3") orelse rooms.len;
+const dialogue_reveal_interval_frames: u8 = 5;
+const dialogue_words_per_tick: u8 = 1;
 const ominous_reveal_interval_frames: u8 = 12;
 const ominous_words_per_tick: u8 = 2;
 const ominous_shake_frames: u8 = 14;
@@ -55,6 +57,7 @@ const State = struct {
     dialogue_next_offset: usize = 0,
     dialogue_reveal_offset: usize = 0,
     dialogue_reveal_timer: u8 = 0,
+    dialogue_portrait_timer: u16 = 0,
     dialogue_cache: cutscene_dialogue.Cache = .{},
     see_shake_started: bool = false,
     shake_timer: u8 = 0,
@@ -100,6 +103,7 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
     switch (state.phase) {
         .inactive => {},
         .dialogue => {
+            state.dialogue_portrait_timer +|= 1;
             updateDialogueReveal(cutscene);
             updateDialogue(input, cutscene);
         },
@@ -173,11 +177,12 @@ pub fn drawNpc(camera: Camera, room_index: usize, object: usize, anim_counter: u
 }
 
 pub fn drawOverlay(camera: Camera, room_index: usize, anim_counter: u16) void {
+    _ = anim_counter;
     if (state.active and state.room_index == room_index and state.phase == .dialogue) {
         if (rooms[room_index].granny_cutscene) |cutscene| {
-            renderDialogueTiles(cutscene, anim_counter);
+            renderDialogueTiles(cutscene);
             if (state.dialogue_index < cutscene.dialogue.len) {
-                cutscene_dialogue.drawObjects(camera, dialogue_first_object, cutscene.dialogue_box, cutscene.dialogue[state.dialogue_index], anim_counter);
+                cutscene_dialogue.drawObjects(camera, dialogue_first_object, cutscene.dialogue_box, cutscene.dialogue[state.dialogue_index], state.dialogue_portrait_timer, dialogueTextRevealing());
             }
         }
     } else {
@@ -239,7 +244,7 @@ fn updateDialogue(input: gba.input.BufferedKeysState, cutscene: *const GrannyCut
 
     const page = cutscene.dialogue[state.dialogue_index];
     const page_end = cutscene_dialogue.wrappedNextOffset(page, state.dialogue_offset);
-    if (dialogueUsesTypewriter(page.text) and state.dialogue_reveal_offset < page_end) {
+    if (state.dialogue_reveal_offset < page_end) {
         ui_sfx.dialogueAdvance(pageSpeakerIsMadeline(page));
         revealDialogueTo(page.text, page_end);
         return;
@@ -297,6 +302,7 @@ fn startDialogueInternal(index: u8, play_box_in: bool) void {
     state.dialogue_index = index;
     state.dialogue_offset = 0;
     state.dialogue_next_offset = 0;
+    state.dialogue_portrait_timer = 0;
     state.dialogue_cache.invalidate();
     if (rooms[state.room_index].granny_cutscene) |cutscene| {
         resetDialogueReveal(cutscene);
@@ -320,7 +326,7 @@ fn resetDialogueReveal(cutscene: *const GrannyCutscene) void {
     if (state.dialogue_index >= cutscene.dialogue.len) return;
     const page = cutscene.dialogue[state.dialogue_index];
     const start_offset = text_mod.skipSpaces(page.text, state.dialogue_offset);
-    state.dialogue_reveal_offset = if (dialogueUsesTypewriter(page.text)) start_offset else page.text.len;
+    state.dialogue_reveal_offset = start_offset;
     state.dialogue_reveal_timer = 0;
     state.dialogue_cache.invalidate();
     state.see_shake_started = false;
@@ -329,11 +335,6 @@ fn resetDialogueReveal(cutscene: *const GrannyCutscene) void {
 fn updateDialogueReveal(cutscene: *const GrannyCutscene) void {
     if (state.dialogue_index >= cutscene.dialogue.len) return;
     const page = cutscene.dialogue[state.dialogue_index];
-    if (!dialogueUsesTypewriter(page.text)) {
-        state.dialogue_reveal_offset = page.text.len;
-        return;
-    }
-
     const target = cutscene_dialogue.wrappedNextOffset(page, state.dialogue_offset);
     if (state.dialogue_reveal_offset < state.dialogue_offset) {
         state.dialogue_reveal_offset = text_mod.skipSpaces(page.text, state.dialogue_offset);
@@ -341,13 +342,15 @@ fn updateDialogueReveal(cutscene: *const GrannyCutscene) void {
     if (state.dialogue_reveal_offset >= target) return;
 
     state.dialogue_reveal_timer +%= 1;
-    if (state.dialogue_reveal_timer < ominous_reveal_interval_frames) return;
+    const interval = if (dialogueUsesTypewriter(page.text)) ominous_reveal_interval_frames else dialogue_reveal_interval_frames;
+    if (state.dialogue_reveal_timer < interval) return;
     state.dialogue_reveal_timer = 0;
 
     const old_offset = state.dialogue_reveal_offset;
-    const new_offset = text_mod.advanceRevealByWords(page.text, old_offset, target, ominous_words_per_tick);
+    const words = if (dialogueUsesTypewriter(page.text)) ominous_words_per_tick else dialogue_words_per_tick;
+    const new_offset = text_mod.advanceRevealByWords(page.text, old_offset, target, words);
     revealDialogueTo(page.text, new_offset);
-    if (new_offset != old_offset) ui_sfx.dialogueText();
+    if (new_offset != old_offset) ui_sfx.dialogueText(dialogueVoice(page));
 }
 
 fn revealDialogueTo(text: []const u8, offset: usize) void {
@@ -381,6 +384,24 @@ fn dialogueUsesTypewriter(text: []const u8) bool {
 
 fn pageSpeakerIsMadeline(page: room_data.CutsceneDialoguePage) bool {
     return text_mod.startsWith(page.speaker, "Madeline");
+}
+
+fn dialogueVoice(page: room_data.CutsceneDialoguePage) ui_sfx.DialogueVoice {
+    if (pageSpeakerIsMadeline(page)) {
+        return switch (page.portrait) {
+            .madeline_angry => .madeline_angry,
+            .madeline_sad => .madeline_sad,
+            else => .madeline_normal,
+        };
+    }
+    return switch (page.portrait) {
+        .granny_mock => .granny_mock,
+        .granny_laugh => .granny_laugh,
+        .granny_normal => .granny_normal,
+        .granny_creep_a => .granny_mock,
+        .granny_creep_b => .granny_mock,
+        else => .generic,
+    };
 }
 
 fn laughTextAllowedInRoom(room_index: usize) bool {
@@ -418,10 +439,11 @@ fn playerTarget(point: Spawn) Spawn {
     };
 }
 
-fn renderDialogueTiles(cutscene: *const GrannyCutscene, anim_counter: u16) void {
+fn renderDialogueTiles(cutscene: *const GrannyCutscene) void {
     if (state.dialogue_index >= cutscene.dialogue.len) return;
     const page = cutscene.dialogue[state.dialogue_index];
-    cutscene_dialogue.preloadPortrait(page, anim_counter);
+    const page_end = cutscene_dialogue.wrappedNextOffset(page, state.dialogue_offset);
+    cutscene_dialogue.preloadPortrait(page, state.dialogue_portrait_timer, state.dialogue_reveal_offset < page_end);
     state.dialogue_next_offset = cutscene_dialogue.renderPage(
         page,
         state.dialogue_index,
@@ -430,6 +452,10 @@ fn renderDialogueTiles(cutscene: *const GrannyCutscene, anim_counter: u16) void 
         dialogueUsesTypewriter(page.text),
         &state.dialogue_cache,
     );
+}
+
+fn dialogueTextRevealing() bool {
+    return state.dialogue_reveal_offset < state.dialogue_next_offset;
 }
 
 fn npcAnimationForRoom(room_index: usize) granny_npc.Animation {

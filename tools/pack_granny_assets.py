@@ -228,9 +228,14 @@ def slice_portrait_asset(path: Path) -> list[Image]:
 def pack_portraits(granny_dir: Path, madeline_dir: Path, output_dir: Path) -> tuple[int, int]:
     portrait_sources = [
         ("madeline_idle", madeline_dir / "idle.png"),
+        ("madeline_angry", madeline_dir / "angry.png"),
+        ("madeline_sad", madeline_dir / "sad.png"),
+        ("madeline_upset", madeline_dir / "upset.png"),
         ("normal", granny_dir / "normal.png"),
         ("mock", granny_dir / "mock.png"),
         ("laugh", granny_dir / "laugh.png"),
+        ("creep_a", granny_dir / "creepA.png"),
+        ("creep_b", granny_dir / "creepB.png"),
     ]
     frames_by_expression: dict[str, list[Image]] = {}
     all_frames: list[Image] = []
@@ -268,12 +273,22 @@ def pack_portraits(granny_dir: Path, madeline_dir: Path, output_dir: Path) -> tu
                 f"pub const tiles_per_frame: u16 = {(PORTRAIT_FRAME_WIDTH // 8) * (PORTRAIT_FRAME_HEIGHT // 8)};",
                 f"pub const madeline_idle_first_frame: u16 = {ranges['madeline_idle']['firstFrame']};",
                 f"pub const madeline_idle_frame_count: u16 = {ranges['madeline_idle']['frameCount']};",
+                f"pub const madeline_angry_first_frame: u16 = {ranges['madeline_angry']['firstFrame']};",
+                f"pub const madeline_angry_frame_count: u16 = {ranges['madeline_angry']['frameCount']};",
+                f"pub const madeline_sad_first_frame: u16 = {ranges['madeline_sad']['firstFrame']};",
+                f"pub const madeline_sad_frame_count: u16 = {ranges['madeline_sad']['frameCount']};",
+                f"pub const madeline_upset_first_frame: u16 = {ranges['madeline_upset']['firstFrame']};",
+                f"pub const madeline_upset_frame_count: u16 = {ranges['madeline_upset']['frameCount']};",
                 f"pub const normal_first_frame: u16 = {ranges['normal']['firstFrame']};",
                 f"pub const normal_frame_count: u16 = {ranges['normal']['frameCount']};",
                 f"pub const mock_first_frame: u16 = {ranges['mock']['firstFrame']};",
                 f"pub const mock_frame_count: u16 = {ranges['mock']['frameCount']};",
                 f"pub const laugh_first_frame: u16 = {ranges['laugh']['firstFrame']};",
                 f"pub const laugh_frame_count: u16 = {ranges['laugh']['frameCount']};",
+                f"pub const creep_a_first_frame: u16 = {ranges['creep_a']['firstFrame']};",
+                f"pub const creep_a_frame_count: u16 = {ranges['creep_a']['frameCount']};",
+                f"pub const creep_b_first_frame: u16 = {ranges['creep_b']['firstFrame']};",
+                f"pub const creep_b_frame_count: u16 = {ranges['creep_b']['frameCount']};",
                 "",
             ]
         )

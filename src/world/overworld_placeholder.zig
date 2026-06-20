@@ -1,7 +1,9 @@
 const gba = @import("gba");
 const assets = @import("../core/assets.zig");
 const background = @import("background.zig");
+const level = @import("../generated_rooms.zig");
 const oam = @import("../core/oam.zig");
+const room_data = @import("room_data.zig");
 const save = @import("../core/save.zig");
 const text = @import("../core/text.zig");
 const ui_sfx = @import("../core/ui_sfx.zig");
@@ -45,11 +47,14 @@ const panel_border: u8 = 253;
 const panel_shadow: u8 = 254;
 const panel_accent: u8 = 255;
 
+const RespawnPoint = room_data.RespawnPoint;
+
 var screen_tiles: [screen_tile_count]gba.display.Tile8Bpp align(4) =
     [_]gba.display.Tile8Bpp{gba.display.Tile8Bpp.init([_]u8{0} ** 64)} ** screen_tile_count;
 var cursor_tiles: [4]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** 4;
 var selected_page: u8 = 0;
 var selected_chapter: ?u8 = null;
+var selected_area_index: u8 = 0;
 var previous_horizontal: i16 = 0;
 var previous_vertical: i16 = 0;
 var confirm_released: bool = false;
@@ -84,6 +89,7 @@ pub fn loadScreen() void {
     confirm_released = false;
     selected_chapter = defaultChapter();
     selected_page = if (selected_chapter) |chapter| chapterInfo(chapter).page else 0;
+    selected_area_index = defaultAreaForChapter(selected_chapter);
 
     loadPage(selected_page);
     loadIcons();
@@ -119,12 +125,18 @@ pub fn update(input: gba.input.BufferedKeysState) Selection {
 
     const vertical: i16 = @intCast(input.getAxisVertical());
     if (vertical < 0 and previous_vertical >= 0) {
-        if (moveAlongPath(1)) {
+        if (moveCheckpointSelection(-1)) {
+            ui_sfx.worldIconRoll(-1);
+            changed = true;
+        } else if (!selectedChapterHasCheckpointList() and moveAlongPath(1)) {
             ui_sfx.worldIconRoll(1);
             changed = true;
         }
     } else if (vertical > 0 and previous_vertical <= 0) {
-        if (moveAlongPath(-1)) {
+        if (moveCheckpointSelection(1)) {
+            ui_sfx.worldIconRoll(1);
+            changed = true;
+        } else if (!selectedChapterHasCheckpointList() and moveAlongPath(-1)) {
             ui_sfx.worldIconRoll(-1);
             changed = true;
         }
@@ -207,11 +219,22 @@ fn currentSelection() Selection {
     };
 }
 
+pub fn selectedRespawn() ?RespawnPoint {
+    const chapter = selected_chapter orelse return null;
+    const info = chapterInfo(chapter);
+    if (!isChapterVisible(info)) return null;
+    const area = selectedAreaSummary(chapter) orelse return null;
+    if (area.checkpoint_room_index >= level.rooms.len) return null;
+    return .{
+        .room_index = area.checkpoint_room_index,
+        .spawn = level.rooms[area.checkpoint_room_index].spawn,
+    };
+}
+
 fn moveAlongPath(direction: i8) bool {
     if (selected_chapter == null) {
         if (firstVisibleOnPage(selected_page)) |chapter| {
-            selected_chapter = chapter;
-            return true;
+            return selectChapter(chapter);
         }
         if (defaultChapter()) |chapter| {
             return selectChapter(chapter);
@@ -230,10 +253,37 @@ fn moveAlongPath(direction: i8) bool {
     }
 }
 
+fn moveCheckpointSelection(direction: i8) bool {
+    const chapter = selected_chapter orelse return false;
+    if (chapter == prologue_chapter) return false;
+
+    const count = chapterAreaCount(chapter);
+    if (count <= 1) return false;
+
+    const step: isize = if (direction > 0) 1 else -1;
+    var index: isize = @intCast(selected_area_index);
+    while (true) {
+        index += step;
+        if (index < 0 or index >= count) return false;
+        const candidate_index: usize = @intCast(index);
+        const area = save.activeChapterAreaSummary(chapter, candidate_index);
+        if (area.unlocked) {
+            selected_area_index = @intCast(candidate_index);
+            return true;
+        }
+    }
+}
+
+fn selectedChapterHasCheckpointList() bool {
+    const chapter = selected_chapter orelse return false;
+    return chapter != prologue_chapter and chapterAreaCount(chapter) > 1;
+}
+
 fn previousPage() bool {
     if (selected_page == 0) return false;
     selected_page -= 1;
     selected_chapter = firstVisibleOnPage(selected_page);
+    selected_area_index = defaultAreaForChapter(selected_chapter);
     loadPage(selected_page);
     return true;
 }
@@ -242,6 +292,7 @@ fn nextPage() bool {
     if (selected_page + 1 >= page_count) return false;
     selected_page += 1;
     selected_chapter = firstVisibleOnPage(selected_page);
+    selected_area_index = defaultAreaForChapter(selected_chapter);
     loadPage(selected_page);
     return true;
 }
@@ -250,6 +301,7 @@ fn selectChapter(chapter: u8) bool {
     const info = chapterInfo(chapter);
     if (!isChapterVisible(info)) return false;
     selected_chapter = chapter;
+    selected_area_index = defaultAreaForChapter(selected_chapter);
     if (selected_page == info.page) return true;
     selected_page = info.page;
     loadPage(selected_page);
@@ -285,6 +337,41 @@ fn chapterArrayIndex(chapter: u8) ?usize {
     var index: usize = 0;
     while (index < icon_meta.chapter_count) : (index += 1) {
         if (icon_meta.chapters[index].chapter == chapter) return index;
+    }
+    return null;
+}
+
+fn chapterAreaCount(chapter: u8) usize {
+    return @min(save.activeChapterAreaCount(chapter), save.max_chapter_area_count);
+}
+
+fn defaultAreaForChapter(chapter: ?u8) u8 {
+    const selected = chapter orelse return 0;
+    const count = chapterAreaCount(selected);
+    if (count == 0) return 0;
+
+    var index = count;
+    while (index > 0) {
+        index -= 1;
+        const area = save.activeChapterAreaSummary(selected, index);
+        if (area.unlocked) return @intCast(index);
+    }
+    return 0;
+}
+
+fn selectedAreaSummary(chapter: u8) ?save.ChapterAreaSummary {
+    const count = chapterAreaCount(chapter);
+    if (count == 0) return null;
+
+    const preferred_index = @min(@as(usize, selected_area_index), count - 1);
+    const preferred = save.activeChapterAreaSummary(chapter, preferred_index);
+    if (preferred.unlocked) return preferred;
+
+    var index = count;
+    while (index > 0) {
+        index -= 1;
+        const area = save.activeChapterAreaSummary(chapter, index);
+        if (area.unlocked) return area;
     }
     return null;
 }
@@ -391,39 +478,77 @@ fn drawChapterPanel() void {
 
     const x: i16 = 8;
     const y: i16 = 8;
-    drawPanelBox(x, y, 224, 64);
+    const is_prologue = chapter == prologue_chapter;
+    const panel_height: i16 = if (is_prologue) 40 else 64;
+    drawPanelBox(x, y, 224, panel_height);
 
     text.drawSmallLine(setPixel, video.screen_width, chapterTitle(chapter), x + 8, y + 6, panel_text);
     text.drawSmallLine(setPixel, video.screen_width, "TIME", x + 8, y + 16, panel_muted);
-    drawTimeValue(summary.playtime_frames, x + 28, y + 16, panel_text);
+    drawTimeValue(stats.playtime_frames, x + 28, y + 16, panel_text);
     text.drawSmallLine(setPixel, video.screen_width, "DEATHS", x + 78, y + 16, panel_muted);
     drawNumber(summary.total_deaths, x + 104, y + 16, panel_text);
 
     text.drawSmallLine(setPixel, video.screen_width, "BERRIES", x + 8, y + 27, panel_muted);
     drawRatio(stats.strawberries, x + 40, y + 27, panel_text);
-    text.drawSmallLine(setPixel, video.screen_width, "TAPE", x + 82, y + 27, panel_muted);
-    drawRatio(stats.cassettes, x + 104, y + 27, panel_text);
-    text.drawSmallLine(setPixel, video.screen_width, "FUTURE --", x + 144, y + 27, panel_muted);
+    if (!is_prologue) {
+        if (stats.cassettes.collected > 0) drawTapeIcon(x + 88, y + 25);
 
-    text.drawSmallLine(setPixel, video.screen_width, "CHECKPOINTS", x + 8, y + 38, panel_accent);
-    const area_count = @min(save.activeChapterAreaCount(chapter), save.max_chapter_area_count);
-    var area_index: usize = 0;
-    while (area_index < area_count) : (area_index += 1) {
-        const area = save.activeChapterAreaSummary(chapter, area_index);
-        drawCheckpointRow(area, x + 8 + @as(i16, @intCast(area_index)) * 70, y + 50);
+        text.drawSmallLine(setPixel, video.screen_width, "CHECKPOINTS", x + 8, y + 38, panel_accent);
+        const area_count = chapterAreaCount(chapter);
+        var area_index: usize = 0;
+        while (area_index < area_count) : (area_index += 1) {
+            const area = save.activeChapterAreaSummary(chapter, area_index);
+            drawCheckpointRow(
+                area,
+                area_index == selected_area_index and area.unlocked,
+                x + 8 + @as(i16, @intCast(area_index)) * 70,
+                y + 50,
+            );
+        }
     }
 }
 
-fn drawCheckpointRow(area: save.ChapterAreaSummary, x: i16, y: i16) void {
+fn drawCheckpointRow(area: save.ChapterAreaSummary, selected: bool, x: i16, y: i16) void {
     const color = if (area.unlocked) panel_text else panel_muted;
-    text.drawSmallLine(setPixel, video.screen_width, area.label, x, y, color);
-    drawRatio(area.strawberries, x, y + 7, color);
+    if (selected) drawCheckpointCursor(x - 6, y + 1);
+    text.drawSmallLine(setPixel, video.screen_width, if (area.unlocked) area.label else "????", x, y, color);
+    if (area.unlocked) {
+        drawBerryIcon(x, y + 8);
+        drawRatio(area.strawberries, x + 8, y + 7, color);
+    }
+}
+
+fn drawCheckpointCursor(x: i16, y: i16) void {
+    setPixel(x, y + 2, panel_accent);
+    drawRect(x + 1, y + 1, 1, 3, panel_accent);
+    drawRect(x + 2, y, 1, 5, panel_accent);
+}
+
+fn drawBerryIcon(x: i16, y: i16) void {
+    setPixel(x + 2, y, panel_text);
+    drawRect(x + 1, y + 1, 3, 1, panel_accent);
+    drawRect(x, y + 2, 5, 2, panel_accent);
+    drawRect(x + 1, y + 4, 3, 1, panel_accent);
+    setPixel(x + 1, y + 2, panel_text);
+    setPixel(x + 3, y + 3, panel_text);
+}
+
+fn drawTapeIcon(x: i16, y: i16) void {
+    drawRect(x, y + 1, 12, 7, panel_border);
+    drawRect(x + 1, y + 2, 10, 5, panel_accent);
+    drawRect(x + 2, y + 3, 8, 3, panel_fill);
+    drawRect(x + 3, y + 4, 2, 1, panel_text);
+    drawRect(x + 7, y + 4, 2, 1, panel_text);
+    setPixel(x + 1, y + 1, panel_fill);
+    setPixel(x + 10, y + 1, panel_fill);
+    setPixel(x + 1, y + 7, panel_fill);
+    setPixel(x + 10, y + 7, panel_fill);
 }
 
 fn chapterTitle(chapter: u8) []const u8 {
     return switch (chapter) {
         0 => "PROLOGUE",
-        1 => "CHAPTER 1 CITY",
+        1 => "CHAPTER 1: FORSAKEN CITY",
         else => "CHAPTER",
     };
 }
@@ -451,13 +576,14 @@ fn drawNumber(value: u32, x: i16, y: i16, color: u8) void {
 }
 
 fn drawTimeValue(playtime_frames: u32, x: i16, y: i16, color: u8) void {
-    var buffer: [8]u8 = undefined;
+    var buffer: [10]u8 = undefined;
     const len = timeLabel(playtime_frames, &buffer);
     text.drawSmallLine(setPixel, video.screen_width, buffer[0..len], x, y, color);
 }
 
-fn timeLabel(playtime_frames: u32, out: *[8]u8) usize {
+fn timeLabel(playtime_frames: u32, out: *[10]u8) usize {
     const total_seconds = playtime_frames / 60;
+    const tenths: u8 = @intCast((playtime_frames % 60) / 6);
     const seconds: u8 = @intCast(total_seconds % 60);
     const total_minutes = total_seconds / 60;
     const minutes: u8 = @intCast(total_minutes % 60);
@@ -479,6 +605,10 @@ fn timeLabel(playtime_frames: u32, out: *[8]u8) usize {
         len += 1;
         appendTwoDigits(seconds, out, &len);
     }
+    out[len] = '.';
+    len += 1;
+    out[len] = '0' + tenths;
+    len += 1;
     return len;
 }
 
@@ -503,7 +633,7 @@ fn appendDecimal(value: u32, out: []u8, start: usize) usize {
     return index;
 }
 
-fn appendTwoDigits(value: u8, out: *[8]u8, len: *usize) void {
+fn appendTwoDigits(value: u8, out: *[10]u8, len: *usize) void {
     out[len.*] = '0' + value / 10;
     len.* += 1;
     out[len.*] = '0' + value % 10;
