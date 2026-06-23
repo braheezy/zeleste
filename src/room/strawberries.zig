@@ -8,6 +8,7 @@ const collision = @import("../world/collision.zig");
 const foreground_stamps = @import("foreground_stamps.zig");
 const level = @import("../generated_rooms.zig");
 const math = @import("../core/math.zig");
+const obj_vram = @import("../core/obj_vram.zig");
 const oam = @import("../core/oam.zig");
 const player_mod = @import("../player/state.zig");
 const room_data = @import("../world/room_data.zig");
@@ -16,7 +17,7 @@ const save = @import("../core/save.zig");
 const Camera = camera_mod.Camera;
 const Player = player_mod.State;
 
-const fixed_one = math.fixed_one;
+const fixed_shift = math.fixed_shift;
 const fixedToPixel = math.fixedToPixel;
 const pixelToFixed = math.pixelToFixed;
 const hideObject = oam.hideObject;
@@ -31,8 +32,10 @@ const screen_height = 160;
 const idle_tiles_data align(4) = assets.strawberry_idle_tiles_data;
 const flap_tiles_data align(4) = assets.strawberry_flap_tiles_data;
 const collect_tiles_data align(4) = assets.strawberry_collect_tiles_data;
+const score_tiles_data align(4) = assets.strawberry_score_tiles_data;
 const palette_data align(4) = assets.strawberry_palette_data;
 const collect_palette_data align(4) = assets.strawberry_collect_palette_data;
+const score_palette_data align(4) = assets.strawberry_score_palette_data;
 const ghost_idle_tiles_data align(4) = assets.ghostberry_idle_tiles_data;
 const ghost_flap_tiles_data align(4) = assets.ghostberry_flap_tiles_data;
 const ghost_collect_tiles_data align(4) = assets.ghostberry_collect_tiles_data;
@@ -50,8 +53,12 @@ const record_bytes = 8;
 const collect_ground_frames = 9;
 const collect_chain_cooldown_frames = 8;
 const flyaway_frames = 72;
+const carry_trail_capacity = 32;
+const carry_trail_spacing_frames = 4;
+const carry_anchor_y_offset_px = -10;
 const palette_bank: u4 = 8;
 const collect_palette_bank: u4 = 9;
+const score_palette_bank: u4 = 12;
 
 const idle_frame_count: u16 = 36;
 const idle_frame_ticks: u16 = 4;
@@ -72,8 +79,19 @@ const collect_frame_ticks: u16 = 3;
 const collect_tiles_per_frame = 8;
 const collect_base_tile: u10 = flap_base_tile + flap_tiles_per_frame;
 const collect_slot_count = 2;
+const collect_effect_capacity = collect_slot_count;
 const collect_cell_width: i16 = 32;
 const collect_cell_height: i16 = 16;
+
+const score_variant_count: u16 = assets.strawberry_score_meta.variant_count;
+const score_frame_count: u16 = assets.strawberry_score_meta.frame_count;
+const score_frame_ticks: u16 = 1;
+const score_tiles_per_frame: usize = assets.strawberry_score_meta.tiles_per_frame;
+const score_base_tile: u10 = @intCast(obj_vram.strawberry_score.start);
+const score_slot_count = 3;
+const score_effect_capacity = score_slot_count;
+const score_cell_width: i16 = assets.strawberry_score_meta.cell_width;
+const score_cell_height: i16 = assets.strawberry_score_meta.cell_height;
 
 const ghost_idle_base_tile: u10 = 664;
 const ghost_flap_base_tile: u10 = ghost_idle_base_tile + idle_tiles_per_frame;
@@ -116,7 +134,6 @@ const Carried = struct {
     active: bool = false,
     ghost: bool = false,
     global_id: u16 = 0,
-    source_room: usize = 0,
     x: i32 = 0,
     y: i32 = 0,
     phase: u8 = 0,
@@ -131,15 +148,35 @@ const CollectEffect = struct {
     slot: u8 = 0,
 };
 
+const ScoreEffect = struct {
+    active: bool = false,
+    x: i16 = 0,
+    y: i16 = 0,
+    timer: u8 = 0,
+    variant: u8 = 0,
+    slot: u8 = 0,
+};
+
+const TrailPoint = struct {
+    x: i16 = 0,
+    y: i16 = 0,
+};
+
 var loaded: [max_loaded]Berry = [_]Berry{.{}} ** max_loaded;
 var loaded_count: usize = 0;
 var carried: [max_carried]Carried = [_]Carried{.{}} ** max_carried;
 var carried_count: usize = 0;
-var collect_effects: [max_carried]CollectEffect = [_]CollectEffect{.{}} ** max_carried;
+var collect_effects: [collect_effect_capacity]CollectEffect = [_]CollectEffect{.{}} ** collect_effect_capacity;
 var collect_effect_count: usize = 0;
+var score_effects: [score_effect_capacity]ScoreEffect = [_]ScoreEffect{.{}} ** score_effect_capacity;
+var score_effect_count: usize = 0;
+var carried_trail: [carry_trail_capacity]TrailPoint = [_]TrailPoint{.{}} ** carry_trail_capacity;
+var carried_trail_head: usize = 0;
+var carried_trail_count: usize = 0;
 var safe_ground_streak: u8 = 0;
 var collect_cooldown: u8 = collect_chain_cooldown_frames;
 var chain_combo_index: u8 = 0;
+var previous_player_grounded: bool = false;
 var wingflap_variant: u8 = 0;
 var loaded_idle_frame: u16 = invalid_frame;
 var loaded_flap_frame: u16 = invalid_frame;
@@ -147,21 +184,26 @@ var loaded_collect_frames: [collect_slot_count]u16 = [_]u16{invalid_frame} ** co
 var loaded_ghost_idle_frame: u16 = invalid_frame;
 var loaded_ghost_flap_frame: u16 = invalid_frame;
 var loaded_ghost_collect_frames: [collect_slot_count]u16 = [_]u16{invalid_frame} ** collect_slot_count;
+var loaded_score_frames: [score_slot_count]u16 = [_]u16{invalid_frame} ** score_slot_count;
 var loaded_main_palette: PaletteVariant = .invalid;
 var loaded_collect_palette: PaletteVariant = .invalid;
+var loaded_score_palette: bool = false;
 var last_drawn_objects: usize = 0;
 
 pub fn load(room_index: usize) void {
     loaded = [_]Berry{.{}} ** max_loaded;
     loaded_count = 0;
-    collect_effects = [_]CollectEffect{.{}} ** max_carried;
+    collect_effects = [_]CollectEffect{.{}} ** collect_effect_capacity;
     collect_effect_count = 0;
+    score_effects = [_]ScoreEffect{.{}} ** score_effect_capacity;
+    score_effect_count = 0;
     safe_ground_streak = 0;
     hideObjects();
 
     if (carried_count == 0) {
         collect_cooldown = collect_chain_cooldown_frames;
         chain_combo_index = 0;
+        clearCarriedTrail();
     }
 
     const data = rooms[room_index].strawberries;
@@ -202,33 +244,40 @@ pub fn loadGraphics() void {
     if (!hasVisibleSprites()) return;
     loaded_main_palette = .invalid;
     loaded_collect_palette = .invalid;
+    loaded_score_palette = false;
     loadMainPalette(mainPaletteVariant());
     loadCollectPalette(collectPaletteVariant());
+    if (score_effect_count > 0) loadScorePalette();
     invalidateFrames();
 }
 
 pub fn invalidateGraphics() void {
     loaded_main_palette = .invalid;
     loaded_collect_palette = .invalid;
+    loaded_score_palette = false;
     invalidateFrames();
 }
 
 pub fn update(player: *Player, room_index: usize) void {
+    _ = room_index;
     const dash_started = dashStartedThisFrame(player.*);
-    pickupLoaded(player.*, room_index);
+    pickupLoaded(player.*);
     if (dash_started) {
         startWingedFlyaways();
     }
     updateFlyaways();
-    updateCarriedPositions(player.*);
-    updateCollection(player.*);
+    pushCarriedTrailPoint(player.*);
+    updateCarriedPositions();
+    updateCollection(player.*, dash_started);
     updateCollectEffects();
+    updateScoreEffects();
 }
 
 pub fn draw(camera: Camera, anim_counter: u16) void {
     if (!hasVisibleSprites() and last_drawn_objects == 0) return;
     loadMainPalette(mainPaletteVariant());
     loadCollectPalette(collectPaletteVariant());
+    if (score_effect_count > 0) loadScorePalette();
 
     var object_offset: usize = 0;
 
@@ -265,6 +314,16 @@ pub fn draw(camera: Camera, anim_counter: u16) void {
         }
     }
 
+    index = 0;
+    while (index < score_effect_count and object_offset < object_capacity) : (index += 1) {
+        const effect = score_effects[index];
+        if (!effect.active) continue;
+        const frame = scoreFrame(effect.timer);
+        if (drawScoreObject(first_object + object_offset, effect.x, effect.y, effect.variant, frame, effect.slot, camera)) {
+            object_offset += 1;
+        }
+    }
+
     const drawn_objects = object_offset;
     const hide_until = @min(last_drawn_objects, object_capacity);
     while (object_offset < hide_until) : (object_offset += 1) {
@@ -284,13 +343,50 @@ pub fn hideObjects() void {
 pub fn clearCarried() void {
     carried = [_]Carried{.{}} ** max_carried;
     carried_count = 0;
+    clearCarriedTrail();
     safe_ground_streak = 0;
     collect_cooldown = collect_chain_cooldown_frames;
     chain_combo_index = 0;
+    previous_player_grounded = false;
+}
+
+pub fn handleRoomTransition(from_room: usize, to_room: usize) void {
+    const from = rooms[from_room];
+    const to = rooms[to_room];
+    const dx_pixels = from.world_x - to.world_x;
+    const dy_pixels = from.world_y - to.world_y;
+    const dx = @as(i32, from.world_x - to.world_x) << fixed_shift;
+    const dy = @as(i32, from.world_y - to.world_y) << fixed_shift;
+    if (dx_pixels == 0 and dy_pixels == 0) return;
+
+    var index: usize = 0;
+    while (index < carried_count) : (index += 1) {
+        carried[index].x += dx;
+        carried[index].y += dy;
+    }
+
+    index = 0;
+    while (index < collect_effect_count) : (index += 1) {
+        collect_effects[index].x += dx;
+        collect_effects[index].y += dy;
+    }
+
+    index = 0;
+    while (index < score_effect_count) : (index += 1) {
+        score_effects[index].x += dx_pixels;
+        score_effects[index].y += dy_pixels;
+    }
+
+    index = 0;
+    while (index < carried_trail_count) : (index += 1) {
+        const trail_index = (carried_trail_head + carry_trail_capacity - index) % carry_trail_capacity;
+        carried_trail[trail_index].x += dx_pixels;
+        carried_trail[trail_index].y += dy_pixels;
+    }
 }
 
 fn hasVisibleSprites() bool {
-    if (carried_count > 0 or collect_effect_count > 0) return true;
+    if (carried_count > 0 or collect_effect_count > 0 or score_effect_count > 0) return true;
     var index: usize = 0;
     while (index < loaded_count) : (index += 1) {
         if (loaded[index].active) return true;
@@ -367,20 +463,26 @@ fn loadCollectPalette(variant: PaletteVariant) void {
     loaded_collect_palette = desired;
 }
 
-fn pickupLoaded(player: Player, room_index: usize) void {
+fn loadScorePalette() void {
+    if (loaded_score_palette) return;
+    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, score_palette_bank) * 16], @ptrCast(&score_palette_data), 16);
+    loaded_score_palette = true;
+}
+
+fn pickupLoaded(player: Player) void {
     var index: usize = 0;
     while (index < loaded_count) : (index += 1) {
         const berry = &loaded[index];
         if (!berry.active) continue;
         if (!playerTouchesBerry(player, berry.*)) continue;
-        if (!addCarried(berry.*, room_index)) continue;
+        if (!addCarried(berry.*)) continue;
 
         berry.active = false;
         playTouchSound();
     }
 }
 
-fn addCarried(berry: Berry, room_index: usize) bool {
+fn addCarried(berry: Berry) bool {
     if (carried_count >= max_carried) return false;
     if (isCarried(berry.global_id)) return false;
 
@@ -388,7 +490,6 @@ fn addCarried(berry: Berry, room_index: usize) bool {
         .active = true,
         .ghost = berry.ghost,
         .global_id = berry.global_id,
-        .source_room = room_index,
         .x = pixelToFixed(berry.center_x),
         .y = pixelToFixed(berry.center_y),
         .phase = berry.phase,
@@ -444,41 +545,44 @@ fn updateFlyaways() void {
     }
 }
 
-fn updateCarriedPositions(player: Player) void {
+fn updateCarriedPositions() void {
     if (carried_count == 0) return;
-
-    const facing_dir: i16 = if (player.facing_left) 1 else -1;
-    var target_x = player.x + pixelToFixed(player_mod.body_width / 2);
-    var target_y = player.y - pixelToFixed(10);
 
     var index: usize = 0;
     while (index < carried_count) : (index += 1) {
         const berry = &carried[index];
-        berry.x = approachFollow(berry.x, target_x);
-        berry.y = approachFollow(berry.y, target_y);
-        target_x = berry.x + pixelToFixed(12 * facing_dir);
-        target_y = berry.y - pixelToFixed(4);
+        const point = sampleCarriedTrail((index + 1) * carry_trail_spacing_frames);
+        berry.x = pixelToFixed(point.x);
+        berry.y = pixelToFixed(point.y);
     }
 }
 
-fn updateCollection(player: Player) void {
+fn updateCollection(player: Player, dash_started: bool) void {
+    const broke_chain = groundActionBreaksChain(player, dash_started);
+    if (broke_chain) {
+        resetCollectionChain();
+    }
+
     if (carried_count == 0) {
         safe_ground_streak = 0;
         collect_cooldown = collect_chain_cooldown_frames;
         chain_combo_index = 0;
+        previous_player_grounded = player.grounded;
         return;
+    }
+
+    if (collect_cooldown < collect_chain_cooldown_frames) {
+        collect_cooldown += 1;
     }
 
     if (!player.grounded) {
         safe_ground_streak = 0;
+        previous_player_grounded = false;
         return;
     }
 
     if (safe_ground_streak < collect_ground_frames) {
         safe_ground_streak += 1;
-    }
-    if (collect_cooldown < collect_chain_cooldown_frames) {
-        collect_cooldown += 1;
     }
 
     const cooldown_ready = chain_combo_index == 0 or collect_cooldown >= collect_chain_cooldown_frames;
@@ -487,6 +591,68 @@ fn updateCollection(player: Player) void {
         safe_ground_streak = 0;
         collect_cooldown = 0;
     }
+    previous_player_grounded = player.grounded;
+}
+
+fn pushCarriedTrailPoint(player: Player) void {
+    if (carried_count == 0) {
+        clearCarriedTrail();
+        return;
+    }
+
+    const point = carriedTrailAnchor(player);
+    if (carried_trail_count == 0) {
+        carried_trail[0] = point;
+        carried_trail_head = 0;
+        carried_trail_count = 1;
+        return;
+    }
+
+    carried_trail_head = (carried_trail_head + 1) % carry_trail_capacity;
+    carried_trail[carried_trail_head] = point;
+    if (carried_trail_count < carry_trail_capacity) {
+        carried_trail_count += 1;
+    }
+}
+
+fn carriedTrailAnchor(player: Player) TrailPoint {
+    return .{
+        .x = fixedToPixel(player.x) + player_mod.body_width / 2,
+        .y = fixedToPixel(player.y) + carry_anchor_y_offset_px,
+    };
+}
+
+fn sampleCarriedTrail(age_frames: usize) TrailPoint {
+    if (carried_trail_count == 0) return .{};
+
+    var age = age_frames;
+    if (age >= carried_trail_count) {
+        age = carried_trail_count - 1;
+    }
+
+    var index = carried_trail_head;
+    var remaining = age;
+    while (remaining > 0) : (remaining -= 1) {
+        index = if (index == 0) carry_trail_capacity - 1 else index - 1;
+    }
+    return carried_trail[index];
+}
+
+fn clearCarriedTrail() void {
+    carried_trail_count = 0;
+    carried_trail_head = 0;
+}
+
+fn groundActionBreaksChain(player: Player, dash_started: bool) bool {
+    if (chain_combo_index == 0) return false;
+    if (dash_started and previous_player_grounded) return true;
+    return previous_player_grounded and !player.grounded and player.vy < 0 and player.var_jump_timer > 0;
+}
+
+fn resetCollectionChain() void {
+    safe_ground_streak = 0;
+    collect_cooldown = collect_chain_cooldown_frames;
+    chain_combo_index = 0;
 }
 
 fn updateCollectEffects() void {
@@ -506,11 +672,32 @@ fn updateCollectEffects() void {
     collect_effect_count = write_index;
 }
 
+fn updateScoreEffects() void {
+    var write_index: usize = 0;
+    var index: usize = 0;
+    while (index < score_effect_count) : (index += 1) {
+        var effect = score_effects[index];
+        if (!effect.active) continue;
+        effect.timer += 1;
+        if ((effect.timer & 1) == 0) {
+            effect.y -= 1;
+        }
+        if (@as(u16, effect.timer) >= score_frame_count * score_frame_ticks) continue;
+        score_effects[write_index] = effect;
+        write_index += 1;
+    }
+    while (write_index < score_effect_count) : (write_index += 1) {
+        score_effects[write_index] = .{};
+    }
+    score_effect_count = write_index;
+}
+
 fn collectFirstCarried() void {
     if (carried_count == 0) return;
 
     const berry = carried[0];
     startCollectEffect(berry.x, berry.y, berry.ghost);
+    startScoreEffect(berry.x, berry.y - pixelToFixed(14), chain_combo_index);
     const newly_collected = collectibles.markStrawberryCollected(berry.global_id, chain_combo_index);
     if (newly_collected or berry.ghost) {
         playCollectSound(chain_combo_index);
@@ -527,8 +714,20 @@ fn collectFirstCarried() void {
     }
 }
 
+fn startScoreEffect(x: i32, y: i32, combo_index: u8) void {
+    if (score_effect_count >= score_effect_capacity) return;
+    score_effects[score_effect_count] = .{
+        .active = true,
+        .x = fixedToPixel(x),
+        .y = fixedToPixel(y),
+        .variant = scoreVariant(combo_index),
+        .slot = nextScoreSlot(),
+    };
+    score_effect_count += 1;
+}
+
 fn startCollectEffect(x: i32, y: i32, ghost: bool) void {
-    if (collect_effect_count >= max_carried) return;
+    if (collect_effect_count >= collect_effect_capacity) return;
     collect_effects[collect_effect_count] = .{
         .active = true,
         .ghost = ghost,
@@ -553,6 +752,27 @@ fn nextCollectSlot() u8 {
         if (!used[index]) return @intCast(index);
     }
     return 0;
+}
+
+fn nextScoreSlot() u8 {
+    var used = [_]bool{false} ** score_slot_count;
+    var index: usize = 0;
+    while (index < score_effect_count) : (index += 1) {
+        const effect = score_effects[index];
+        if (!effect.active) continue;
+        used[scoreSlotIndex(effect.slot)] = true;
+    }
+
+    index = 0;
+    while (index < score_slot_count) : (index += 1) {
+        if (!used[index]) return @intCast(index);
+    }
+    return 0;
+}
+
+fn scoreVariant(combo_index: u8) u8 {
+    const max_variant: u8 = @intCast(score_variant_count - 1);
+    return if (combo_index > max_variant) max_variant else combo_index;
 }
 
 fn removeCarriedAt(remove_index: usize) void {
@@ -591,12 +811,6 @@ fn isCarried(global_id: u16) bool {
     return false;
 }
 
-fn approachFollow(value: i32, target: i32) i32 {
-    const delta = target - value;
-    if (delta > -fixed_one / 2 and delta < fixed_one / 2) return target;
-    return value + @divTrunc(delta, 4);
-}
-
 fn drawBerryObject(object_index: usize, center_x: i16, center_y: i16, animation: Animation, frame: u16, ghost: bool, camera: Camera) bool {
     return drawBerryObjectSlot(object_index, center_x, center_y, animation, frame, 0, ghost, camera);
 }
@@ -615,6 +829,24 @@ fn drawBerryObjectSlot(object_index: usize, center_x: i16, center_y: i16, animat
         .base_tile = spec.base_tile,
         .priority = 1,
         .palette = spec.palette,
+    });
+    return true;
+}
+
+fn drawScoreObject(object_index: usize, center_x: i16, center_y: i16, variant: u8, frame: u16, slot: u8, camera: Camera) bool {
+    const x = center_x - @divTrunc(score_cell_width, 2) - camera.x;
+    const y = center_y - @divTrunc(score_cell_height, 2) - camera.y;
+    if (!visible(x, y, score_cell_width, score_cell_height)) return false;
+
+    const slot_index = scoreSlotIndex(slot);
+    loadScoreFrame(variant, frame, slot_index);
+    gba.display.objects[object_index] = gba.display.Object.init(.{
+        .size = .size_32x16,
+        .x = objX(x),
+        .y = objY(y),
+        .base_tile = scoreSlotBase(slot_index),
+        .priority = 1,
+        .palette = score_palette_bank,
     });
     return true;
 }
@@ -646,6 +878,12 @@ fn loadAnimationFrame(animation: Animation, frame: u16, collect_slot: u8, ghost:
     }
 }
 
+fn loadScoreFrame(variant: u8, frame: u16, slot: usize) void {
+    const variant_index = @as(u16, scoreVariant(variant));
+    const frame_index = variant_index * score_frame_count + frame;
+    loadTileFrame(&score_tiles_data, scoreSlotBase(slot), frame_index, score_tiles_per_frame, &loaded_score_frames[slot]);
+}
+
 fn loadTileFrame(tile_data: []align(4) const u8, target_tile: u10, frame: u16, tiles_per_frame: usize, loaded_frame: *u16) void {
     if (loaded_frame.* == frame) return;
     const byte_offset = @as(usize, frame) * tiles_per_frame * 32;
@@ -674,12 +912,21 @@ fn collectSlotIndex(slot: u8) usize {
     return if (index < collect_slot_count) index else collect_slot_count - 1;
 }
 
+fn scoreSlotIndex(slot: u8) usize {
+    const index = @as(usize, slot);
+    return if (index < score_slot_count) index else score_slot_count - 1;
+}
+
 fn collectSlotBase(slot: usize) u10 {
     return collect_base_tile + @as(u10, @intCast(slot * collect_tiles_per_frame));
 }
 
 fn ghostCollectSlotBase(slot: usize) u10 {
     return ghost_collect_base_tile + @as(u10, @intCast(slot * collect_tiles_per_frame));
+}
+
+fn scoreSlotBase(slot: usize) u10 {
+    return score_base_tile + @as(u10, @intCast(slot * score_tiles_per_frame));
 }
 
 fn invalidateFrames() void {
@@ -689,6 +936,7 @@ fn invalidateFrames() void {
     loaded_ghost_idle_frame = invalid_frame;
     loaded_ghost_flap_frame = invalid_frame;
     loaded_ghost_collect_frames = [_]u16{invalid_frame} ** collect_slot_count;
+    loaded_score_frames = [_]u16{invalid_frame} ** score_slot_count;
 }
 
 fn loopFrame(anim_counter: u16, frame_count: u16, frame_ticks: u16) u16 {
@@ -698,6 +946,11 @@ fn loopFrame(anim_counter: u16, frame_count: u16, frame_ticks: u16) u16 {
 fn collectFrame(timer: u8) u16 {
     const frame = @as(u16, timer) / collect_frame_ticks;
     return if (frame >= collect_frame_count) collect_frame_count - 1 else frame;
+}
+
+fn scoreFrame(timer: u8) u16 {
+    const frame = @as(u16, timer) / score_frame_ticks;
+    return if (frame >= score_frame_count) score_frame_count - 1 else frame;
 }
 
 fn visible(x: i16, y: i16, width: i16, height: i16) bool {

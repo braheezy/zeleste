@@ -15,7 +15,7 @@ const granny_cutscene = @import("granny_cutscene.zig");
 const granny_npc = @import("granny_npc.zig");
 const laugh_text = @import("laugh_text.zig");
 const room_wires = @import("room_wires.zig");
-const tiny_birds = @import("tiny_birds.zig");
+const tiny_birds = @import("../../room/tiny_birds.zig");
 
 const Camera = camera_mod.Camera;
 const Player = player_mod.State;
@@ -24,7 +24,16 @@ const Spawn = room_data.Spawn;
 
 const rooms = level.rooms;
 const prologue_end_room_index = level.roomIndexFor(level.chapter_index, "3") orelse rooms.len;
+const prologue_tiny_bird_room_index = level.roomIndexFor(level.chapter_index, "0b") orelse rooms.len;
 var room_wires_hidden_for_collapse: bool = false;
+
+const prologue_0b_tiny_birds = [_]tiny_birds.Start{
+    .{ .x = 267, .y = 112, .variant = .cyan, .group = 0, .vx = -0x34, .vy = -0x128, .phase = 0 },
+    .{ .x = 275, .y = 112, .variant = .blue, .group = 0, .vx = 0x20, .vy = -0x154, .phase = 5 },
+    .{ .x = 252, .y = 120, .variant = .red, .group = 0, .vx = -0x58, .vy = -0x118, .phase = 10 },
+    .{ .x = 307, .y = 144, .variant = .green, .group = 0, .vx = 0x64, .vy = -0x13C, .phase = 15 },
+    .{ .x = 235, .y = 152, .variant = .gold, .group = 0, .vx = -0x74, .vy = -0x108, .phase = 20 },
+};
 
 pub fn resetPaletteState() void {
     granny_cutscene.resetPaletteState();
@@ -54,7 +63,7 @@ pub fn loadAfterObjectSprites(room_index: usize, reset_cutscenes: bool) void {
     }
     bridge.load(room_index, isPrologueEndRoom(room_index));
     bird_npc.load(room_index);
-    tiny_birds.load(room_index);
+    tiny_birds.load(room_index, tinyBirdStartsForRoom(room_index), &.{}, null);
     room_wires.load(room_index, bridge.active());
     room_wires_hidden_for_collapse = false;
     if (reset_cutscenes) {
@@ -70,12 +79,17 @@ pub fn updateCutsceneEffects(room_index: usize, camera: Camera) void {
     granny_cutscene.updateEffects(room_index, camera);
 }
 
+pub fn applyPlayerFrameOverride(player: *Player, room_index: usize) void {
+    _ = player;
+    _ = room_index;
+}
+
 pub fn updateActors(player: *Player, room_index: usize, camera: Camera, anim_counter: u16) void {
     bridge.update(player, isPrologueEndRoom(room_index));
     bridge.updateCollapseShake(isPrologueEndRoom(room_index), player.grounded);
     funny_cars.update(player.*);
     bird_npc.update(player.*, camera);
-    tiny_birds.update(player.*, room_index, anim_counter);
+    tiny_birds.update(player, room_index, anim_counter);
 }
 
 pub fn updateDynamicHazards(player: *Player, room_index: usize) ?player_mod.DeathCause {
@@ -128,6 +142,11 @@ pub fn dynamicSolidRectAt(room_index: usize, x: i16, y: i16, width: i16, height:
 pub fn endingHairOverrideActive(room_index: usize) bool {
     _ = room_index;
     return bridge.endingHoldActive();
+}
+
+pub fn playerHairSuppressed(room_index: usize) bool {
+    _ = room_index;
+    return false;
 }
 
 pub fn handleRoomTransition(from_room: usize, to_room: usize) void {
@@ -236,6 +255,11 @@ pub fn drawCutsceneOverlay(camera: Camera, room_index: usize, anim_counter: u16)
 
 fn isPrologueEndRoom(room_index: usize) bool {
     return room_index == prologue_end_room_index;
+}
+
+fn tinyBirdStartsForRoom(room_index: usize) []const tiny_birds.Start {
+    if (room_index == prologue_tiny_bird_room_index) return &prologue_0b_tiny_birds;
+    return &.{};
 }
 
 fn spawnFallingBlockSnowEvents(result: falling_blocks.UpdateResult) void {

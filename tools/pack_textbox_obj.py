@@ -18,15 +18,17 @@ ROWS = 4
 OBJ_WIDTH = 32
 OBJ_HEIGHT = 16
 TILES_PER_OBJECT = 8
-OPAQUE_ART_COLORS = 11
+OPAQUE_ART_COLORS = 10
 BODY_TEXT_COLOR = (236, 236, 232, 255)
 MADELINE_NAME_COLOR = (133, 178, 230, 255)
 GRANNY_NAME_COLOR = (232, 210, 154, 255)
+THEO_NAME_COLOR = (112, 232, 136, 255)
 DEFAULT_NAME_COLOR = (210, 210, 224, 255)
 FORCED_COLORS = [
     BODY_TEXT_COLOR,
     MADELINE_NAME_COLOR,
     GRANNY_NAME_COLOR,
+    THEO_NAME_COLOR,
     DEFAULT_NAME_COLOR,
 ]
 
@@ -147,6 +149,20 @@ def pack_tiles(image: Image, palette: list[tuple[int, int, int, int]]) -> bytes:
     return bytes(output)
 
 
+def fit_image_width(image: Image) -> Image:
+    if image.width == WIDTH:
+        return image
+    output = bytearray(WIDTH * image.height * 4)
+    for y in range(image.height):
+        for x in range(WIDTH):
+            src_x = (x * image.width + WIDTH // 2) // WIDTH
+            src_x = min(image.width - 1, src_x)
+            src_offset = (y * image.width + src_x) * 4
+            dst_offset = (y * WIDTH + x) * 4
+            output[dst_offset : dst_offset + 4] = image.pixels[src_offset : src_offset + 4]
+    return Image(WIDTH, image.height, bytes(output))
+
+
 def write_meta(path: Path) -> None:
     path.write_text(
         "\n".join(
@@ -157,9 +173,10 @@ def write_meta(path: Path) -> None:
                 f"pub const rows: usize = {ROWS};",
                 f"pub const tiles_per_object: u16 = {TILES_PER_OBJECT};",
                 f"pub const tile_count: u16 = {COLS * ROWS * TILES_PER_OBJECT};",
-                "pub const body_text_color: u8 = 12;",
-                "pub const madeline_name_color: u8 = 13;",
-                "pub const granny_name_color: u8 = 14;",
+                "pub const body_text_color: u8 = 11;",
+                "pub const madeline_name_color: u8 = 12;",
+                "pub const granny_name_color: u8 = 13;",
+                "pub const theo_name_color: u8 = 14;",
                 "pub const default_name_color: u8 = 15;",
                 "",
             ]
@@ -171,9 +188,13 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--output-prefix", default="textbox")
+    parser.add_argument("--fit-width", action="store_true")
     args = parser.parse_args()
 
     image = read_png_rgba(args.input)
+    if args.fit_width:
+        image = fit_image_width(image)
     if image.width != WIDTH or image.height != HEIGHT:
         raise ValueError(f"{args.input} must be {WIDTH}x{HEIGHT}, got {image.width}x{image.height}")
 
@@ -181,15 +202,16 @@ def main() -> int:
     tiles = pack_tiles(image, palette)
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    (args.output_dir / "textbox_tiles.bin").write_bytes(tiles)
-    (args.output_dir / "textbox_palette.bin").write_bytes(
+    (args.output_dir / f"{args.output_prefix}_tiles.bin").write_bytes(tiles)
+    (args.output_dir / f"{args.output_prefix}_palette.bin").write_bytes(
         b"".join(rgba_to_rgb555(color).to_bytes(2, "little") for color in palette)
     )
-    write_meta(args.output_dir / "textbox_meta.zig")
-    (args.output_dir / "textbox.json").write_text(
+    write_meta(args.output_dir / f"{args.output_prefix}_meta.zig")
+    (args.output_dir / f"{args.output_prefix}.json").write_text(
         json.dumps(
             {
                 "source": str(args.input),
+                "fitWidth": args.fit_width,
                 "width": WIDTH,
                 "height": HEIGHT,
                 "cols": COLS,

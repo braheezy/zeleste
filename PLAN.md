@@ -75,6 +75,14 @@ Avoid starting with the full Celeste entity roster. A smaller set polished to hi
 
 ## Runtime Architecture
 
+### Gameplay Polish Checkpoint (June 22, 2026)
+
+The Chapter 1 strawberry collection pass now supports multi-berry carry chains:
+berries follow a sampled player trail across room transitions, collection waits
+for grounded frames, jump/dash-from-ground breaks partial chains, and score
+popups use the `fade0` through `fade5` strawberry score assets with `fade5`
+repeating for 1-UP chains.
+
 ### Current Refactor Checkpoint (May 29, 2026)
 
 The prologue milestone is complete, the dummy overworld handoff reaches the

@@ -2,6 +2,7 @@ const gba = @import("gba");
 const level = @import("generated_rooms.zig");
 const build_options = @import("build_options");
 const audio = @import("core/audio.zig");
+const audio_debug = @import("core/audio_debug.zig");
 const background = @import("world/background.zig");
 const camera_mod = @import("world/camera.zig");
 const chapter_flow = @import("chapters/flow.zig");
@@ -14,6 +15,7 @@ const frontend = @import("core/frontend.zig");
 const gameplay_scene = @import("room/gameplay_scene.zig");
 const hair = @import("player/hair.zig");
 const math = @import("core/math.zig");
+const pause_menu = @import("core/pause_menu.zig");
 const room_data = @import("world/room_data.zig");
 const player_controller = @import("player/controller.zig");
 const player_death = @import("player/death.zig");
@@ -57,6 +59,9 @@ pub fn run() void {
     const dev_start = developmentStartOverride();
     save.initForBoot(!dev_start);
     audio.init();
+    audio.setMusicVolumeStep(save.musicVolumeStep());
+    audio.setSfxVolumeStep(save.sfxVolumeStep());
+    audio_debug.init(dust_palette_bank);
     if (!dev_start) {
         splash.show();
     }
@@ -74,8 +79,7 @@ pub fn run() void {
     if (dev_start) {
         save.beginChapterRunForRoom(room_index);
     }
-    playMusicForRoom(room_index);
-    room_loader.loadGameplayRoom(room_index, .initial);
+    loadGameplayEntry(room_index, .initial);
     gameplay_scene.loadWindSnowTiles();
     debug_fps.init(dust_palette_bank);
     gba.display.hideAllObjects();
@@ -108,6 +112,8 @@ pub fn run() void {
     var camera = updateCamera(player, room_index);
     var death_timer: u8 = 0;
     var respawn_burst_timer: u8 = 0;
+    var was_cutscene_locked = false;
+    var checkpoint_respawn = respawn;
     gameplay_scene.resetWindSnow(room_index, camera);
     gameplay_scene.resetChimneySmoke(room_index);
     gameplay_scene.drawInitial(&player, camera, room_index, room_systems.animCounter());
@@ -121,7 +127,6 @@ pub fn run() void {
         if (chapter_flow.updateTransitionIfActive(&player, &camera, &room_index, &respawn, input)) {
             continue;
         }
-        save.tickPlaytime(room_index, false);
         if (respawn_burst_timer > 0) {
             respawn_burst_timer -= 1;
             frame.sync();
@@ -131,8 +136,58 @@ pub fn run() void {
             } else {
                 player_death.drawRespawn(camera, respawn_burst_timer);
             }
+            audio_debug.update();
             continue;
         }
+
+        const can_pause = death_timer == 0 and !was_cutscene_locked and !chapter_flow.endingHoldActive(room_index);
+        if (can_pause and input.isJustPressed(.start)) {
+            audio_debug.setSuppressed(true);
+            const action = pause_menu.run();
+            audio_debug.setSuppressed(false);
+            if (action == .retry) {
+                save.noteDeathInRoom(room_index);
+                room_systems.handlePlayerDeathStart(room_index);
+                respawn = deathRespawnPoint(player, room_index, respawn);
+                player_death.begin(player, camera, .normal, room_index);
+                death_timer = player_death.death_frames;
+                continue;
+            } else if (action == .save_and_quit) {
+                save.commitSession(checkpoint_respawn.room_index, checkpoint_respawn.spawn);
+                const selection = frontend.run();
+                respawn = selection.respawn;
+                room_index = selection.room_index;
+                checkpoint_respawn = respawn;
+                loadGameplayAfterMenu(&player, &camera, room_index, respawn);
+                death_timer = 0;
+                respawn_burst_timer = 0;
+                was_cutscene_locked = false;
+                continue;
+            } else if (action == .restart_chapter) {
+                room_index = chapterStartRoom(room_index);
+                respawn = respawnPoint(room_index, rooms[room_index].spawn);
+                checkpoint_respawn = respawn;
+                save.restartChapterRunForRoom(room_index);
+                loadGameplayAfterMenu(&player, &camera, room_index, respawn);
+                death_timer = 0;
+                respawn_burst_timer = 0;
+                was_cutscene_locked = false;
+                continue;
+            } else if (action == .exit_to_map) {
+                save.commitProgress();
+                const selection = frontend.runMapOnly();
+                respawn = selection.respawn;
+                room_index = selection.room_index;
+                checkpoint_respawn = respawn;
+                loadGameplayAfterMenu(&player, &camera, room_index, respawn);
+                death_timer = 0;
+                respawn_burst_timer = 0;
+                was_cutscene_locked = false;
+                continue;
+            }
+        }
+
+        save.tickPlaytime(room_index, false);
 
         if (death_timer > 0) {
             death_timer -= 1;
@@ -161,17 +216,26 @@ pub fn run() void {
             } else {
                 drawDeathCountdownScene(camera, room_index, death_timer);
             }
+            audio_debug.update();
             continue;
         }
 
         const cutscene_locked = room_systems.updateCutscenes(&player, input, room_index);
         save_indicator.setSuppressed(cutscene_locked);
+        debug_fps.setSuppressed(cutscene_locked);
+        audio_debug.setSuppressed(cutscene_locked);
+        if (was_cutscene_locked and !cutscene_locked) {
+            room_systems.loadObjectSprites(room_index);
+            room_systems.loadAfterObjectSprites(room_index, false);
+        }
+        was_cutscene_locked = cutscene_locked;
         room_systems.updateCutsceneEffects(room_index, camera);
 
         if (cutscene_locked) {
             player.vx = 0;
             player.vy = 0;
             player_controller.updateAnimation(&player);
+            chapter_systems.applyPlayerFrameOverride(&player, room_index);
         } else if (chapter_flow.endingHoldActive(room_index)) {
             chapter_flow.updateBridgeEndingHold(&player, input, room_index);
         } else {
@@ -216,6 +280,7 @@ pub fn run() void {
             playMusicForRoom(room_index);
             respawn = respawnPoint(room_index, room_transition.respawnForEntry(room_index, player, entry_side));
             if (save.commitSessionCheckpoint(respawn.room_index, respawn.spawn)) {
+                checkpoint_respawn = respawn;
                 save_indicator.update();
             }
             room_loader.hideGameplayDisplayForLoad();
@@ -235,7 +300,12 @@ pub fn run() void {
         camera = next_camera;
         const render_camera = renderCameraWithCutsceneShake(camera, room_index);
         frame.sync();
-        gameplay_scene.drawGameplay(&player, render_camera, room_index, room_systems.animCounter());
+        if (cutscene_locked) {
+            gameplay_scene.drawCutsceneGameplay(&player, render_camera, room_index, room_systems.animCounter());
+        } else {
+            gameplay_scene.drawGameplay(&player, render_camera, room_index, room_systems.animCounter());
+        }
+        audio_debug.update();
     }
 }
 
@@ -255,6 +325,35 @@ fn respawnPoint(room_index: usize, spawn: Spawn) RespawnPoint {
         .room_index = room_index,
         .spawn = spawn,
     };
+}
+
+fn loadGameplayAfterMenu(player: *Player, camera: *Camera, room_index: usize, respawn: RespawnPoint) void {
+    loadGameplayEntry(room_index, .initial);
+    gameplay_scene.loadWindSnowTiles();
+    room_systems.clearTransientEffects();
+    player.* = room_transition.spawnPlayerAt(respawn.spawn);
+    hair.update(player, chapter_systems.endingHairOverrideActive(room_index));
+    camera.* = updateCamera(player.*, room_index);
+    gameplay_scene.resetWindSnow(room_index, camera.*);
+    gameplay_scene.resetChimneySmoke(room_index);
+    gameplay_scene.drawInitial(player, camera.*, room_index, room_systems.animCounter());
+    _ = save.commitSessionCheckpoint(respawn.room_index, respawn.spawn);
+    save_indicator.reset();
+    room_loader.showGameplayDisplay(room_index);
+}
+
+fn loadGameplayEntry(room_index: usize, mode: room_loader.RoomLoadMode) void {
+    room_loader.hideGameplayDisplayForLoad();
+    frame.sync();
+    playMusicForRoom(room_index);
+    room_loader.loadGameplayRoom(room_index, mode);
+}
+
+fn chapterStartRoom(room_index: usize) usize {
+    if (city.flow.ownsGeneratedRoomIndex(room_index)) {
+        return city.flow.firstRoomIndex() orelse room_index;
+    }
+    return level.start_room_index;
 }
 
 fn deathRespawnPoint(player: Player, room_index: usize, current_respawn: RespawnPoint) RespawnPoint {

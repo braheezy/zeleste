@@ -7,6 +7,7 @@
   <style>
     :root {
       color-scheme: dark;
+      --side-width: 460px;
       --bg: #101419;
       --panel: #171d24;
       --panel-2: #202833;
@@ -66,7 +67,7 @@
     }
     main {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 360px;
+      grid-template-columns: minmax(0, 1fr) 6px var(--side-width);
       min-height: calc(100vh - 48px);
     }
     #stageWrap {
@@ -88,6 +89,17 @@
       background: var(--panel);
       overflow: auto;
       padding: 12px;
+      min-width: 0;
+    }
+    #splitter {
+      cursor: col-resize;
+      background: #0d1116;
+      border-left: 1px solid #0a0d11;
+      border-right: 1px solid var(--line);
+    }
+    #splitter:hover,
+    body.resizing #splitter {
+      background: #27313d;
     }
     section {
       border: 1px solid var(--line);
@@ -132,7 +144,7 @@
     }
     .conversation-head {
       display: grid;
-      grid-template-columns: 24px 1fr auto auto;
+      grid-template-columns: 24px minmax(0, 1fr) auto auto;
       gap: 6px;
       margin-bottom: 8px;
       align-items: center;
@@ -142,10 +154,16 @@
     }
     .dialogue-head {
       display: grid;
-      grid-template-columns: 24px 1fr 1fr auto;
+      grid-template-columns: 24px minmax(110px, 1fr) minmax(120px, 1fr) auto;
       gap: 6px;
       margin-bottom: 6px;
       align-items: center;
+    }
+    .dialogue-head input,
+    .dialogue-head select,
+    .conversation-head input {
+      min-width: 0;
+      width: 100%;
     }
     .script-list {
       margin: 0;
@@ -189,6 +207,7 @@
         <canvas id="overlay"></canvas>
       </div>
     </div>
+    <div id="splitter" title="Resize panel"></div>
     <aside id="side">
       <section>
         <h2>Place</h2>
@@ -248,6 +267,7 @@
     const zoomInput = document.getElementById("zoomInput");
     const gridInput = document.getElementById("gridInput");
     const triggerSelect = document.getElementById("triggerSelect");
+    const splitter = document.getElementById("splitter");
     const npcFacingInput = document.getElementById("npcFacingInput");
     const npcKindInput = document.getElementById("npcKindInput");
     const dialogueList = document.getElementById("dialogueList");
@@ -256,11 +276,13 @@
 
     let payload = null;
     let data = null;
+    let portraitOptions = { Madeline: [], Theo: [] };
     let image = null;
     let zoom = Number(zoomInput.value);
     let mode = "trigger";
     let activeTrigger = 0;
     let drag = null;
+    let resizeDrag = null;
     let previewStep = -1;
 
     for (const def of modeDefs) {
@@ -303,9 +325,15 @@
     });
     gridInput.addEventListener("change", drawOverlay);
     overlay.addEventListener("pointerdown", onPointerDown);
+    splitter.addEventListener("pointerdown", onSplitterDown);
     window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", () => { drag = null; });
+    window.addEventListener("pointerup", () => {
+      drag = null;
+      resizeDrag = null;
+      document.body.classList.remove("resizing");
+    });
 
+    restorePanelWidth();
     load();
 
     async function load() {
@@ -314,6 +342,7 @@
       payload = await response.json();
       if (!payload.ok) throw new Error(payload.error || "load failed");
       data = payload.data;
+      portraitOptions = payload.portraits || portraitOptions;
       ensureDataShape();
       image = new Image();
       image.onload = () => {
@@ -362,7 +391,9 @@
         conversation.id ||= `repeat_${index + 1}`;
         conversation.title ||= `Repeat ${index + 1}`;
         conversation.pages ||= [];
+        normalizeDialoguePages(conversation.pages);
       });
+      normalizeDialoguePages(data.dialogue);
       data.script ||= [];
       npcActor();
       data.markers.madeline_talk ||= { x: 0, y: 0 };
@@ -370,6 +401,19 @@
       data.markers.dialogue_box ||= { x: 8, y: 8, w: 224, h: 56 };
       activeTrigger = clamp(activeTrigger, 0, data.triggers.length - 1);
       rebuildScript();
+    }
+
+    function normalizeDialoguePages(pages) {
+      for (const page of pages) {
+        page.portrait = normalizePortraitValue(page.portrait, page.speaker);
+      }
+    }
+
+    function normalizePortraitValue(value, speaker) {
+      if (value === "madeline_neutral" || value === "madeline") return "madeline_idle";
+      if (value === "theo_neutral" || value === "theo") return "theo_normal";
+      if (value) return value;
+      return defaultPortraitForSpeaker(speaker);
     }
 
     function renderForm() {
@@ -410,7 +454,8 @@
     }
 
     function addDialoguePage(list, container, scripted) {
-      list.push({ speaker: scripted ? "Madeline" : "Theo", portrait: scripted ? "madeline_neutral" : "theo_neutral", text: "" });
+      const speaker = scripted ? "Madeline" : "Theo";
+      list.push({ speaker, portrait: defaultPortraitForSpeaker(speaker), text: "" });
       rebuildScript();
       renderDialogue();
       renderScript();
@@ -426,7 +471,7 @@
       data.postConversations.push({
         id: `repeat_${index}`,
         title: `Repeat ${index}`,
-        pages: [{ speaker: "Theo", portrait: "theo_neutral", text: "" }],
+        pages: [{ speaker: "Theo", portrait: defaultPortraitForSpeaker("Theo"), text: "" }],
       });
       renderDialogue();
     }
@@ -492,14 +537,17 @@
         speaker.placeholder = "Speaker";
         speaker.addEventListener("input", () => {
           page.speaker = speaker.value;
+          if (!portraitBelongsToSpeaker(page.portrait, page.speaker)) {
+            page.portrait = defaultPortraitForSpeaker(page.speaker);
+          }
+          populatePortraitSelect(portrait, page);
           rebuildScript();
           renderScript();
         });
 
-        const portrait = document.createElement("input");
-        portrait.value = page.portrait || "";
-        portrait.placeholder = "Portrait";
-        portrait.addEventListener("input", () => {
+        const portrait = document.createElement("select");
+        populatePortraitSelect(portrait, page);
+        portrait.addEventListener("change", () => {
           page.portrait = portrait.value;
           rebuildScript();
           renderScript();
@@ -528,6 +576,44 @@
         div.append(head, text);
         container.appendChild(div);
       });
+    }
+
+    function populatePortraitSelect(select, page) {
+      const family = portraitFamilyForSpeaker(page.speaker);
+      const options = portraitOptions[family] || [];
+      const previous = page.portrait || defaultPortraitForSpeaker(page.speaker);
+      select.innerHTML = "";
+      for (const optionData of options) {
+        const option = document.createElement("option");
+        option.value = optionData.value;
+        option.textContent = optionData.label;
+        select.appendChild(option);
+      }
+      if (!options.some((option) => option.value === previous) && previous) {
+        const option = document.createElement("option");
+        option.value = previous;
+        option.textContent = previous;
+        select.appendChild(option);
+      }
+      select.value = previous;
+      page.portrait = select.value;
+    }
+
+    function defaultPortraitForSpeaker(speaker) {
+      const family = portraitFamilyForSpeaker(speaker);
+      const options = portraitOptions[family] || [];
+      if (options.length > 0) return options[0].value;
+      return family === "Madeline" ? "madeline_idle" : "theo_normal";
+    }
+
+    function portraitBelongsToSpeaker(portrait, speaker) {
+      const family = portraitFamilyForSpeaker(speaker);
+      const options = portraitOptions[family] || [];
+      return options.some((option) => option.value === portrait);
+    }
+
+    function portraitFamilyForSpeaker(speaker) {
+      return String(speaker || "").trim().toLowerCase().startsWith("madeline") ? "Madeline" : "Theo";
     }
 
     function rebuildScript() {
@@ -704,6 +790,12 @@
     }
 
     function onPointerMove(event) {
+      if (resizeDrag) {
+        const width = clamp(window.innerWidth - event.clientX - resizeDrag.offset, 320, Math.min(760, window.innerWidth - 280));
+        setPanelWidth(width);
+        event.preventDefault();
+        return;
+      }
       if (!drag) return;
       const point = canvasPoint(event);
       if (drag.type === "rect") {
@@ -719,6 +811,24 @@
       }
       drawOverlay();
       event.preventDefault();
+    }
+
+    function onSplitterDown(event) {
+      const sideWidth = document.getElementById("side").getBoundingClientRect().width;
+      resizeDrag = { offset: window.innerWidth - event.clientX - sideWidth };
+      document.body.classList.add("resizing");
+      event.preventDefault();
+    }
+
+    function restorePanelWidth() {
+      const saved = Number(localStorage.getItem("city6zbPanelWidth"));
+      if (saved) setPanelWidth(saved);
+    }
+
+    function setPanelWidth(width) {
+      const clamped = clamp(Math.round(width), 320, Math.min(760, window.innerWidth - 280));
+      document.documentElement.style.setProperty("--side-width", `${clamped}px`);
+      localStorage.setItem("city6zbPanelWidth", String(clamped));
     }
 
     function canvasPoint(event) {

@@ -4,6 +4,8 @@ const mm = @import("maxmod");
 const assets = @import("assets.zig");
 const sound_ids = assets.sound_ids;
 
+pub const SoundEffectHandle = mm.Sfxhand;
+
 const prologue_soundbank_data align(4) = @embedFile("../generated/assets/prologue_soundbank.bin").*;
 const background_music_enabled = true;
 const audio_channel_count: mm.Word = 32;
@@ -11,7 +13,10 @@ const audio_mix_mode_13khz = 2;
 const wave_memory_len_13khz = 896;
 const audio_mix_mode = audio_mix_mode_13khz;
 const wave_memory_len = wave_memory_len_13khz;
-const sfx_volume: u32 = 1024;
+pub const volume_step_count: u8 = 10;
+const max_volume: mm.Word = 1024;
+const default_effect_volume: mm.Word = 255;
+const tracked_sfx_count: usize = 16;
 const no_music: u16 = 0xffff;
 const prologue_bridge_order: mm.Word = 4;
 const prologue_bridge_row: mm.Word = 36;
@@ -25,6 +30,12 @@ const PrologueMusicMode = enum(u8) {
     bridge,
 };
 
+const TrackedSoundEffect = struct {
+    handle: mm.Sfxhand = 0,
+    sound_id: u16 = 0,
+    volume: mm.Word = default_effect_volume,
+};
+
 var module_channels: [audio_channel_count]mm.ModuleChannel align(4) = [_]mm.ModuleChannel{.{}} ** audio_channel_count;
 var active_channels: [audio_channel_count]mm.ActiveChannel align(4) = [_]mm.ActiveChannel{.{}} ** audio_channel_count;
 var mixing_channels: [audio_channel_count]mm.MixerChannel align(4) = [_]mm.MixerChannel{.{}} ** audio_channel_count;
@@ -33,6 +44,9 @@ var wave_memory: [wave_memory_len]u8 align(4) = [_]u8{0} ** wave_memory_len;
 
 var current_music: u16 = no_music;
 var prologue_music_mode: PrologueMusicMode = .none;
+var music_volume_step: u8 = volume_step_count;
+var sfx_volume_step: u8 = volume_step_count;
+var tracked_sfx: [tracked_sfx_count]TrackedSoundEffect = [_]TrackedSoundEffect{.{}} ** tracked_sfx_count;
 
 pub fn init() void {
     gba.interrupt.init();
@@ -51,9 +65,51 @@ pub fn init() void {
         .soundbank = @ptrCast(@constCast(&prologue_soundbank_data[0])),
     };
     if (!mm.gba.init(&setup)) unreachable;
-    mm.sfx.setEffectsVolume(sfx_volume);
     current_music = no_music;
     prologue_music_mode = .none;
+    music_volume_step = volume_step_count;
+    sfx_volume_step = volume_step_count;
+    clearTrackedSoundEffects();
+    applyMusicVolume();
+    applySfxVolume();
+}
+
+pub fn setMusicVolumeStep(step: u8) void {
+    music_volume_step = clampVolumeStep(step);
+    applyMusicVolume();
+}
+
+pub fn setSfxVolumeStep(step: u8) void {
+    sfx_volume_step = clampVolumeStep(step);
+    applySfxVolume();
+}
+
+pub fn musicVolumeStep() u8 {
+    return music_volume_step;
+}
+
+pub fn sfxVolumeStep() u8 {
+    return sfx_volume_step;
+}
+
+pub fn activeSoundEffectCount() usize {
+    pruneTrackedSoundEffects();
+    var count: usize = 0;
+    for (tracked_sfx) |tracked| {
+        if (tracked.handle != 0) count += 1;
+    }
+    return count;
+}
+
+pub fn activeSoundEffectId(index: usize) ?u16 {
+    pruneTrackedSoundEffects();
+    var active_index: usize = 0;
+    for (tracked_sfx) |tracked| {
+        if (tracked.handle == 0) continue;
+        if (active_index == index) return tracked.sound_id;
+        active_index += 1;
+    }
+    return null;
 }
 
 pub fn playPrologueMusic() void {
@@ -80,23 +136,29 @@ pub fn stopMusic() void {
 
 pub fn stopSoundEffects() void {
     mm.sfx.effectCancelAll();
+    clearTrackedSoundEffects();
 }
 
 pub fn playSoundEffect(sound_id: u16) mm.Sfxhand {
+    if (sfx_volume_step == 0) return 0;
     if (!hasFreeEffectChannel()) return 0;
-    return mm.sfx.effect(sound_id);
+    return playTrackedSoundEffect(sound_id);
 }
 
 pub fn playImportantSoundEffect(sound_id: u16) mm.Sfxhand {
-    return mm.sfx.effect(sound_id);
+    if (sfx_volume_step == 0) return 0;
+    return playTrackedSoundEffect(sound_id);
 }
 
 pub fn setSoundEffectVolume(handle: mm.Sfxhand, volume: u16) void {
+    rememberTrackedSoundEffectVolume(handle, volume);
     mm.sfx.effectVolume(handle, volume);
 }
 
 pub fn cancelSoundEffect(handle: mm.Sfxhand) mm.Word {
-    return mm.sfx.effectCancel(handle);
+    const result = mm.sfx.effectCancel(handle);
+    if (result != 0) forgetTrackedSoundEffect(handle);
+    return result;
 }
 
 pub fn keepMusicLooping() void {
@@ -159,6 +221,7 @@ fn playPrologue(mode: PrologueMusicMode) void {
 
 fn startLooping(module_id: u16) void {
     mm.mas.mmStart(module_id, @intCast(mm.mas.MM_PLAY_LOOP));
+    applyMusicVolume();
 }
 
 fn keepPrologueSectionLooping() void {
@@ -189,4 +252,82 @@ fn hasFreeEffectChannel() bool {
         if (mm.gba.achannels[channel]._type == mm.mas.ACHN_DISABLED) return true;
     }
     return false;
+}
+
+fn playTrackedSoundEffect(sound_id: u16) mm.Sfxhand {
+    const handle = mm.sfx.effect(sound_id);
+    if (handle != 0) trackSoundEffect(handle, sound_id);
+    return handle;
+}
+
+fn trackSoundEffect(handle: mm.Sfxhand, sound_id: u16) void {
+    if (trackedSoundEffectSlot(handle)) |slot| {
+        tracked_sfx[slot] = .{
+            .handle = handle,
+            .sound_id = sound_id,
+            .volume = default_effect_volume,
+        };
+    }
+}
+
+fn rememberTrackedSoundEffectVolume(handle: mm.Sfxhand, volume: mm.Word) void {
+    if (trackedSoundEffectSlot(handle)) |slot| {
+        if (tracked_sfx[slot].handle == handle) {
+            tracked_sfx[slot].volume = volume;
+        }
+    }
+}
+
+fn forgetTrackedSoundEffect(handle: mm.Sfxhand) void {
+    if (trackedSoundEffectSlot(handle)) |slot| {
+        if (tracked_sfx[slot].handle == handle) tracked_sfx[slot] = .{};
+    }
+}
+
+fn pruneTrackedSoundEffects() void {
+    for (&tracked_sfx) |*tracked| {
+        if (tracked.handle != 0 and !mm.sfx.effectActive(tracked.handle)) {
+            tracked.* = .{};
+        }
+    }
+}
+
+fn clearTrackedSoundEffects() void {
+    tracked_sfx = [_]TrackedSoundEffect{.{}} ** tracked_sfx_count;
+}
+
+fn trackedSoundEffectSlot(handle: mm.Sfxhand) ?usize {
+    const channel = handle & 0xff;
+    if (channel == 0) return null;
+    const slot: usize = @intCast(channel - 1);
+    if (slot >= tracked_sfx.len) return null;
+    return slot;
+}
+
+fn applyMusicVolume() void {
+    const volume = volumeForStep(music_volume_step);
+    mm.mas.mmSetModuleVolume(volume);
+    mm.mas.mmSetJingleVolume(volume);
+}
+
+fn applySfxVolume() void {
+    mm.sfx.setEffectsVolume(volumeForStep(sfx_volume_step));
+    applyTrackedSoundEffectVolumes();
+}
+
+fn applyTrackedSoundEffectVolumes() void {
+    pruneTrackedSoundEffects();
+    for (tracked_sfx) |tracked| {
+        if (tracked.handle != 0) {
+            mm.sfx.effectVolume(tracked.handle, tracked.volume);
+        }
+    }
+}
+
+fn volumeForStep(step: u8) mm.Word {
+    return (@as(mm.Word, clampVolumeStep(step)) * max_volume) / @as(mm.Word, volume_step_count);
+}
+
+fn clampVolumeStep(step: u8) u8 {
+    return if (step > volume_step_count) volume_step_count else step;
 }

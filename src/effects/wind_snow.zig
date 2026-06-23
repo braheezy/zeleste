@@ -2,6 +2,7 @@ const gba = @import("gba");
 const camera_mod = @import("../world/camera.zig");
 const level = @import("../generated_rooms.zig");
 const math = @import("../core/math.zig");
+const obj_vram = @import("../core/obj_vram.zig");
 const oam = @import("../core/oam.zig");
 const video = @import("../core/video.zig");
 
@@ -13,7 +14,7 @@ const hideObject = oam.hideObject;
 const objX = oam.objX;
 const objY = oam.objY;
 
-pub const base_tile: u10 = 76;
+pub const base_tile: u10 = @intCast(obj_vram.wind_snow.start);
 pub const first_object = 43;
 pub const palette_bank: u4 = 3;
 
@@ -21,6 +22,7 @@ pub const palette_bank: u4 = 3;
 const max_particles = 21;
 const limited_particles = 16;
 const tile_count = 8;
+const snow_color: u4 = 15;
 const rooms = level.rooms;
 
 const Particle = struct {
@@ -38,30 +40,38 @@ var particle_count: usize = 0;
 var particles: [max_particles]Particle = [_]Particle{.{}} ** max_particles;
 var tiles: [tile_count]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** tile_count;
 
+pub fn loadPalette() void {
+    const base = @as(usize, palette_bank) * 16;
+    gba.display.obj_palette.colors[base + 0] = .black;
+    gba.display.obj_palette.colors[base + 1] = .white;
+    gba.display.obj_palette.colors[base + snow_color] = .white;
+}
+
 pub fn loadTiles() void {
     tiles = [_]gba.display.Tile4Bpp{gba.display.Tile4Bpp.init([_]u8{0} ** 32)} ** tile_count;
-    setPixel(0, 3, 3, 1);
+    setPixel(0, 3, 3, snow_color);
 
-    setPixel(1, 2, 4, 1);
+    setPixel(1, 2, 4, snow_color);
 
-    setPixel(2, 4, 2, 1);
+    setPixel(2, 4, 2, snow_color);
 
-    setPixel(3, 2, 2, 1);
-    setPixel(3, 3, 2, 1);
+    setPixel(3, 2, 2, snow_color);
+    setPixel(3, 3, 2, snow_color);
 
-    setPixel(4, 3, 3, 1);
-    setPixel(4, 4, 3, 1);
+    setPixel(4, 3, 3, snow_color);
+    setPixel(4, 4, 3, snow_color);
 
-    setPixel(5, 2, 4, 1);
-    setPixel(5, 3, 3, 1);
+    setPixel(5, 2, 4, snow_color);
+    setPixel(5, 3, 3, snow_color);
 
-    setPixel(6, 4, 2, 1);
-    setPixel(6, 3, 3, 1);
+    setPixel(6, 4, 2, snow_color);
+    setPixel(6, 3, 3, snow_color);
 
-    setPixel(7, 1, 4, 1);
-    setPixel(7, 3, 4, 1);
+    setPixel(7, 1, 4, snow_color);
+    setPixel(7, 3, 4, snow_color);
 
     gba.display.memcpyObjectTiles4Bpp(base_tile, &tiles);
+    loadPalette();
 }
 
 pub fn reset(room_index: usize, camera: Camera, suppressed: bool, limited: bool) void {
@@ -75,6 +85,7 @@ pub fn reset(room_index: usize, camera: Camera, suppressed: bool, limited: bool)
 
     visible = true;
     const limit = particleLimit(limited);
+    hideObjectsPastLimit(limit);
     particle_count = limit;
     var index: usize = 0;
     while (index < limit) : (index += 1) {
@@ -95,6 +106,7 @@ pub fn update(room_index: usize, camera: Camera, anim_counter: u16, suppressed: 
 
     visible = true;
     const limit = particleLimit(limited);
+    hideObjectsPastLimit(limit);
     particle_count = limit;
     var index: usize = 0;
     while (index < limit) : (index += 1) {
@@ -125,6 +137,9 @@ pub fn update(room_index: usize, camera: Camera, anim_counter: u16, suppressed: 
 pub fn draw(camera: Camera) void {
     if (!visible) return;
 
+    loadPalette();
+    gba.display.memcpyObjectTiles4Bpp(base_tile, &tiles);
+
     var index: usize = 0;
     while (index < particle_count) : (index += 1) {
         if (!particles[index].active) {
@@ -148,6 +163,14 @@ pub fn hideObjects() void {
     particle_count = 0;
     var index: usize = 0;
     while (index < max_particles) : (index += 1) {
+        hideObject(first_object + index);
+    }
+}
+
+fn hideObjectsPastLimit(limit: usize) void {
+    if (limit >= particle_count) return;
+    var index = limit;
+    while (index < particle_count) : (index += 1) {
         hideObject(first_object + index);
     }
 }

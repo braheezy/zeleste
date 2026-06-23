@@ -1,0 +1,730 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>City End Cutscene</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111319;
+      --panel: #191d25;
+      --panel-2: #202632;
+      --line: #343b49;
+      --text: #edf1f7;
+      --muted: #a7b0c2;
+      --accent: #f1c05c;
+      --danger: #e76565;
+      --memorial: #72d8ff;
+      --outro: #ffb15d;
+      --marker: #9be46f;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font: 13px/1.4 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    .shell {
+      display: grid;
+      grid-template-columns: minmax(420px, 1fr) 360px;
+      gap: 16px;
+      min-height: 100vh;
+      padding: 16px;
+    }
+
+    .workspace,
+    .sidebar {
+      min-width: 0;
+    }
+
+    .toolbar,
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+      padding: 10px;
+    }
+
+    .toolbar .grow {
+      flex: 1;
+    }
+
+    .canvas-wrap {
+      overflow: auto;
+      max-height: calc(100vh - 92px);
+      background: #08090d;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+
+    canvas {
+      display: block;
+      image-rendering: pixelated;
+      cursor: crosshair;
+    }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-height: calc(100vh - 32px);
+      overflow: auto;
+    }
+
+    .panel {
+      padding: 12px;
+    }
+
+    .panel h2 {
+      margin: 0 0 10px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .field {
+      display: grid;
+      gap: 5px;
+      margin-bottom: 10px;
+    }
+
+    label {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      min-width: 0;
+      color: var(--text);
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 7px 8px;
+    }
+
+    textarea {
+      min-height: 74px;
+      resize: vertical;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    button {
+      color: var(--text);
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 7px 10px;
+      cursor: pointer;
+    }
+
+    button.primary {
+      background: #3a2d12;
+      border-color: #6f5725;
+      color: #ffe5a6;
+    }
+
+    button:disabled {
+      cursor: default;
+      opacity: 0.55;
+    }
+
+    .status {
+      color: var(--muted);
+      min-height: 18px;
+    }
+
+    .status.error {
+      color: var(--danger);
+    }
+
+    .target-list {
+      display: grid;
+      gap: 6px;
+    }
+
+    .target {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      width: 100%;
+      text-align: left;
+    }
+
+    .target.active {
+      border-color: var(--accent);
+      color: #ffe5a6;
+    }
+
+    .target span:last-child {
+      color: var(--muted);
+    }
+
+    .script {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+    }
+
+    @media (max-width: 960px) {
+      .shell {
+        grid-template-columns: 1fr;
+      }
+
+      .canvas-wrap {
+        max-height: 55vh;
+      }
+
+      .sidebar {
+        max-height: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="workspace">
+      <div class="toolbar">
+        <strong>Chapter 1 End</strong>
+        <label for="zoom">Zoom</label>
+        <select id="zoom">
+          <option value="2">2x</option>
+          <option value="3" selected>3x</option>
+          <option value="4">4x</option>
+        </select>
+        <label><input id="grid" type="checkbox" checked> Grid</label>
+        <div class="grow"></div>
+        <button id="reload">Reload</button>
+        <button id="save" class="primary">Save</button>
+      </div>
+      <div class="canvas-wrap">
+        <canvas id="canvas"></canvas>
+      </div>
+    </section>
+
+    <aside class="sidebar">
+      <div class="panel">
+        <h2>Targets</h2>
+        <div id="targetList" class="target-list"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Selected</h2>
+        <div class="field">
+          <label for="targetSelect">Target</label>
+          <select id="targetSelect"></select>
+        </div>
+        <div id="rectFields" class="grid-4">
+          <div class="field"><label for="fieldX">X</label><input id="fieldX" type="number"></div>
+          <div class="field"><label for="fieldY">Y</label><input id="fieldY" type="number"></div>
+          <div class="field"><label for="fieldW">W</label><input id="fieldW" type="number"></div>
+          <div class="field"><label for="fieldH">H</label><input id="fieldH" type="number"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Memorial</h2>
+        <div class="field">
+          <label for="memorialText">Text</label>
+          <textarea id="memorialText"></textarea>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Outro Dialogue</h2>
+        <div class="field">
+          <label for="line0Portrait">First Portrait</label>
+          <select id="line0Portrait"></select>
+        </div>
+        <div class="field">
+          <label for="line0Text">First Line</label>
+          <textarea id="line0Text"></textarea>
+        </div>
+        <div class="field">
+          <label for="line1Portrait">Second Portrait</label>
+          <select id="line1Portrait"></select>
+        </div>
+        <div class="field">
+          <label for="line1Text">Second Line</label>
+          <textarea id="line1Text"></textarea>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Timing</h2>
+        <div class="grid-2">
+          <div class="field"><label for="pausePastFireFrames">Pause</label><input id="pausePastFireFrames" type="number" min="0"></div>
+          <div class="field"><label for="turnBackFrames">Turn</label><input id="turnBackFrames" type="number" min="0"></div>
+          <div class="field"><label for="sitDownFrames">Sit</label><input id="sitDownFrames" type="number" min="0"></div>
+          <div class="field"><label for="makeCampfireFrames">Campfire</label><input id="makeCampfireFrames" type="number" min="0"></div>
+          <div class="field"><label for="birdSwoopFrames">Bird</label><input id="birdSwoopFrames" type="number" min="0"></div>
+          <div class="field"><label for="birdCawFrames">Caw</label><input id="birdCawFrames" type="number" min="0"></div>
+          <div class="field"><label for="wipeFrames">Wipe</label><input id="wipeFrames" type="number" min="0"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Script Preview</h2>
+        <ol id="scriptPreview" class="script"></ol>
+      </div>
+
+      <div class="panel">
+        <div id="status" class="status">Loading...</div>
+      </div>
+    </aside>
+  </main>
+
+  <script>
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const zoomSelect = document.getElementById("zoom");
+    const gridToggle = document.getElementById("grid");
+    const targetList = document.getElementById("targetList");
+    const targetSelect = document.getElementById("targetSelect");
+    const statusEl = document.getElementById("status");
+    const fields = {
+      x: document.getElementById("fieldX"),
+      y: document.getElementById("fieldY"),
+      w: document.getElementById("fieldW"),
+      h: document.getElementById("fieldH"),
+    };
+    const memorialText = document.getElementById("memorialText");
+    const line0Portrait = document.getElementById("line0Portrait");
+    const line0Text = document.getElementById("line0Text");
+    const line1Portrait = document.getElementById("line1Portrait");
+    const line1Text = document.getElementById("line1Text");
+    const timingInputs = ["pausePastFireFrames", "turnBackFrames", "sitDownFrames", "makeCampfireFrames", "birdSwoopFrames", "birdCawFrames", "wipeFrames"]
+      .map((id) => document.getElementById(id));
+    const scriptPreview = document.getElementById("scriptPreview");
+
+    let payload = null;
+    let data = null;
+    let image = new Image();
+    let zoom = Number(zoomSelect.value);
+    let selectedTarget = "memorial.trigger";
+    let drag = null;
+
+    const targetDefs = [
+      { id: "memorial.trigger", label: "Memorial Trigger", kind: "rect", color: "#72d8ff", get: () => data.memorial.trigger },
+      { id: "memorial.dialogueBox", label: "Memorial Box", kind: "rect", color: "#72d8ff", get: () => data.memorial.dialogueBox },
+      { id: "outro.trigger", label: "Outro Trigger", kind: "rect", color: "#ffb15d", get: () => data.outro.trigger },
+      { id: "outro.dialogue_box", label: "Outro Box", kind: "rect", color: "#ffb15d", get: () => data.outro.markers.dialogue_box },
+      { id: "outro.madeline_rest", label: "Madeline Rest", kind: "point", color: "#9be46f", get: () => data.outro.markers.madeline_rest },
+      { id: "outro.campfire", label: "Campfire", kind: "point", color: "#f1c05c", get: () => data.outro.markers.campfire },
+      { id: "outro.bird_start", label: "Bird Start", kind: "point", color: "#d48cff", get: () => data.outro.markers.bird_start },
+      { id: "outro.bird_land", label: "Bird Land", kind: "point", color: "#d48cff", get: () => data.outro.markers.bird_land },
+      { id: "outro.camera_focus", label: "Camera Focus", kind: "point", color: "#ffffff", get: () => data.outro.markers.camera_focus },
+    ];
+
+    function targetById(id) {
+      return targetDefs.find((target) => target.id === id) || targetDefs[0];
+    }
+
+    function setStatus(message, error = false) {
+      statusEl.textContent = message;
+      statusEl.classList.toggle("error", error);
+    }
+
+    async function load() {
+      setStatus("Loading...");
+      const response = await fetch("/api/city-end-cutscene");
+      payload = await response.json();
+      if (!payload.ok) {
+        setStatus(payload.error || "Load failed", true);
+        return;
+      }
+      data = payload.data;
+      normalizeData();
+      bindForm();
+      await loadImage(payload.image);
+      render();
+      setStatus(`Loaded ${payload.path}`);
+    }
+
+    function normalizeData() {
+      data.memorial ||= {};
+      data.memorial.trigger ||= { x: 124, y: 92, w: 76, h: 56 };
+      data.memorial.dialogueBox ||= { x: 8, y: 8, w: 224, h: 56 };
+      data.memorial.page ||= { speaker: "Memorial", portrait: "none", text: "" };
+      data.outro ||= {};
+      data.outro.trigger ||= { x: 252, y: 124, w: 48, h: 56 };
+      data.outro.markers ||= {};
+      for (const [key, value] of Object.entries({
+        madeline_rest: { x: 238, y: 136 },
+        campfire: { x: 262, y: 150 },
+        bird_start: { x: 314, y: 88 },
+        bird_land: { x: 242, y: 126 },
+        camera_focus: { x: 246, y: 118 },
+        dialogue_box: { x: 8, y: 8, w: 224, h: 56 },
+      })) {
+        data.outro.markers[key] ||= value;
+      }
+      data.outro.timings ||= {};
+      delete data.outro.timings.fallAsleepFrames;
+      delete data.outro.timings.chapterCompleteHoldFrames;
+      data.outro.dialogue ||= [
+        { speaker: "Madeline", portrait: "madeline_distracted_short", text: "Ugh, I'm exhausted." },
+        { speaker: "Madeline", portrait: "madeline_deadpan_noblink", text: "This might have been a mistake." },
+      ];
+      while (data.outro.dialogue.length < 2) {
+        data.outro.dialogue.push({ speaker: "Madeline", portrait: "madeline_idle", text: "" });
+      }
+      data.script ||= [];
+      rebuildScript();
+    }
+
+    function loadImage(path) {
+      return new Promise((resolve, reject) => {
+        image = new Image();
+        image.onload = resolve;
+        image.onerror = reject;
+        image.src = `/${path}?t=${Date.now()}`;
+      });
+    }
+
+    function bindForm() {
+      buildTargets();
+      buildPortraitSelect(line0Portrait, data.outro.dialogue[0].portrait);
+      buildPortraitSelect(line1Portrait, data.outro.dialogue[1].portrait);
+      memorialText.value = data.memorial.page.text || "";
+      line0Text.value = data.outro.dialogue[0].text || "";
+      line1Text.value = data.outro.dialogue[1].text || "";
+      for (const input of timingInputs) {
+        input.value = data.outro.timings[input.id] ?? defaultTiming(input.id);
+      }
+      updateSelectedFields();
+      updateScriptPreview();
+    }
+
+    function buildTargets() {
+      targetSelect.innerHTML = "";
+      targetList.innerHTML = "";
+      for (const target of targetDefs) {
+        const option = document.createElement("option");
+        option.value = target.id;
+        option.textContent = target.label;
+        targetSelect.append(option);
+
+        const button = document.createElement("button");
+        button.className = `target${target.id === selectedTarget ? " active" : ""}`;
+        button.type = "button";
+        button.innerHTML = `<span>${target.label}</span><span>${target.kind}</span>`;
+        button.addEventListener("click", () => selectTarget(target.id));
+        targetList.append(button);
+      }
+      targetSelect.value = selectedTarget;
+    }
+
+    function buildPortraitSelect(select, selected) {
+      select.innerHTML = "";
+      const options = [{ label: "none", value: "none" }, ...((payload.portraits || {}).Madeline || [])];
+      for (const portrait of options) {
+        const option = document.createElement("option");
+        option.value = portrait.value;
+        option.textContent = portrait.label;
+        select.append(option);
+      }
+      select.value = selected || "none";
+    }
+
+    function defaultTiming(id) {
+      return {
+        pausePastFireFrames: 90,
+        turnBackFrames: 30,
+        sitDownFrames: 36,
+        makeCampfireFrames: 90,
+        birdSwoopFrames: 90,
+        birdCawFrames: 42,
+        wipeFrames: 32,
+      }[id];
+    }
+
+    function selectTarget(id) {
+      selectedTarget = id;
+      buildTargets();
+      updateSelectedFields();
+      render();
+    }
+
+    function updateSelectedFields() {
+      const target = targetById(selectedTarget);
+      const value = target.get();
+      fields.x.value = value.x ?? 0;
+      fields.y.value = value.y ?? 0;
+      fields.w.disabled = target.kind !== "rect";
+      fields.h.disabled = target.kind !== "rect";
+      fields.w.value = target.kind === "rect" ? value.w ?? 0 : "";
+      fields.h.value = target.kind === "rect" ? value.h ?? 0 : "";
+      targetSelect.value = selectedTarget;
+    }
+
+    function applySelectedFields() {
+      const target = targetById(selectedTarget);
+      const value = target.get();
+      value.x = Number(fields.x.value) || 0;
+      value.y = Number(fields.y.value) || 0;
+      if (target.kind === "rect") {
+        value.w = Math.max(0, Number(fields.w.value) || 0);
+        value.h = Math.max(0, Number(fields.h.value) || 0);
+      }
+      render();
+    }
+
+    function syncFormToData() {
+      data.memorial.page.speaker = "Memorial";
+      data.memorial.page.portrait = "none";
+      data.memorial.page.text = memorialText.value;
+      data.outro.dialogue[0].speaker = "Madeline";
+      data.outro.dialogue[0].portrait = line0Portrait.value;
+      data.outro.dialogue[0].text = line0Text.value;
+      data.outro.dialogue[1].speaker = "Madeline";
+      data.outro.dialogue[1].portrait = line1Portrait.value;
+      data.outro.dialogue[1].text = line1Text.value;
+      for (const input of timingInputs) {
+        data.outro.timings[input.id] = Math.max(0, Number(input.value) || 0);
+      }
+      rebuildScript();
+      updateScriptPreview();
+    }
+
+    function rebuildScript() {
+      const timings = data.outro.timings || {};
+      data.script = [
+        { op: "lock_player" },
+        { op: "walk_player_past", marker: "campfire" },
+        { op: "wait_frames", frames: timings.pausePastFireFrames ?? 90, label: "pause_past_fire" },
+        { op: "face", actor: "player", dir: "left" },
+        { op: "wait_frames", frames: timings.turnBackFrames ?? 30 },
+        { op: "say", dialogue: 0 },
+        { op: "walk_player_to", marker: "madeline_rest" },
+        { op: "play_placeholder", actor: "campfire", marker: "campfire" },
+        { op: "wait_frames", frames: timings.makeCampfireFrames ?? 90, label: "start_fire" },
+        { op: "wait_frames", frames: timings.sitDownFrames ?? 36, label: "sit_down" },
+        { op: "bird_swoop", from: "bird_start", to: "bird_land", frames: timings.birdSwoopFrames ?? 90 },
+        { op: "bird_caw", frames: timings.birdCawFrames ?? 42, firstFrame: 8, lastFrame: 14 },
+        { op: "say", dialogue: 1 },
+        { op: "screen_wipe", to: "black" },
+        { op: "chapter_complete", art: "chapter_endings/city-nap" },
+      ];
+    }
+
+    function updateScriptPreview() {
+      scriptPreview.innerHTML = "";
+      for (const entry of data.script) {
+        const item = document.createElement("li");
+        item.textContent = JSON.stringify(entry);
+        scriptPreview.append(item);
+      }
+    }
+
+    function render() {
+      if (!data || !image.complete) return;
+      zoom = Number(zoomSelect.value);
+      canvas.width = image.width * zoom;
+      canvas.height = image.height * zoom;
+      ctx.imageSmoothingEnabled = false;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      if (gridToggle.checked) drawGrid();
+      drawTargets();
+    }
+
+    function drawGrid() {
+      ctx.save();
+      ctx.strokeStyle = "rgba(255,255,255,0.12)";
+      ctx.lineWidth = 1;
+      for (let x = 0; x <= image.width; x += 8) {
+        ctx.beginPath();
+        ctx.moveTo(x * zoom + 0.5, 0);
+        ctx.lineTo(x * zoom + 0.5, canvas.height);
+        ctx.stroke();
+      }
+      for (let y = 0; y <= image.height; y += 8) {
+        ctx.beginPath();
+        ctx.moveTo(0, y * zoom + 0.5);
+        ctx.lineTo(canvas.width, y * zoom + 0.5);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    function drawTargets() {
+      for (const target of targetDefs) {
+        const value = target.get();
+        const active = target.id === selectedTarget;
+        ctx.save();
+        ctx.strokeStyle = target.color;
+        ctx.fillStyle = target.color;
+        ctx.lineWidth = active ? 3 : 2;
+        if (target.kind === "rect") {
+          ctx.globalAlpha = active ? 0.24 : 0.13;
+          ctx.fillRect(value.x * zoom, value.y * zoom, value.w * zoom, value.h * zoom);
+          ctx.globalAlpha = 1;
+          ctx.strokeRect(value.x * zoom + 0.5, value.y * zoom + 0.5, value.w * zoom, value.h * zoom);
+          label(target.label, value.x, value.y - 10, target.color);
+        } else {
+          const x = value.x * zoom;
+          const y = value.y * zoom;
+          ctx.beginPath();
+          ctx.arc(x, y, active ? 6 : 4, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.moveTo(x - 10, y);
+          ctx.lineTo(x + 10, y);
+          ctx.moveTo(x, y - 10);
+          ctx.lineTo(x, y + 10);
+          ctx.stroke();
+          label(target.label, value.x + 4, value.y - 10, target.color);
+        }
+        ctx.restore();
+      }
+    }
+
+    function label(text, x, y, color) {
+      ctx.save();
+      ctx.font = `${11 * zoom}px system-ui, sans-serif`;
+      ctx.fillStyle = "rgba(0,0,0,0.7)";
+      ctx.fillRect(x * zoom - 2, y * zoom - 12, ctx.measureText(text).width + 4, 15);
+      ctx.fillStyle = color;
+      ctx.fillText(text, x * zoom, y * zoom);
+      ctx.restore();
+    }
+
+    function canvasPoint(event) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: Math.round((event.clientX - rect.left) / zoom),
+        y: Math.round((event.clientY - rect.top) / zoom),
+      };
+    }
+
+    function beginDrag(event) {
+      if (!data) return;
+      const target = targetById(selectedTarget);
+      const value = target.get();
+      const point = canvasPoint(event);
+      if (target.kind === "rect") {
+        const inside = point.x >= value.x && point.y >= value.y && point.x <= value.x + value.w && point.y <= value.y + value.h;
+        drag = inside
+          ? { mode: "move", target, start: point, original: { ...value } }
+          : { mode: "draw", target, start: point };
+        if (!inside) {
+          value.x = point.x;
+          value.y = point.y;
+          value.w = 0;
+          value.h = 0;
+        }
+      } else {
+        drag = { mode: "point", target };
+        value.x = point.x;
+        value.y = point.y;
+      }
+      updateSelectedFields();
+      render();
+    }
+
+    function updateDrag(event) {
+      if (!drag) return;
+      const point = canvasPoint(event);
+      const value = drag.target.get();
+      if (drag.mode === "move") {
+        value.x = drag.original.x + point.x - drag.start.x;
+        value.y = drag.original.y + point.y - drag.start.y;
+      } else if (drag.mode === "draw") {
+        value.x = Math.min(drag.start.x, point.x);
+        value.y = Math.min(drag.start.y, point.y);
+        value.w = Math.abs(point.x - drag.start.x);
+        value.h = Math.abs(point.y - drag.start.y);
+      } else {
+        value.x = point.x;
+        value.y = point.y;
+      }
+      updateSelectedFields();
+      render();
+    }
+
+    function endDrag() {
+      drag = null;
+    }
+
+    async function save() {
+      try {
+        syncFormToData();
+        setStatus("Saving...");
+        const response = await fetch("/api/city-end-cutscene/save", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ data }),
+        });
+        const result = await response.json();
+        if (!result.ok) {
+          setStatus(result.error || "Save failed", true);
+          return;
+        }
+        setStatus(`Saved ${result.path}`);
+      } catch (error) {
+        setStatus(error.message || String(error), true);
+      }
+    }
+
+    targetSelect.addEventListener("change", () => selectTarget(targetSelect.value));
+    for (const input of Object.values(fields)) input.addEventListener("input", applySelectedFields);
+    for (const input of [memorialText, line0Portrait, line0Text, line1Portrait, line1Text, ...timingInputs]) {
+      input.addEventListener("input", () => {
+        syncFormToData();
+        render();
+      });
+    }
+    zoomSelect.addEventListener("change", render);
+    gridToggle.addEventListener("change", render);
+    canvas.addEventListener("pointerdown", beginDrag);
+    canvas.addEventListener("pointermove", updateDrag);
+    window.addEventListener("pointerup", endDrag);
+    document.getElementById("reload").addEventListener("click", load);
+    document.getElementById("save").addEventListener("click", save);
+
+    load().catch((error) => setStatus(error.message || String(error), true));
+  </script>
+</body>
+</html>

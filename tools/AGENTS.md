@@ -18,6 +18,9 @@ For bespoke cutscene authoring tools, read `../docs/cutscene-tooling.md`.
 - `task city-layout`: opens the chapter 1 room layout picker. It saves
   `assets/chapters/1_city/layout.json`, which the manifest builder uses for
   city room world positions.
+- `task city-s1-birds`: opens the chapter 1 room `s1` tiny bird editor. It
+  saves `assets/chapters/1_city/s1_tiny_birds.json`, which the asset builder
+  packs into generated runtime data.
 - `zig build assets`: rebuilds generated ROM assets under `src/generated`.
 - `zig build`: compiles the ROM without regenerating assets.
 
@@ -56,6 +59,13 @@ For bespoke cutscene authoring tools, read `../docs/cutscene-tooling.md`.
 - `city_layout_server.py` and `city_layout_picker.html`: chapter 1 room layout
   picker. Use this to place each captured room PNG over the full city map and
   save `assets/chapters/1_city/layout.json`.
+
+- `city_s1_tiny_birds_server.py` and `city_s1_tiny_birds_editor.html`: chapter
+  1 room `s1` tiny bird editor. Use this to mark ambient fly-away birds, the
+  crystal-heart puzzle cluster origin, and the puzzle antenna tip.
+  `pack_tiny_bird_room.py` emits ambient runtime fly-away data, expands
+  `puzzleCluster` into visual-only puzzle clump/spoke data, and emits the
+  optional color-cycling antenna tip marker.
 
 - `build_level_assets.py`: top-level level asset builder. It reads a chapter
   manifest such as `assets/chapters/prologue_a/room.json`, runs room conversion,

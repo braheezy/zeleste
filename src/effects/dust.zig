@@ -1,6 +1,7 @@
 const gba = @import("gba");
 const camera_mod = @import("../world/camera.zig");
 const math = @import("../core/math.zig");
+const obj_vram = @import("../core/obj_vram.zig");
 const oam = @import("../core/oam.zig");
 const player_mod = @import("../player/state.zig");
 const rng = @import("../core/rng.zig");
@@ -14,7 +15,7 @@ const objX = oam.objX;
 const objY = oam.objY;
 const nextRandom = rng.next;
 
-pub const base_tile: u10 = 68;
+pub const base_tile: u10 = @intCast(obj_vram.dust.start);
 pub const palette_bank: u4 = 3;
 pub const first_object = 35;
 pub const max_particles = 8;

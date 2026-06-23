@@ -8,4 +8,4 @@ pub const granny_cutscene = @import("prologue/granny_cutscene.zig");
 pub const granny_npc = @import("prologue/granny_npc.zig");
 pub const laugh_text = @import("prologue/laugh_text.zig");
 pub const room_wires = @import("prologue/room_wires.zig");
-pub const tiny_birds = @import("prologue/tiny_birds.zig");
+pub const tiny_birds = @import("../room/tiny_birds.zig");

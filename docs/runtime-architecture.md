@@ -10,7 +10,8 @@ Current hand-written runtime modules:
   normal per-frame ordering, and high-level calls into focused runtime modules.
 - `src/core/assets.zig`: generated ROM asset embed catalog. Runtime code
   keeps aligned local aliases where existing VRAM/palette casts require them.
-- `src/core/audio.zig`: maxmod soundbank initialization and VBlank mixer
+- `src/core/audio.zig`: maxmod soundbank initialization, music/SFX master
+  volume steps, active SFX handle tracking, music looping, and VBlank mixer
   hook. Gameplay SFX triggers still live near their current callers.
 - `src/world/background.zig`: BG0 room map streaming, BG1 parallax streaming,
   static wire stamping into spare BG tile space, and wrapped hardware-map
@@ -65,9 +66,10 @@ Current hand-written runtime modules:
   prompt actor. It owns per-room bird data loading, the bird state machine, hint
   tile/palette streaming, OBJ drawing/hiding, cache invalidation, and the
   bridge-ending dash-prompt fly-in API.
-- `src/chapters/prologue/tiny_birds.zig`: prologue tiny bird flock
-  actor in room `0b`. It owns flock loading, persistent flown state,
-  trigger/update behavior, palette/tile uploads, OBJ drawing, and hide behavior.
+- `src/room/tiny_birds.zig`: reusable tiny bird flock actor. It owns flock
+  loading, persistent flown state, trigger/update behavior, visual-only puzzle
+  clump/spoke animation, palette/tile uploads, OBJ drawing, and hide behavior
+  while chapter systems provide room-specific placement data.
 - `src/chapters/prologue/chimney_smoke.zig`: prologue Granny-room
   procedural 16x16 OBJ smoke effect. It owns the generated smoke tiles, palette
   color, active-room/origin constants, counter/update cadence, OBJ drawing, and
@@ -89,6 +91,10 @@ Current hand-written runtime modules:
 - `src/player/dash_effects.zig`: dash afterimage/burst state, generated dash
   burst tile graphics, dash VFX palettes, and dash VFX OBJ drawing.
 - `src/core/debug_fps.zig`: optional `--dev-hud` FPS object overlay.
+- `src/core/audio_debug.zig`: pause-menu Options toggleable SFX watch overlay.
+  It reuses the high HUD object slots when enabled, reads active sound IDs from
+  `src/core/audio.zig`, maps known IDs to short debug names, and briefly holds
+  the last sound name after one-shot UI SFX end.
 - `src/effects/dust.zig`: reusable dust/snow puff particle system. It owns the
   shared particle OBJ palette colors, generated 8x8 particle tiles, jump,
   landing, wall-slide, and falling-block snow spawns, particle update, clear,
@@ -200,7 +206,8 @@ Per-frame normal gameplay:
 10. check end-level, bridge-hold, and static lethal hazards;
 11. check room transition;
 12. VBlank through `src/core/frame.zig`;
-13. apply camera and draw the gameplay scene through the shared scene helper.
+13. apply camera and draw the gameplay scene through the shared scene helper;
+14. draw the optional SFX watch overlay after gameplay OAM has been written.
 
 Death and room transitions temporarily disable BG0/OBJ, load the next room or
 respawn state, redraw, then re-enable display. This avoids showing the player
@@ -217,8 +224,9 @@ future chapters should use before a fuller entity registry exists:
   `src/chapters/systems.zig`. Current shared systems include falling blocks,
   foreground stamps, object sprite uploads, and parallax; current prologue
   systems include funny cars, bridge state, bird NPCs, tiny birds, room wires,
-  and Granny cutscene reset. City systems are intentionally no-op until chapter
-  1 mechanics are implemented.
+  and Granny cutscene reset. City systems own Chapter 1 actors such as Theo
+  dialogue and `s1` tiny birds, including the visual-only crystal-heart puzzle
+  bird cycle.
 - `updateRoomCutscenes` and `updateRoomCutsceneEffects` are the cutscene entry
   points. `src/chapters/prologue/granny_cutscene.zig` is the first
   authored script behind these hooks; additional chapter cutscenes should plug
@@ -239,6 +247,10 @@ future chapters should use before a fuller entity registry exists:
   `src/player/controller.zig` because cadence depends on player state
   after collision. Keep chapter-specific terrain probes behind that module
   boundary.
+- Global audio settings are save-header state rather than per-slot progress:
+  the pause menu's Options submenu writes separate music/SFX volume steps and
+  the SFX watch toggle, while `src/game.zig` applies the saved volume steps
+  immediately after `src/core/audio.zig` initializes.
 - `updateRoomEffects` is for camera-dependent environmental effects.
 - `playerTouchingRoomHazard` centralizes static lethal checks such as spikes
   and death pits.

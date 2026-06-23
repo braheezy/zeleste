@@ -19,6 +19,9 @@ const size_offset: usize = 10;
 const generation_offset: usize = 12;
 const checksum_offset: usize = 16;
 const active_slot_offset: usize = 20;
+const music_volume_offset: usize = 21;
+const sfx_volume_offset: usize = 22;
+const audio_debug_offset: usize = 23;
 
 const slot_exists_offset: usize = 0;
 const slot_session_offset: usize = 1;
@@ -39,6 +42,10 @@ const slot_player_name_offset: usize = slot_cassette_flags_offset + collectibles
 const slot_chapter_playtime_offset: usize = slot_player_name_offset + player_name_len;
 pub const player_name_len: usize = 8;
 const max_timed_chapters: usize = 8;
+const slot_crystal_heart_flags_offset: usize = slot_chapter_playtime_offset + max_timed_chapters * 4;
+const slot_golden_strawberry_flags_offset: usize = slot_crystal_heart_flags_offset + collectibles.crystal_heart_flag_word_count * 4;
+pub const audio_volume_steps: u8 = 10;
+const default_audio_volume_step: u8 = audio_volume_steps;
 
 const default_player_name = [_]u8{ 'M', 'A', 'D', 'E', 'L', 'I', 'N', 'E' };
 
@@ -64,6 +71,8 @@ const SaveSlot = struct {
     strawberry_score: u32 = 0,
     strawberry_flags: [collectibles.flag_word_count]u32 = [_]u32{0} ** collectibles.flag_word_count,
     cassette_flags: [collectibles.cassette_flag_word_count]u32 = [_]u32{0} ** collectibles.cassette_flag_word_count,
+    crystal_heart_flags: [collectibles.crystal_heart_flag_word_count]u32 = [_]u32{0} ** collectibles.crystal_heart_flag_word_count,
+    golden_strawberry_flags: [collectibles.golden_strawberry_flag_word_count]u32 = [_]u32{0} ** collectibles.golden_strawberry_flag_word_count,
     player_name: [player_name_len]u8 = default_player_name,
 };
 
@@ -91,7 +100,8 @@ pub const CollectibleCount = struct {
 pub const ChapterStats = struct {
     strawberries: CollectibleCount = .{},
     cassettes: CollectibleCount = .{},
-    future: CollectibleCount = .{},
+    crystal_heart_collected: bool = false,
+    golden_strawberry_collected: bool = false,
     playtime_frames: u32 = 0,
 };
 
@@ -114,6 +124,12 @@ var loaded_copy_index: usize = 0;
 var initialized: bool = false;
 var commit_serial: u32 = 0;
 var persistence_enabled: bool = true;
+var music_volume_step: u8 = default_audio_volume_step;
+var sfx_volume_step: u8 = default_audio_volume_step;
+var audio_debug_enabled: bool = false;
+var current_run_chapter: u8 = 0xff;
+var current_run_started_at_chapter_start: bool = false;
+var current_run_deaths: u16 = 0;
 
 pub fn initForBoot(enable_persistence: bool) void {
     persistence_enabled = enable_persistence;
@@ -136,6 +152,9 @@ pub fn init() void {
         active_slot = 0;
         generation = 0;
         loaded_copy_index = 0;
+        music_volume_step = default_audio_volume_step;
+        sfx_volume_step = default_audio_volume_step;
+        audio_debug_enabled = false;
     }
     initialized = true;
     restoreActiveSlotCollectibles();
@@ -192,7 +211,27 @@ pub fn beginChapterRunForRoom(room_index: usize) void {
     slot.current_chapter = chapter;
     slot.current_room_index = @intCast(@min(room_index, 0xffff));
     slot.unlocked_chapters |= chapterBit(chapter);
+    startChapterRunTracking(chapter, room_index);
     collectibles.beginChapterRun();
+}
+
+pub fn restartChapterRunForRoom(room_index: usize) void {
+    ensureInitialized();
+    restoreActiveSlotCollectibles();
+    var slot = activeSlotPtr();
+    const chapter = chapterForRoom(room_index);
+    slot.exists = true;
+    slot.has_session = false;
+    slot.current_chapter = chapter;
+    slot.current_room_index = @intCast(@min(room_index, 0xffff));
+    slot.respawn = level.rooms[room_index].spawn;
+    slot.unlocked_chapters |= chapterBit(chapter);
+    if (chapter < max_timed_chapters) {
+        slot.chapter_playtime_frames[chapter] = 0;
+    }
+    startChapterRunTracking(chapter, room_index);
+    collectibles.beginChapterRun();
+    writeNextCopy();
 }
 
 pub fn noteDeathInRoom(_: usize) void {
@@ -204,6 +243,12 @@ pub fn noteDeath() void {
     var slot = activeSlotPtr();
     slot.exists = true;
     if (slot.total_deaths != 0xffffffff) slot.total_deaths += 1;
+    if (current_run_deaths != 0xffff) current_run_deaths += 1;
+}
+
+pub fn currentRunDeathlessForChapter(chapter: u8) bool {
+    ensureInitialized();
+    return current_run_chapter == chapter and current_run_started_at_chapter_start and current_run_deaths == 0;
 }
 
 pub fn tickPlaytime(room_index: usize, paused: bool) void {
@@ -308,6 +353,44 @@ pub fn setSlotPlayerName(slot_index: usize, name: []const u8) void {
     writeNextCopy();
 }
 
+pub fn musicVolumeStep() u8 {
+    ensureInitialized();
+    return music_volume_step;
+}
+
+pub fn sfxVolumeStep() u8 {
+    ensureInitialized();
+    return sfx_volume_step;
+}
+
+pub fn audioDebugEnabled() bool {
+    ensureInitialized();
+    return audio_debug_enabled;
+}
+
+pub fn setMusicVolumeStep(step: u8) void {
+    ensureInitialized();
+    const next = clampAudioVolumeStep(step);
+    if (music_volume_step == next) return;
+    music_volume_step = next;
+    writeNextCopy();
+}
+
+pub fn setSfxVolumeStep(step: u8) void {
+    ensureInitialized();
+    const next = clampAudioVolumeStep(step);
+    if (sfx_volume_step == next) return;
+    sfx_volume_step = next;
+    writeNextCopy();
+}
+
+pub fn setAudioDebugEnabled(enabled: bool) void {
+    ensureInitialized();
+    if (audio_debug_enabled == enabled) return;
+    audio_debug_enabled = enabled;
+    writeNextCopy();
+}
+
 pub fn totalDeaths() u32 {
     return activeSlot().total_deaths;
 }
@@ -392,11 +475,15 @@ fn restoreActiveSlotCollectibles() void {
     }
     collectibles.restoreStrawberries(&slot.strawberry_flags, slot.strawberry_count, slot.strawberry_score, slot.strawberry_one_ups);
     collectibles.restoreCassettes(&slot.cassette_flags);
+    collectibles.restoreCrystalHearts(&slot.crystal_heart_flags);
+    collectibles.restoreGoldenStrawberries(&slot.golden_strawberry_flags);
 }
 
 fn snapshotCollectibles(slot: *SaveSlot) void {
     collectibles.copyStrawberryFlags(&slot.strawberry_flags);
     collectibles.copyCassetteFlags(&slot.cassette_flags);
+    collectibles.copyCrystalHeartFlags(&slot.crystal_heart_flags);
+    collectibles.copyGoldenStrawberryFlags(&slot.golden_strawberry_flags);
     slot.strawberry_count = collectibles.collectedStrawberries();
     slot.strawberry_score = collectibles.strawberryScore();
     slot.strawberry_one_ups = collectibles.strawberryOneUps();
@@ -408,6 +495,12 @@ fn resetVolatileState() void {
     generation = 0;
     loaded_copy_index = 0;
     commit_serial = 0;
+    music_volume_step = default_audio_volume_step;
+    sfx_volume_step = default_audio_volume_step;
+    audio_debug_enabled = false;
+    current_run_chapter = 0xff;
+    current_run_started_at_chapter_start = false;
+    current_run_deaths = 0;
 }
 
 fn chapterForRoom(room_index: usize) u8 {
@@ -418,6 +511,19 @@ fn chapterForRoom(room_index: usize) u8 {
 fn chapterBit(chapter: u8) u32 {
     if (chapter >= 31) return 0;
     return @as(u32, 1) << @intCast(chapter);
+}
+
+fn startChapterRunTracking(chapter: u8, room_index: usize) void {
+    current_run_chapter = chapter;
+    const start_room = chapterStartRoomIndex(chapter);
+    current_run_started_at_chapter_start = !persistence_enabled or (start_room != null and room_index == start_room.?);
+    current_run_deaths = 0;
+}
+
+fn chapterStartRoomIndex(chapter: u8) ?usize {
+    const defs = chapterAreaDefs(chapter);
+    if (defs.len == 0) return null;
+    return roomIndexForId(defs[0].start_room_id);
 }
 
 const ChapterAreaDef = struct {
@@ -448,11 +554,13 @@ fn chapterStatsForSlot(slot: *const SaveSlot, chapter: u8) ChapterStats {
     var stats: ChapterStats = .{
         .playtime_frames = chapterPlaytimeForSlot(slot, chapter),
     };
+    stats.golden_strawberry_collected = goldenStrawberryCollectedForChapter(slot, chapter);
     var room_index: usize = 0;
     while (room_index < level.rooms.len) : (room_index += 1) {
         if (!roomBelongsToChapter(room_index, chapter)) continue;
         addCollectibleCount(&stats.strawberries, strawberryCountForRoom(slot, room_index));
         addCollectibleCount(&stats.cassettes, cassetteCountForRoom(slot, room_index));
+        if (crystalHeartCollectedForRoom(slot, room_index)) stats.crystal_heart_collected = true;
     }
     return stats;
 }
@@ -529,6 +637,16 @@ fn cassetteCountForRoom(slot: *const SaveSlot, room_index: usize) CollectibleCou
     return result;
 }
 
+fn crystalHeartCollectedForRoom(slot: *const SaveSlot, room_index: usize) bool {
+    const global_id = collectibles.crystalHeartId(room_index) orelse return false;
+    return slotCrystalHeartCollected(slot, global_id);
+}
+
+fn goldenStrawberryCollectedForChapter(slot: *const SaveSlot, chapter: u8) bool {
+    const global_id = collectibles.goldenStrawberryId(chapter) orelse return false;
+    return slotGoldenStrawberryCollected(slot, global_id);
+}
+
 fn slotStrawberryCollected(slot: *const SaveSlot, id: u16) bool {
     const word_index: usize = @as(usize, id) / collectibles.flags_per_word;
     const shift: u5 = @intCast(@as(usize, id) & (collectibles.flags_per_word - 1));
@@ -541,6 +659,20 @@ fn slotCassetteCollected(slot: *const SaveSlot, id: u16) bool {
     const shift: u5 = @intCast(@as(usize, id) & (collectibles.flags_per_word - 1));
     return word_index < slot.cassette_flags.len and
         (slot.cassette_flags[word_index] & (@as(u32, 1) << shift)) != 0;
+}
+
+fn slotCrystalHeartCollected(slot: *const SaveSlot, id: u16) bool {
+    const word_index: usize = @as(usize, id) / collectibles.flags_per_word;
+    const shift: u5 = @intCast(@as(usize, id) & (collectibles.flags_per_word - 1));
+    return word_index < slot.crystal_heart_flags.len and
+        (slot.crystal_heart_flags[word_index] & (@as(u32, 1) << shift)) != 0;
+}
+
+fn slotGoldenStrawberryCollected(slot: *const SaveSlot, id: u16) bool {
+    const word_index: usize = @as(usize, id) / collectibles.flags_per_word;
+    const shift: u5 = @intCast(@as(usize, id) & (collectibles.flags_per_word - 1));
+    return word_index < slot.golden_strawberry_flags.len and
+        (slot.golden_strawberry_flags[word_index] & (@as(u32, 1) << shift)) != 0;
 }
 
 fn areaUnlocked(slot: *const SaveSlot, chapter: u8, area_index: usize, start_room_index: usize) bool {
@@ -604,6 +736,9 @@ fn copyIsValid(base: usize) bool {
 fn readRecord(base: usize) void {
     active_slot = readByte(base + active_slot_offset);
     if (active_slot >= slot_count) active_slot = 0;
+    music_volume_step = readStoredAudioVolumeStep(base + music_volume_offset);
+    sfx_volume_step = readStoredAudioVolumeStep(base + sfx_volume_offset);
+    audio_debug_enabled = readByte(base + audio_debug_offset) == 2;
 
     var slot_index: usize = 0;
     while (slot_index < slot_count) : (slot_index += 1) {
@@ -643,6 +778,16 @@ fn readSlot(base: usize) SaveSlot {
         slot.cassette_flags[word_index] = readU32(base + slot_cassette_flags_offset + word_index * 4);
     }
 
+    word_index = 0;
+    while (word_index < collectibles.crystal_heart_flag_word_count) : (word_index += 1) {
+        slot.crystal_heart_flags[word_index] = readU32(base + slot_crystal_heart_flags_offset + word_index * 4);
+    }
+
+    word_index = 0;
+    while (word_index < collectibles.golden_strawberry_flag_word_count) : (word_index += 1) {
+        slot.golden_strawberry_flags[word_index] = readU32(base + slot_golden_strawberry_flags_offset + word_index * 4);
+    }
+
     readPlayerName(base, &slot.player_name);
     return slot;
 }
@@ -668,6 +813,9 @@ fn writeNextCopy() void {
     writeU32(base + generation_offset, generation);
     writeU32(base + checksum_offset, 0);
     writeByte(base + active_slot_offset, active_slot);
+    writeByte(base + music_volume_offset, music_volume_step + 1);
+    writeByte(base + sfx_volume_offset, sfx_volume_step + 1);
+    writeByte(base + audio_debug_offset, if (audio_debug_enabled) 2 else 1);
 
     var slot_index: usize = 0;
     while (slot_index < slot_count) : (slot_index += 1) {
@@ -710,6 +858,16 @@ fn writeSlot(base: usize, slot: SaveSlot) void {
     var chapter_index: usize = 0;
     while (chapter_index < max_timed_chapters) : (chapter_index += 1) {
         writeU32(base + slot_chapter_playtime_offset + chapter_index * 4, slot.chapter_playtime_frames[chapter_index]);
+    }
+
+    word_index = 0;
+    while (word_index < collectibles.crystal_heart_flag_word_count) : (word_index += 1) {
+        writeU32(base + slot_crystal_heart_flags_offset + word_index * 4, slot.crystal_heart_flags[word_index]);
+    }
+
+    word_index = 0;
+    while (word_index < collectibles.golden_strawberry_flag_word_count) : (word_index += 1) {
+        writeU32(base + slot_golden_strawberry_flags_offset + word_index * 4, slot.golden_strawberry_flags[word_index]);
     }
 }
 
@@ -776,6 +934,16 @@ fn writeU32(offset: usize, value: u32) void {
     writeByte(offset + 1, @truncate(value >> 8));
     writeByte(offset + 2, @truncate(value >> 16));
     writeByte(offset + 3, @truncate(value >> 24));
+}
+
+fn readStoredAudioVolumeStep(offset: usize) u8 {
+    const stored = readByte(offset);
+    if (stored == 0) return default_audio_volume_step;
+    return clampAudioVolumeStep(stored - 1);
+}
+
+fn clampAudioVolumeStep(step: u8) u8 {
+    return if (step > audio_volume_steps) audio_volume_steps else step;
 }
 
 fn startsWith(value: []const u8, prefix: []const u8) bool {

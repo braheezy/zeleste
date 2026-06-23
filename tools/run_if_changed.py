@@ -20,6 +20,12 @@ LOCK_STALE_SECONDS = 300
 
 
 def parse_args() -> tuple[argparse.Namespace, list[str]]:
+    if len(sys.argv) == 3 and sys.argv[1] == "--reset-progress":
+        path = Path(sys.argv[2])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("0\n")
+        raise SystemExit(0)
+
     if "--" not in sys.argv:
         raise SystemExit("usage: run_if_changed.py [cache args] -- command [args...]")
     separator = sys.argv.index("--")
@@ -32,6 +38,9 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--output-dir", type=Path, action="append", default=[])
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--quiet", action="store_true")
+    parser.add_argument("--progress-file", type=Path)
+    parser.add_argument("--progress-total", type=int, default=0)
+    parser.add_argument("--progress-width", type=int, default=20)
     args = parser.parse_args(sys.argv[1:separator])
     command = sys.argv[separator + 1 :]
     if not command:
@@ -174,25 +183,61 @@ def mark_complete(args: argparse.Namespace, digest: str) -> None:
         write_cache(args.cache, cache)
 
 
+def report_progress(args: argparse.Namespace, rebuilt: bool) -> None:
+    if args.quiet or args.progress_file is None or args.progress_total <= 0:
+        if rebuilt and not args.quiet:
+            print(f"asset cache miss: {args.job}")
+        return
+
+    width = max(1, args.progress_width)
+    with cache_lock(args.progress_file):
+        try:
+            previous = int(args.progress_file.read_text().strip() or "0")
+        except (FileNotFoundError, ValueError):
+            previous = 0
+        current = previous + 1
+        args.progress_file.parent.mkdir(parents=True, exist_ok=True)
+        args.progress_file.write_text(f"{current}\n")
+
+    display_current = ((current - 1) % args.progress_total) + 1
+    filled = max(1, (display_current * width) // args.progress_total)
+    bar = "#" * filled + "-" * (width - filled)
+    suffix = " cache miss" if rebuilt else ""
+    line = f"assets [{bar}] {display_current:02d}/{args.progress_total:02d} {args.job}{suffix}"
+    if sys.stdout.isatty():
+        end = "\n" if display_current == args.progress_total else "\r"
+        print(f"\r{line}\x1b[K", end=end, flush=True)
+    elif display_current == args.progress_total:
+        print(f"assets [{bar}] {display_current:02d}/{args.progress_total:02d} complete")
+
+
+def run_command(command: list[str]) -> int:
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode != 0:
+        if result.stdout:
+            print(result.stdout, end="")
+        if result.stderr:
+            print(result.stderr, end="", file=sys.stderr)
+    return result.returncode
+
+
 def main() -> int:
     args, command = parse_args()
     digest = fingerprint(args, command)
     if not should_run(args, digest):
-        if not args.quiet:
-            print(f"asset cache hit: {args.job}")
+        report_progress(args, rebuilt=False)
         return 0
 
-    if not args.quiet:
-        print(f"asset cache miss: {args.job}")
-    result = subprocess.run(command)
-    if result.returncode != 0:
-        return result.returncode
+    returncode = run_command(command)
+    if returncode != 0:
+        return returncode
     if not outputs_exist(args):
         missing = [str(path) for path in args.output if not path.is_file()]
         missing += [str(path) for path in args.output_dir if not path.is_dir()]
         print(f"asset job {args.job} did not produce expected outputs: {', '.join(missing)}", file=sys.stderr)
         return 1
     mark_complete(args, digest)
+    report_progress(args, rebuilt=True)
     return 0
 
 

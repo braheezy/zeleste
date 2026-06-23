@@ -3,9 +3,11 @@ const gba = @import("gba");
 const assets = @import("../../core/assets.zig");
 const camera_mod = @import("../../world/camera.zig");
 const cutscene_dialogue = @import("../../cutscene/dialogue.zig");
+const theo_dialogue_data = @import("../../generated/assets/city/6zb_dialogue.zig");
 const flow = @import("flow.zig");
 const level = @import("../../generated_rooms.zig");
 const math = @import("../../core/math.zig");
+const obj_vram = @import("../../core/obj_vram.zig");
 const object_slots = @import("../../room/object_slots.zig");
 const oam = @import("../../core/oam.zig");
 const player_mod = @import("../../player/state.zig");
@@ -20,6 +22,7 @@ const SceneRect = room_data.SceneRect;
 const Spawn = room_data.Spawn;
 
 const fixedToPixel = math.fixedToPixel;
+const pixelToFixed = math.pixelToFixed;
 const hideObject = oam.hideObject;
 const objX = oam.objX;
 const objY = oam.objY;
@@ -31,79 +34,17 @@ const meta = assets.speech_bubble_meta;
 const theo_room_index = flow.roomIndexFor(1, "6zb") orelse level.rooms.len;
 const dialogue_first_object = object_slots.cutscene_dialogue_first_object;
 const bubble_object = 127;
-const bubble_base_tile: u10 = 992;
+const bubble_base_tile: u10 = @intCast(obj_vram.theo_prompt_bubble.start);
 const bubble_palette_bank: u4 = 6;
 const dialogue_reveal_interval_frames: u8 = 5;
 const dialogue_words_per_tick: u8 = 1;
 const prompt_distance_x: i16 = 28;
 const prompt_distance_y: i16 = 24;
-const theo_feet: Spawn = .{ .x = 82, .y = 146 };
+const dialogue_min_distance_x: i16 = 20;
+const theo_feet: Spawn = theo_dialogue_data.theo_feet;
 const bubble_top_left: Spawn = .{ .x = theo_feet.x - 16, .y = theo_feet.y - 56 };
-const dialogue_box: SceneRect = .{ .x = 8, .y = 8, .w = 224, .h = 56 };
-
-const Conversation = struct {
-    pages: []const CutsceneDialoguePage,
-};
-
-const first_dialogue = [_]CutsceneDialoguePage{
-    page("Theo", "Ho there, fellow traveller!"),
-    page("Madeline", "Oh... hi."),
-    page("Theo", "What a killer night for a hike!"),
-    page("Madeline", "I guess so."),
-    page("Theo", "This place is so crazy.\nI kind of can't believe it exists!"),
-    page("Madeline", "Not the easiest climb, is it?\nBut I guess that's what I was looking for..."),
-    page("Theo", "Whoa, that sounds pretty serious.\nI'm just happy to see another human in such a lonely place.\nI'm Theo by the way, an adventurer from a far off land!"),
-    page("Madeline", "..."),
-    page("Theo", "Not much of a talker, are you?\nMysterious lone wolf type, I get it. I'll just imagine some dark backstory for you."),
-};
-
-const second_dialogue = [_]CutsceneDialoguePage{
-    page("Madeline", "Hey, sorry. I'm Madeline.\nI've got a lot on my mind."),
-    page("Theo", "Well, Madeline, I'd say you've come to the right place!\nI'm freezing my toes off, but I can't imagine a better place to be for some quiet reflection."),
-    page("Madeline", "Yeah, maybe you're right.\nWhat \"far off land\" do you hail from?"),
-    page("Theo", "Well, my inquisitive compatriot, I doth hail from the mystical, exotic kingdom of..."),
-    page("Theo", "Seattle."),
-    page("Madeline", "It sounds like a special place."),
-};
-
-const third_dialogue = [_]CutsceneDialoguePage{
-    page("Theo", "This place is wild!\nWhy would an entire city be abandoned?"),
-    page("Madeline", "I read that some mega-corporation started building it, but then no one wanted to live here.\nI wonder why..."),
-    page("Theo", "My money's on a government cover-up."),
-    page("Madeline", "What a waste, to build all of this for no reason..."),
-    page("Theo", "At least we get to enjoy the leftovers."),
-};
-
-const fourth_dialogue = [_]CutsceneDialoguePage{
-    page("Madeline", "Are you here to explore this city?"),
-    page("Theo", "Yeah, I have a thing for abandoned places.\nAnd I like to think of myself as a budding photographer."),
-    page("Madeline", "Oh really? Cool!\nDo you have a blog or something?"),
-    page("Theo", "A blog?\nMadeline.\nEveryone uses InstaPix now.\nI'm TheoUnderStars, look me up!"),
-};
-
-const fifth_dialogue = [_]CutsceneDialoguePage{
-    page("Theo", "This terrain is pretty tricky, are you turning back soon?"),
-    page("Madeline", "Nope. I'm heading for the summit."),
-    page("Theo", "I can really see the determination in your eyes!\nIt's inspiring."),
-    page("Madeline", "If you say so.\nI bet you could make it to the summit too."),
-    page("Theo", "Maybe.\nI don't really care about reaching the top, TBH.\nOh! But I heard there are some legit old ruins up beyond the city.\nLike 1800's legit.\nI know it's risky but I have to see them for myself."),
-};
-
-const sixth_dialogue = [_]CutsceneDialoguePage{
-    page("Theo", "What's that thing you say right before you do something irresponsible?"),
-    page("Madeline", "Uh... \"throw caution to the wind?\""),
-    page("Theo", "No, that's not it.\nOh right..."),
-    page("Theo", "YOLOOOOOOOOO!!"),
-};
-
-const conversations = [_]Conversation{
-    .{ .pages = &first_dialogue },
-    .{ .pages = &second_dialogue },
-    .{ .pages = &third_dialogue },
-    .{ .pages = &fourth_dialogue },
-    .{ .pages = &fifth_dialogue },
-    .{ .pages = &sixth_dialogue },
-};
+const dialogue_box: SceneRect = theo_dialogue_data.dialogue_box;
+const conversations = theo_dialogue_data.conversations;
 
 const State = struct {
     active: bool = false,
@@ -125,6 +66,8 @@ pub fn loadGraphics(room_index: usize) void {
     if (!isTheoRoom(room_index)) return;
     gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, bubble_palette_bank) * 16], @ptrCast(&palette_data), 16);
     loadBubbleTiles();
+    cutscene_dialogue.setTextboxSkin(.chapter1);
+    cutscene_dialogue.resetTextboxGraphics();
 }
 
 pub fn resetOnRoomLoad(room_index: usize) void {
@@ -152,9 +95,10 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
     }
 
     if (!state.active) {
-        state.near_prompt = playerNearTheo(player.*);
-        if (hasAvailableConversation() and state.near_prompt and input.isJustPressed(.A)) {
-            startDialogue();
+        const can_start_dialogue = hasAvailableConversation() and playerCanStartTheoDialogue(player.*);
+        state.near_prompt = can_start_dialogue;
+        if (can_start_dialogue and input.isJustPressed(.A)) {
+            startDialogue(player);
         }
     }
 
@@ -193,11 +137,8 @@ pub fn drawOverlay(camera: Camera, room_index: usize, anim_counter: u16) void {
     }
 }
 
-fn page(speaker: []const u8, text: []const u8) CutsceneDialoguePage {
-    return .{ .speaker = speaker, .text = text, .portrait = .none };
-}
-
-fn startDialogue() void {
+fn startDialogue(player: *Player) void {
+    alignPlayerForDialogue(player);
     state.active = true;
     state.page_index = 0;
     state.dialogue_offset = 0;
@@ -206,8 +147,33 @@ fn startDialogue() void {
     state.dialogue_portrait_timer = 0;
     state.dialogue_cache.invalidate();
     hideBubble();
+    cutscene_dialogue.setTextboxSkin(.chapter1);
     cutscene_dialogue.resetTextboxGraphics();
     ui_sfx.dialogueBoxIn(pageSpeakerIsMadeline(currentPage()));
+}
+
+fn alignPlayerForDialogue(player: *Player) void {
+    const center_x = fixedToPixel(player.x) + player_mod.body_width / 2;
+    const side = playerSideForDialogue(center_x, player.facing_left);
+    const distance = absI16(center_x - theo_feet.x);
+    const target_center_x = if (distance < dialogue_min_distance_x)
+        theo_feet.x + side * dialogue_min_distance_x
+    else
+        center_x;
+
+    player.x = pixelToFixed(target_center_x - player_mod.body_width / 2);
+    player.facing_left = side > 0;
+    player.animation = .idle;
+    player.animation_timer = 0;
+    player.idle_first_frame = player_mod.idle_neutral_first_frame;
+    player.idle_frame_count = player_mod.idle_neutral_frame_count;
+    player.frame = player_mod.idle_neutral_first_frame;
+}
+
+fn playerSideForDialogue(center_x: i16, facing_left: bool) i16 {
+    if (center_x < theo_feet.x) return -1;
+    if (center_x > theo_feet.x) return 1;
+    return if (facing_left) 1 else -1;
 }
 
 fn updateDialogue(input: gba.input.BufferedKeysState) void {
@@ -294,6 +260,7 @@ fn renderDialogueTiles() void {
     if (state.page_index >= pages.len) return;
     const page_data = pages[state.page_index];
     const page_end = cutscene_dialogue.wrappedNextOffset(page_data, state.dialogue_offset);
+    cutscene_dialogue.setTextboxSkin(.chapter1);
     cutscene_dialogue.preloadPortrait(page_data, state.dialogue_portrait_timer, state.dialogue_reveal_offset < page_end);
     state.dialogue_next_offset = cutscene_dialogue.renderPage(
         page_data,
@@ -338,7 +305,6 @@ fn updateDialogueReveal() void {
 fn revealDialogueTo(page_data: CutsceneDialoguePage, offset: usize) void {
     _ = page_data;
     state.dialogue_reveal_offset = offset;
-    state.dialogue_cache.invalidate();
 }
 
 fn currentPages() []const CutsceneDialoguePage {
@@ -357,6 +323,10 @@ fn playerNearTheo(player: Player) bool {
     const center_x = fixedToPixel(player.x) + player_mod.body_width / 2;
     const center_y = fixedToPixel(player.y) + player_mod.body_height / 2;
     return absI16(center_x - theo_feet.x) <= prompt_distance_x and absI16(center_y - (theo_feet.y - 12)) <= prompt_distance_y;
+}
+
+fn playerCanStartTheoDialogue(player: Player) bool {
+    return player_mod.canStartInteraction(player) and playerNearTheo(player);
 }
 
 fn drawBubble(camera: Camera, prompt: bool) void {

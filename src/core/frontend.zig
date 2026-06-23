@@ -19,23 +19,33 @@ pub const StartSelection = struct {
 pub fn run() StartSelection {
     title_menu.showAndWait();
     _ = file_select.chooseSlot();
-    overworld_placeholder.loadScreen();
-    const chapter_selection = waitForChapterSelection();
+    return runMapOnly();
+}
 
-    const selected_respawn = overworld_placeholder.selectedRespawn();
-    const room_index = if (selected_respawn) |respawn| respawn.room_index else switch (chapter_selection) {
-        .prologue => level.start_room_index,
-        .city => city.flow.firstRoomIndex() orelse level.start_room_index,
-        .none => level.start_room_index,
-    };
-    save.beginChapterRunForRoom(room_index);
-    return .{
-        .room_index = room_index,
-        .respawn = selected_respawn orelse .{
+pub fn runMapOnly() StartSelection {
+    while (true) {
+        overworld_placeholder.loadScreen();
+        const chapter_selection = waitForChapterSelection();
+        if (chapter_selection == .back) {
+            _ = file_select.chooseSlot();
+            continue;
+        }
+
+        const selected_respawn = overworld_placeholder.selectedRespawn();
+        const room_index = if (selected_respawn) |respawn| respawn.room_index else switch (chapter_selection) {
+            .prologue => level.start_room_index,
+            .city => city.flow.firstRoomIndex() orelse level.start_room_index,
+            .none, .back => level.start_room_index,
+        };
+        save.beginChapterRunForRoom(room_index);
+        return .{
             .room_index = room_index,
-            .spawn = level.rooms[room_index].spawn,
-        },
-    };
+            .respawn = selected_respawn orelse .{
+                .room_index = room_index,
+                .spawn = level.rooms[room_index].spawn,
+            },
+        };
+    }
 }
 
 fn waitForChapterSelection() overworld_placeholder.Selection {

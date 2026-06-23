@@ -67,6 +67,13 @@ pub fn updateCutsceneEffects(room_index: usize, camera: Camera) void {
     }
 }
 
+pub fn applyPlayerFrameOverride(player: *Player, room_index: usize) void {
+    switch (activeChapterForRoom(room_index)) {
+        .prologue => prologue.applyPlayerFrameOverride(player, room_index),
+        .city => city.systems.applyPlayerFrameOverride(player, room_index),
+    }
+}
+
 pub fn updateActors(player: *Player, room_index: usize, camera: Camera, anim_counter: u16) void {
     switch (activeChapterForRoom(room_index)) {
         .prologue => prologue.updateActors(player, room_index, camera, anim_counter),
@@ -141,6 +148,13 @@ pub fn endingHairOverrideActive(room_index: usize) bool {
     return switch (activeChapterForRoom(room_index)) {
         .prologue => prologue.endingHairOverrideActive(room_index),
         .city => city.systems.endingHairOverrideActive(room_index),
+    };
+}
+
+pub fn playerHairSuppressed(room_index: usize) bool {
+    return switch (activeChapterForRoom(room_index)) {
+        .prologue => prologue.playerHairSuppressed(room_index),
+        .city => city.systems.playerHairSuppressed(room_index),
     };
 }
 

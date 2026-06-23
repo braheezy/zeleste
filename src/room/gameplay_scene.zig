@@ -20,6 +20,9 @@ const Player = player_mod.State;
 
 const rooms = level.rooms;
 
+var cutscene_suppression_active: bool = false;
+var cutscene_suppression_room: usize = 0;
+
 pub const scene_slots = object_slots.scene_slots;
 pub const cutscene_dialogue_first_object = object_slots.cutscene_dialogue_first_object;
 pub const scene_effect_first_object = object_slots.scene_effect_first_object;
@@ -29,6 +32,7 @@ pub fn loadWindSnowTiles() void {
 }
 
 pub fn loadObjectSprites(room_index: usize) void {
+    cutscene_suppression_active = false;
     invalidateObjectTileCaches(room_index);
     wind_snow.loadTiles();
     player_render.loadPalettes();
@@ -114,6 +118,22 @@ pub fn drawGameplay(player: *Player, camera: Camera, room_index: usize, anim_cou
     player_render.drawSweat(player, camera);
     save_indicator.draw();
     chapter_systems.drawCutsceneOverlay(camera, room_index, anim_counter);
+}
+
+pub fn drawCutsceneGameplay(player: *Player, camera: Camera, room_index: usize, anim_counter: u16) void {
+    applyCamera(camera, room_index);
+    updateParallaxBackground(camera, room_index);
+    ensureCutsceneObjectsSuppressed(room_index);
+    chapter_systems.drawCutsceneNpc(camera, room_index, scene_slots, anim_counter);
+    chapter_systems.drawCutsceneOverlay(camera, room_index, anim_counter);
+    player_render.draw(player.*, camera, anim_counter);
+    if (chapter_systems.playerHairSuppressed(room_index)) {
+        hair.hideObjects();
+    } else {
+        hair.draw(player.*, camera, chapter_systems.endingHairOverrideActive(room_index));
+    }
+    player_render.drawSweat(player, camera);
+    save_indicator.draw();
 }
 
 pub fn drawLoaded(player: *Player, camera: Camera, room_index: usize, anim_counter: u16) void {
@@ -222,6 +242,21 @@ fn drawChimneySmoke(camera: Camera, room_index: usize) void {
 
 fn drawSharedDynamicSolids(camera: Camera, room_index: usize) void {
     chapter_entities.drawDynamicSolids(camera, room_index);
+}
+
+fn hideCutsceneSuppressedObjects(room_index: usize) void {
+    chapter_entities.hideInactiveObjects(room_index);
+    dash_effects.clear();
+    dust.clear();
+    hideWindSnowObjects();
+    hideChimneySmokeObjects();
+}
+
+fn ensureCutsceneObjectsSuppressed(room_index: usize) void {
+    if (cutscene_suppression_active and cutscene_suppression_room == room_index) return;
+    hideCutsceneSuppressedObjects(room_index);
+    cutscene_suppression_active = true;
+    cutscene_suppression_room = room_index;
 }
 
 fn windSnowSuppressed(room_index: usize) bool {

@@ -161,6 +161,37 @@ pub fn drawWrappedUntil(
     }
 }
 
+pub fn drawWrappedBetween(
+    comptime setPixel: fn (i16, i16, u8) void,
+    box_width: i16,
+    source: []const u8,
+    start_offset: usize,
+    visible_start_offset: usize,
+    visible_end_offset: usize,
+    x: i16,
+    y: i16,
+    max_chars: usize,
+    max_lines: usize,
+    color: u8,
+) void {
+    if (visible_end_offset <= visible_start_offset) return;
+
+    var offset = skipSpaces(source, start_offset);
+    var line: usize = 0;
+    while (line < max_lines and offset < source.len) : (line += 1) {
+        const line_start = offset;
+        const line_end = wrappedLineEnd(source, offset, max_chars);
+        const draw_start = @max(line_start, visible_start_offset);
+        const draw_end = @min(line_end, visible_end_offset);
+        if (draw_end > draw_start) {
+            const dx: i16 = @intCast((draw_start - line_start) * 6);
+            drawLine(setPixel, box_width, source[draw_start..draw_end], x + dx, y + @as(i16, @intCast(line * 9)), color);
+        }
+        if (visible_end_offset <= line_end) break;
+        offset = advanceWrappedOffset(source, line_end);
+    }
+}
+
 pub fn drawWrapped(
     comptime setPixel: fn (i16, i16, u8) void,
     box_width: i16,
@@ -185,7 +216,7 @@ pub fn drawWrapped(
 pub fn drawSmallLine(comptime setPixel: fn (i16, i16, u8) void, box_width: i16, source: []const u8, x: i16, y: i16, color: u8) void {
     var cursor = x;
     for (source) |ch| {
-        if (cursor > box_width - 4) break;
+        if (cursor >= box_width) break;
         drawSmallGlyph(setPixel, ch, cursor, y, color);
         cursor += 4;
     }
@@ -194,7 +225,7 @@ pub fn drawSmallLine(comptime setPixel: fn (i16, i16, u8) void, box_width: i16, 
 pub fn drawSmallLineTight(comptime setPixel: fn (i16, i16, u8) void, box_width: i16, source: []const u8, x: i16, y: i16, color: u8) void {
     var cursor = x;
     for (source) |ch| {
-        if (cursor > box_width - 4) break;
+        if (cursor >= box_width) break;
         drawSmallGlyph(setPixel, ch, cursor, y, color);
         cursor += 3;
     }
@@ -267,7 +298,7 @@ fn smallFontRows(ch: u8) [5]u3 {
 pub fn drawLine(comptime setPixel: fn (i16, i16, u8) void, box_width: i16, source: []const u8, x: i16, y: i16, color: u8) void {
     var cursor = x;
     for (source) |ch| {
-        if (cursor > box_width - 6) break;
+        if (cursor >= box_width) break;
         drawGlyph(setPixel, ch, cursor, y, color);
         cursor += 6;
     }

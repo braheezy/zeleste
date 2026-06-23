@@ -58,11 +58,19 @@ pub const DialoguePortrait = enum(u8) {
     madeline_angry,
     madeline_sad,
     madeline_upset,
+    madeline_distracted_short,
+    madeline_deadpan_noblink,
     granny_normal,
     granny_mock,
     granny_laugh,
     granny_creep_a,
     granny_creep_b,
+    theo_normal,
+    theo_excited,
+    theo_serious,
+    theo_thinking,
+    theo_nailed_it,
+    theo_yolo,
 };
 
 pub const CutsceneDialoguePage = struct {

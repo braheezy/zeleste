@@ -1,11 +1,12 @@
 const gba = @import("gba");
 const build_options = @import("build_options");
+const obj_vram = @import("obj_vram.zig");
 
 const enabled = build_options.dev_hud;
 const timer_index = 3;
 const ticks_per_second = 16_384;
 const first_object = 126;
-const base_tile: u10 = 1000;
+const base_tile: u10 = @intCast(obj_vram.debug_fps.start);
 const screen_width = 240;
 
 var palette_bank: u4 = 0;
@@ -15,6 +16,7 @@ var tick_accum: u32 = 0;
 var frame_count: u16 = 0;
 var value: u8 = 0;
 var initialized: bool = false;
+var suppressed: bool = false;
 
 pub fn init(object_palette_bank: u4) void {
     if (!enabled) return;
@@ -58,8 +60,18 @@ pub fn reloadGraphics() void {
     uploadTiles();
 }
 
+pub fn setSuppressed(should_suppress: bool) void {
+    if (!enabled) return;
+    suppressed = should_suppress;
+    if (suppressed) hideObjects();
+}
+
 pub fn update() void {
     if (!enabled) return;
+    if (suppressed) {
+        hideObjects();
+        return;
+    }
 
     const current = gba.timers[timer_index].counter;
     const delta = current -% last_timer;
@@ -98,6 +110,11 @@ fn setDigitPixel(digit: usize, x: u8, y: u8, color: u8) void {
 
 fn uploadTiles() void {
     gba.display.memcpyObjectTiles4Bpp(base_tile, &digit_tiles);
+}
+
+fn hideObjects() void {
+    gba.display.objects[first_object] = gba.display.Object.initHidden();
+    gba.display.objects[first_object + 1] = gba.display.Object.initHidden();
 }
 
 fn objX(x: i16) u9 {

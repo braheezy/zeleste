@@ -1,6 +1,7 @@
 const gba = @import("gba");
 const camera_mod = @import("../world/camera.zig");
 const math = @import("../core/math.zig");
+const obj_vram = @import("../core/obj_vram.zig");
 const oam = @import("../core/oam.zig");
 const player_mod = @import("state.zig");
 
@@ -13,7 +14,7 @@ const objX = oam.objX;
 const objY = oam.objY;
 const hideObject = oam.hideObject;
 
-pub const base_tile: u10 = 106;
+pub const base_tile: u10 = @intCast(obj_vram.dash_effects.start);
 pub const shadow_palette_bank: u4 = 12;
 pub const shadow_palette_count = 3;
 pub const effect_palette_bank: u4 = shadow_palette_bank + shadow_palette_count;

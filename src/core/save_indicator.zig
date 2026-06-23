@@ -1,6 +1,7 @@
 const gba = @import("gba");
 
 const assets = @import("assets.zig");
+const obj_vram = @import("obj_vram.zig");
 const oam = @import("oam.zig");
 const save = @import("save.zig");
 const video = @import("video.zig");
@@ -15,7 +16,7 @@ const meta = assets.save_icon_meta;
 
 const first_object_index = 4;
 const object_count = 4;
-const base_tile: u10 = 856;
+const base_tile: u10 = @intCast(obj_vram.save_indicator.start);
 const palette_bank: u4 = 14;
 const frame_ticks: u8 = 8;
 const hold_frames: u8 = 30;
@@ -52,7 +53,10 @@ pub fn update() void {
 
 pub fn setSuppressed(value: bool) void {
     suppressed = value;
-    if (suppressed) hideObjects();
+    if (suppressed) {
+        invalidateGraphics();
+        hideObjects();
+    }
 }
 
 pub fn draw() void {

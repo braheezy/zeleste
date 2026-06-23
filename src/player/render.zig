@@ -2,6 +2,7 @@ const gba = @import("gba");
 const assets = @import("../core/assets.zig");
 const camera_mod = @import("../world/camera.zig");
 const math = @import("../core/math.zig");
+const obj_vram = @import("../core/obj_vram.zig");
 const oam = @import("../core/oam.zig");
 const player_mod = @import("state.zig");
 
@@ -21,7 +22,7 @@ const sweat_palette_data align(4) = assets.player_sweat_palette_data;
 
 pub const object = 32;
 pub const sweat_tiles_per_frame = 16;
-pub const sweat_base_tile: u10 = 84;
+pub const sweat_base_tile: u10 = @intCast(obj_vram.player_sweat.start);
 pub const sweat_palette_bank: u4 = 4;
 pub const sweat_object = 71;
 

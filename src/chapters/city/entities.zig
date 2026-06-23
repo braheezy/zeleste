@@ -5,6 +5,7 @@ const collision = @import("../../world/collision.zig");
 const disappearing_platforms = @import("../../room/disappearing_platforms.zig");
 const dust = @import("../../effects/dust.zig");
 const falling_blocks = @import("../../room/falling_blocks.zig");
+const golden_strawberry = @import("golden_strawberry.zig");
 const mech_blocks = @import("../../room/mech_blocks.zig");
 const player_mod = @import("../../player/state.zig");
 const dash_refills = @import("../../room/dash_refills.zig");
@@ -33,6 +34,7 @@ pub fn load(room_index: usize) void {
     disappearing_platforms.load(room_index);
     springs.load(room_index);
     strawberries.load(room_index);
+    golden_strawberry.load(room_index);
     cassettes.load(room_index);
     dash_refills.load(room_index);
 }
@@ -45,6 +47,7 @@ pub fn hideInactiveObjects() void {
     disappearing_platforms.hideObjects();
     springs.hideObjects();
     strawberries.hideObjects();
+    golden_strawberry.hideObjects();
     cassettes.hideObjects();
     dash_refills.hideObjects();
     strawberries.clearCarried();
@@ -58,12 +61,14 @@ pub fn loadObjectGraphics(room_index: usize) void {
     disappearing_platforms.loadGraphics();
     springs.loadGraphics();
     strawberries.loadGraphics();
+    golden_strawberry.loadGraphics(room_index);
     cassettes.loadGraphics();
     dash_refills.loadGraphics();
 }
 
 pub fn invalidateObjectGraphics() void {
     strawberries.invalidateGraphics();
+    golden_strawberry.invalidateGraphics();
     cassettes.invalidateGraphics();
 }
 
@@ -90,13 +95,19 @@ pub fn updatePlayerEntities(player: *Player, room_index: usize) void {
     disappearing_platforms.update(player.*);
     springs.update(player);
     strawberries.update(player, room_index);
+    golden_strawberry.update(player, room_index);
     cassettes.update(player, room_index);
     dash_refills.update(player);
 }
 
 pub fn handlePlayerDeathStart(room_index: usize) void {
     strawberries.clearCarried();
+    golden_strawberry.handlePlayerDeathStart();
     cassettes.abortReturn(room_index);
+}
+
+pub fn handleRoomTransition(from_room: usize, to_room: usize) void {
+    strawberries.handleRoomTransition(from_room, to_room);
 }
 
 pub fn updateImpactEffects() void {
@@ -162,6 +173,7 @@ pub fn drawDynamicSolids(camera: Camera) void {
 pub fn drawPlayerEntities(camera: Camera, anim_counter: u16) void {
     springs.draw(camera);
     strawberries.draw(camera, anim_counter);
+    golden_strawberry.draw(camera, anim_counter);
     cassettes.draw(camera, anim_counter);
     dash_refills.draw(camera, anim_counter);
 }

@@ -12,7 +12,7 @@ const RespawnPoint = room_data.RespawnPoint;
 pub fn updateTransitionIfActive(player: *Player, camera: *Camera, room_index: *usize, respawn: *RespawnPoint, input: gba.input.BufferedKeysState) bool {
     return switch (activeChapterForRoom(room_index.*)) {
         .prologue => prologue.flow.updateTransitionIfActive(player, camera, room_index, respawn, input),
-        .city => false,
+        .city => city.flow.updateTransitionIfActive(player, camera, room_index, respawn, input),
     };
 }
 

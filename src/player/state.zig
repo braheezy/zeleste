@@ -62,30 +62,37 @@ pub const lift_boost_x_cap: i32 = @divTrunc(fixed_one * 250, 60);
 pub const lift_boost_y_cap: i32 = -@divTrunc(fixed_one * 130, 60);
 pub const tiles_per_frame = 16;
 pub const animation_speed = 6;
-pub const idle_first_frame = 0;
-pub const idle_frame_count = 84;
-pub const idle_a_first_frame = 0;
+pub const idle_neutral_first_frame = 0;
+pub const idle_neutral_frame_count = 6;
+pub const idle_first_frame = idle_neutral_first_frame;
+pub const idle_frame_count = idle_neutral_frame_count;
+pub const idle_a_first_frame = 6;
 pub const idle_a_frame_count = 12;
-pub const idle_b_first_frame = 12;
+pub const idle_b_first_frame = 18;
 pub const idle_b_frame_count = 24;
-pub const idle_c_first_frame = 72;
+pub const idle_c_first_frame = 42;
 pub const idle_c_frame_count = 12;
-pub const run_first_frame = 84;
+pub const run_first_frame = 54;
 pub const run_frame_count = 12;
 pub const footstep_min_speed: i32 = fixed_one / 2;
 pub const footstep_volume: u16 = 144;
 pub const footstep_cadence_frames: u8 = 22;
-pub const jump_first_frame = 96;
+pub const jump_first_frame = 66;
 pub const jump_frame_count = 2;
-pub const fall_first_frame = 98;
+pub const fall_first_frame = 68;
 pub const fall_frame_count = 2;
-pub const wallslide_first_frame = 100;
-pub const climbup_first_frame = 101;
+pub const wallslide_first_frame = 70;
+pub const climbup_first_frame = 71;
 pub const climbup_frame_count = 6;
-pub const dangling_first_frame = 107;
+pub const dangling_first_frame = 77;
 pub const dangling_frame_count = 10;
-pub const climb_pull_first_frame = 117;
+pub const climb_pull_first_frame = 87;
 pub const climb_pull_frame_count = 4;
+pub const sit_down_first_frame = climb_pull_first_frame + climb_pull_frame_count;
+pub const sit_down_frame_count = 16;
+pub const asleep_first_frame = sit_down_first_frame + sit_down_frame_count;
+pub const asleep_frame_count = 1;
+pub const idle_initial_neutral_loops: u8 = 3;
 pub const deadown_first_frame: u16 = build_options.player_deadown_first_frame;
 pub const deadown_frame_count: u16 = build_options.player_deadown_frame_count;
 pub const deathside_first_frame: u16 = build_options.player_deathside_first_frame;
@@ -167,8 +174,10 @@ pub const State = struct {
     animation_timer: u16 = 0,
     sweat_timer: u16 = 0,
     sweat_frame: u16 = 0,
-    idle_first_frame: u16 = idle_a_first_frame,
-    idle_frame_count: u16 = idle_a_frame_count,
+    idle_first_frame: u16 = idle_neutral_first_frame,
+    idle_frame_count: u16 = idle_neutral_frame_count,
+    idle_variant_index: u8 = 0,
+    idle_neutral_loops_remaining: u8 = idle_initial_neutral_loops,
     frame: u16 = 0,
     grounded: bool = false,
     facing_left: bool = false,
@@ -190,3 +199,12 @@ pub const State = struct {
     sfx_variant: u8 = 0,
     hair_nodes: [hair_node_count]HairNode = [_]HairNode{.{}} ** hair_node_count,
 };
+
+pub fn canStartInteraction(player: State) bool {
+    return player.grounded and
+        player.dash_timer == 0 and
+        player.climb_ledge_timer == 0 and
+        !player.climbing and
+        !player.climb_dangling and
+        !player.wall_sliding;
+}

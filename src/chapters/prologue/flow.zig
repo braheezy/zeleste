@@ -5,6 +5,7 @@ const audio = @import("../../core/audio.zig");
 const dash_effects = @import("../../player/dash_effects.zig");
 const dust = @import("../../effects/dust.zig");
 const foreground_stamps = @import("../../room/foreground_stamps.zig");
+const file_select = @import("../../core/file_select.zig");
 const frame = @import("../../core/frame.zig");
 const gameplay_scene = @import("../../room/gameplay_scene.zig");
 const hair = @import("../../player/hair.zig");
@@ -236,6 +237,10 @@ fn updateEndLevelTransition(player: *Player, camera: *Camera, room_index: *usize
         .overworld => {
             switch (overworld_placeholder.update(input)) {
                 .none => {},
+                .back => {
+                    _ = file_select.chooseSlot();
+                    overworld_placeholder.loadScreen();
+                },
                 .prologue => {
                     startGameplayFromOverworld(level.start_room_index, player, camera, room_index, respawn);
                     return;

@@ -5,9 +5,9 @@ const collision = @import("../../world/collision.zig");
 const level = @import("../../generated_rooms.zig");
 const math = @import("../../core/math.zig");
 const oam = @import("../../core/oam.zig");
+const obj_vram = @import("../../core/obj_vram.zig");
 const player_mod = @import("../../player/state.zig");
 const room_data = @import("../../world/room_data.zig");
-const tiny_birds = @import("tiny_birds.zig");
 
 const Camera = camera_mod.Camera;
 const Player = player_mod.State;
@@ -32,8 +32,8 @@ const hint_palette_data align(4) = assets.bird_hint_palette_data;
 
 pub const object = 126;
 pub const hint_object = object + 1;
-pub const base_tile: u10 = tiny_birds.base_tile;
-pub const palette_bank: u4 = tiny_birds.palette_bank;
+pub const base_tile: u10 = @intCast(obj_vram.bird_actor.start);
+pub const palette_bank: u4 = 8;
 pub const tiles_per_frame = 16;
 pub const hint_base_tile: u10 = base_tile + tiles_per_frame;
 pub const hint_palette_bank: u4 = 9;

@@ -193,3 +193,18 @@ the optional Theo talks that can be triggered one after another after the
 cutscene flag is set. These are not inserted into the forced cutscene script.
 The older flat `postDialogue` field is only kept as a migration fallback for
 first-pass editor data.
+
+## Chapter 1 End Outro
+
+The current editor is `task city-end-cutscene`. It writes
+`assets/chapters/1_city/end_cutscene.json`; the assets build packs that source
+into `src/generated/assets/city/end_cutscene.zig` for the ROM. The source data
+keeps the memorial trigger/text separate from the forced outro trigger so the
+monument can be tuned independently from the campfire sequence.
+
+This is a first-pass implementation. The script records semantic beats for
+turning Madeline left, saying the exhaustion line, walking to the campfire,
+showing placeholder campfire and bird sprites, saying the mistake line, wiping
+to black, and showing `assets/chapter_endings/city-nap.png`. Later work should
+replace the placeholders with authored sitting/campfire/bird animations without
+changing the trigger and timing data shape unless the scene needs new beats.

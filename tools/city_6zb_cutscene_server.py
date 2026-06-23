@@ -154,6 +154,7 @@ class City6zbCutsceneHandler(SimpleHTTPRequestHandler):
                 "ok": True,
                 "image": str(image),
                 "path": str(path.relative_to(self.repo_root)),
+                "portraits": self.portrait_options(),
                 "data": data,
             },
         )
@@ -237,6 +238,36 @@ class City6zbCutsceneHandler(SimpleHTTPRequestHandler):
 
     def cutscene_path(self) -> Path:
         return self.image_path().with_name(f"{self.room}_cutscene.json")
+
+    def portrait_options(self) -> dict[str, list[dict[str, str]]]:
+        return {
+            "Madeline": self.portrait_options_for("madeline", "madeline"),
+            "Theo": self.portrait_options_for("theo", "theo"),
+        }
+
+    def portrait_options_for(self, folder: str, prefix: str) -> list[dict[str, str]]:
+        portrait_dir = self.repo_root / "assets" / "portraits" / folder
+        if not portrait_dir.exists():
+            return []
+        preferred = {
+            "madeline": ["idle", "angry", "sad", "upset"],
+            "theo": ["normal", "excited", "serious", "thinking", "nailed-it", "yolo"],
+        }.get(folder, [])
+
+        def sort_key(path: Path) -> tuple[int, str]:
+            try:
+                return (preferred.index(path.stem), path.stem)
+            except ValueError:
+                return (len(preferred), path.stem)
+
+        options = []
+        for path in sorted(portrait_dir.glob("*.png"), key=sort_key):
+            stem = path.stem.replace("-", "_")
+            options.append({
+                "label": stem.replace("_", " "),
+                "value": f"{prefix}_{stem}",
+            })
+        return options
 
     def send_json(self, status: int, payload: dict) -> None:
         body = json.dumps(payload).encode("utf-8")

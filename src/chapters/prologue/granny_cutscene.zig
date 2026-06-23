@@ -306,6 +306,7 @@ fn startDialogueInternal(index: u8, play_box_in: bool) void {
     state.dialogue_cache.invalidate();
     if (rooms[state.room_index].granny_cutscene) |cutscene| {
         resetDialogueReveal(cutscene);
+        cutscene_dialogue.setTextboxSkin(.prologue);
         if (play_box_in and index < cutscene.dialogue.len) {
             cutscene_dialogue.resetTextboxGraphics();
             ui_sfx.dialogueBoxIn(pageSpeakerIsMadeline(cutscene.dialogue[index]));
@@ -357,7 +358,6 @@ fn revealDialogueTo(text: []const u8, offset: usize) void {
     const old_offset = state.dialogue_reveal_offset;
     state.dialogue_reveal_offset = offset;
     maybeTriggerSeeShake(text, old_offset, offset);
-    state.dialogue_cache.invalidate();
 }
 
 fn maybeTriggerSeeShake(text: []const u8, old_offset: usize, new_offset: usize) void {

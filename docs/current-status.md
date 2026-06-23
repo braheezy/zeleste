@@ -136,9 +136,12 @@ changing gameplay, assets, or room tooling.
 - `src/chapters/prologue/laugh_text.zig` owns the floating `HAHA`
   cutscene VFX: tile upload/cache, fixed object budget, particle state, update
   cadence, camera-follow retargeting, OBJ drawing, and hide/stop behavior.
-- `src/chapters/prologue/tiny_birds.zig` owns the tiny bird flock actor
-  in room `0b`, including persistent flown state, trigger/update behavior,
-  palette/tile uploads, OBJ drawing, and hide behavior.
+- `src/room/tiny_birds.zig` owns reusable tiny bird flock actors, including
+  persistent flown state, trigger/update behavior, palette/tile uploads, OBJ
+  drawing, and hide behavior. Prologue room `0b` and Chapter 1 room `s1`
+  provide room-specific bird placement data through chapter systems; city `s1`
+  also uses visual-only crystal-heart puzzle birds that clump, spoke outward,
+  hold, and return, plus the annotated color-cycling antenna tip hint.
 - `src/core/text.zig` owns reusable cutscene text helpers: string matching,
   word wrapping, typewriter reveal advancement, and bitmap font drawing through
   a caller-supplied pixel writer.
@@ -194,6 +197,12 @@ those room sources under `assets/chapters/prologue_a/backgrounds/`.
   - gated dash movement used by the bridge-ending handoff;
   - stamina, tired threshold, exhaustion, and tired red palette flash.
 - Audio:
+  - `src/core/audio.zig` owns MaxMod init, music/SFX master volume steps,
+    music looping, and active SFX handle tracking;
+  - the pause menu's Options submenu persists separate music and SFX volume
+    steps in global save-header bytes;
+  - the optional in-game SFX watch displays a short held debug name for the
+    most recent active sound through `src/core/audio_debug.zig`;
   - footstep SFX are selected from dynamic floor providers, one-way platforms,
     and background-pixel terrain classification in `src/player/footsteps.zig`.
 - Collision:
@@ -225,7 +234,9 @@ those room sources under `assets/chapters/prologue_a/backgrounds/`.
     it has fallen;
   - funny car platform actors loaded from generic stamps;
   - bird NPC tutorial prompts and bridge-ending dash prompt fly-in;
-  - tiny bird flock in room `0b`, with persistent per-system flown state;
+  - reusable tiny bird flocks in prologue room `0b` and Chapter 1 room `s1`,
+    with persistent per-system flown state and city `s1` crystal-heart puzzle
+    bird visuals;
   - Granny cutscene/dialogue/laugh text in room `2`, scripted by
     `src/chapters/prologue/granny_cutscene.zig`;
   - prologue chimney smoke in room `2`, owned by
@@ -259,8 +270,9 @@ those room sources under `assets/chapters/prologue_a/backgrounds/`.
   full port of Celeste `Player.cs`.
 - Dash exists as gated runtime behavior for the prologue bridge ending, but
   chapter 1 dash rules and tuning are not complete yet.
-- A dev FPS overlay exists behind `--dev-hud`; collision/player-state debug
-  overlays do not exist yet.
+- A dev FPS overlay exists behind `--dev-hud`, and the pause menu can toggle a
+  tiny SFX watch overlay; collision/player-state debug overlays do not exist
+  yet.
 - BG tile graphics still share VRAM with the hardware BG map; with the current
   map base at screenblock 29, each room can use up to 928 unique 8bpp tiles
   before additional tile streaming/compression is needed.

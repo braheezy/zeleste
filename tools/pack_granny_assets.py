@@ -190,6 +190,41 @@ def slice_strip(path: Path, frame_width: int, frame_height: int, output_width: i
     return frames
 
 
+def slice_padded_strip(path: Path, frame_width: int, frame_height: int, output_width: int) -> list[Image]:
+    source = read_png_rgba(path)
+    if output_width < frame_width or output_width % 8 != 0:
+        raise ValueError("output frame width must be >= source frame width and tile aligned")
+    if source.height != frame_height:
+        raise ValueError(f"{path} must be {frame_height}px high")
+
+    frame_count = (source.width + frame_width - 1) // frame_width
+    if frame_count == 0:
+        raise ValueError(f"{path} is too narrow for {frame_width}px frames")
+
+    frames: list[Image] = []
+    for frame_x in range(frame_count):
+        source_x = frame_x * frame_width
+        source_width = min(frame_width, source.width - source_x)
+        if frame_x + 1 == frame_count and source_width < frame_width // 2:
+            raise ValueError(f"{path} final portrait frame is only {source_width}px wide")
+
+        pixels = bytearray(output_width * frame_height * 4)
+        opaque_count = 0
+        for y in range(frame_height):
+            for x in range(source_width):
+                src_offset = (y * source.width + source_x + x) * 4
+                dst_offset = (y * output_width + x) * 4
+                color = tuple(source.pixels[src_offset : src_offset + 4])
+                if is_transparent(color):
+                    pixels[dst_offset : dst_offset + 4] = b"\x00\x00\x00\x00"
+                else:
+                    pixels[dst_offset : dst_offset + 4] = bytes(color)
+                    opaque_count += 1
+        if opaque_count != 0:
+            frames.append(Image(output_width, frame_height, bytes(pixels)))
+    return frames
+
+
 def pack_frame_with_indices(frame: Image, color_indices: dict[tuple[int, int, int, int], int]) -> bytes:
     def pixel_index(x: int, y: int) -> int:
         offset = (y * frame.width + x) * 4
@@ -221,26 +256,79 @@ def slice_portrait_asset(path: Path) -> list[Image]:
     if source.height == PORTRAIT_FRAME_HEIGHT and source.width % PORTRAIT_FRAME_WIDTH != 0:
         if source.width % 29 == 0:
             return slice_strip(path, 29, PORTRAIT_FRAME_HEIGHT, PORTRAIT_FRAME_WIDTH)
-        return slice_strip(path, PORTRAIT_FRAME_WIDTH, PORTRAIT_FRAME_HEIGHT, PORTRAIT_FRAME_WIDTH)
+        return slice_padded_strip(path, PORTRAIT_FRAME_WIDTH, PORTRAIT_FRAME_HEIGHT, PORTRAIT_FRAME_WIDTH)
     return slice_portrait_grid(path)
 
 
-def pack_portraits(granny_dir: Path, madeline_dir: Path, output_dir: Path) -> tuple[int, int]:
+def slice_portrait_runs(path: Path) -> list[Image]:
+    source = read_png_rgba(path)
+    if source.height != PORTRAIT_FRAME_HEIGHT:
+        raise ValueError(f"{path} must be {PORTRAIT_FRAME_HEIGHT}px high")
+
+    frames: list[Image] = []
+    x = 0
+    while x < source.width:
+        gap_start = x
+        while x < source.width and portraitColumnEmpty(source, x):
+            x += 1
+        if x > gap_start and x - gap_start > 2:
+            raise ValueError(f"{path} has a {x - gap_start}px portrait frame gap at x={gap_start}; expected 1-2px")
+        if x >= source.width:
+            break;
+        if x + PORTRAIT_FRAME_WIDTH > source.width:
+            raise ValueError(f"{path} has a partial portrait frame at x={x}")
+        if portraitColumnEmpty(source, x) or portraitColumnEmpty(source, x + PORTRAIT_FRAME_WIDTH - 1):
+            raise ValueError(f"{path} has an empty edge inside portrait frame at x={x}")
+        pixels = bytearray(PORTRAIT_FRAME_WIDTH * PORTRAIT_FRAME_HEIGHT * 4)
+        opaque_count = 0
+        for y in range(PORTRAIT_FRAME_HEIGHT):
+            for frame_x in range(PORTRAIT_FRAME_WIDTH):
+                src_offset = (y * source.width + x + frame_x) * 4
+                dst_offset = (y * PORTRAIT_FRAME_WIDTH + frame_x) * 4
+                color = tuple(source.pixels[src_offset : src_offset + 4])
+                if is_transparent(color):
+                    pixels[dst_offset : dst_offset + 4] = b"\x00\x00\x00\x00"
+                else:
+                    pixels[dst_offset : dst_offset + 4] = bytes(color)
+                    opaque_count += 1
+        if opaque_count != 0:
+            frames.append(Image(PORTRAIT_FRAME_WIDTH, PORTRAIT_FRAME_HEIGHT, bytes(pixels)))
+        x += PORTRAIT_FRAME_WIDTH
+    return frames
+
+
+def portraitColumnEmpty(source: Image, x: int) -> bool:
+    for y in range(source.height):
+        offset = (y * source.width + x) * 4
+        if not is_transparent(tuple(source.pixels[offset : offset + 4])):
+            return False
+    return True
+
+
+def pack_portraits(granny_dir: Path, madeline_dir: Path, theo_dir: Path, output_dir: Path) -> tuple[int, int]:
     portrait_sources = [
-        ("madeline_idle", madeline_dir / "idle.png"),
-        ("madeline_angry", madeline_dir / "angry.png"),
-        ("madeline_sad", madeline_dir / "sad.png"),
-        ("madeline_upset", madeline_dir / "upset.png"),
-        ("normal", granny_dir / "normal.png"),
-        ("mock", granny_dir / "mock.png"),
-        ("laugh", granny_dir / "laugh.png"),
-        ("creep_a", granny_dir / "creepA.png"),
-        ("creep_b", granny_dir / "creepB.png"),
+        ("madeline_idle", madeline_dir / "idle.png", slice_portrait_asset),
+        ("madeline_angry", madeline_dir / "angry.png", slice_portrait_asset),
+        ("madeline_sad", madeline_dir / "sad.png", slice_portrait_asset),
+        ("madeline_upset", madeline_dir / "upset.png", slice_portrait_asset),
+        ("madeline_distracted_short", madeline_dir / "distracted-short.png", slice_portrait_asset),
+        ("madeline_deadpan_noblink", madeline_dir / "deadpan-noblink.png", slice_portrait_asset),
+        ("normal", granny_dir / "normal.png", slice_portrait_asset),
+        ("mock", granny_dir / "mock.png", slice_portrait_asset),
+        ("laugh", granny_dir / "laugh.png", slice_portrait_asset),
+        ("creep_a", granny_dir / "creepA.png", slice_portrait_asset),
+        ("creep_b", granny_dir / "creepB.png", slice_portrait_asset),
+        ("theo_normal", theo_dir / "normal.png", slice_portrait_runs),
+        ("theo_excited", theo_dir / "excited.png", slice_portrait_runs),
+        ("theo_serious", theo_dir / "serious.png", slice_portrait_runs),
+        ("theo_thinking", theo_dir / "thinking.png", slice_portrait_runs),
+        ("theo_nailed_it", theo_dir / "nailed-it.png", slice_portrait_runs),
+        ("theo_yolo", theo_dir / "yolo.png", slice_portrait_runs),
     ]
     frames_by_expression: dict[str, list[Image]] = {}
     all_frames: list[Image] = []
-    for expression, path in portrait_sources:
-        frames = slice_portrait_asset(path)
+    for expression, path, slicer in portrait_sources:
+        frames = slicer(path)
         if not frames:
             raise ValueError(f"{path} produced no portrait frames")
         frames_by_expression[expression] = frames
@@ -250,7 +338,7 @@ def pack_portraits(granny_dir: Path, madeline_dir: Path, output_dir: Path) -> tu
     tiles = bytearray()
     ranges: dict[str, dict[str, int]] = {}
     frame_offset = 0
-    for expression, _ in portrait_sources:
+    for expression, _, _ in portrait_sources:
         frames = frames_by_expression[expression]
         ranges[expression] = {
             "firstFrame": frame_offset,
@@ -279,6 +367,10 @@ def pack_portraits(granny_dir: Path, madeline_dir: Path, output_dir: Path) -> tu
                 f"pub const madeline_sad_frame_count: u16 = {ranges['madeline_sad']['frameCount']};",
                 f"pub const madeline_upset_first_frame: u16 = {ranges['madeline_upset']['firstFrame']};",
                 f"pub const madeline_upset_frame_count: u16 = {ranges['madeline_upset']['frameCount']};",
+                f"pub const madeline_distracted_short_first_frame: u16 = {ranges['madeline_distracted_short']['firstFrame']};",
+                f"pub const madeline_distracted_short_frame_count: u16 = {ranges['madeline_distracted_short']['frameCount']};",
+                f"pub const madeline_deadpan_noblink_first_frame: u16 = {ranges['madeline_deadpan_noblink']['firstFrame']};",
+                f"pub const madeline_deadpan_noblink_frame_count: u16 = {ranges['madeline_deadpan_noblink']['frameCount']};",
                 f"pub const normal_first_frame: u16 = {ranges['normal']['firstFrame']};",
                 f"pub const normal_frame_count: u16 = {ranges['normal']['frameCount']};",
                 f"pub const mock_first_frame: u16 = {ranges['mock']['firstFrame']};",
@@ -289,6 +381,18 @@ def pack_portraits(granny_dir: Path, madeline_dir: Path, output_dir: Path) -> tu
                 f"pub const creep_a_frame_count: u16 = {ranges['creep_a']['frameCount']};",
                 f"pub const creep_b_first_frame: u16 = {ranges['creep_b']['firstFrame']};",
                 f"pub const creep_b_frame_count: u16 = {ranges['creep_b']['frameCount']};",
+                f"pub const theo_normal_first_frame: u16 = {ranges['theo_normal']['firstFrame']};",
+                f"pub const theo_normal_frame_count: u16 = {ranges['theo_normal']['frameCount']};",
+                f"pub const theo_excited_first_frame: u16 = {ranges['theo_excited']['firstFrame']};",
+                f"pub const theo_excited_frame_count: u16 = {ranges['theo_excited']['frameCount']};",
+                f"pub const theo_serious_first_frame: u16 = {ranges['theo_serious']['firstFrame']};",
+                f"pub const theo_serious_frame_count: u16 = {ranges['theo_serious']['frameCount']};",
+                f"pub const theo_thinking_first_frame: u16 = {ranges['theo_thinking']['firstFrame']};",
+                f"pub const theo_thinking_frame_count: u16 = {ranges['theo_thinking']['frameCount']};",
+                f"pub const theo_nailed_it_first_frame: u16 = {ranges['theo_nailed_it']['firstFrame']};",
+                f"pub const theo_nailed_it_frame_count: u16 = {ranges['theo_nailed_it']['frameCount']};",
+                f"pub const theo_yolo_first_frame: u16 = {ranges['theo_yolo']['firstFrame']};",
+                f"pub const theo_yolo_frame_count: u16 = {ranges['theo_yolo']['frameCount']};",
                 "",
             ]
         )
@@ -314,6 +418,7 @@ def main() -> int:
     parser.add_argument("--input-dir", type=Path, required=True)
     parser.add_argument("--portrait-dir", type=Path, required=True)
     parser.add_argument("--madeline-portrait-dir", type=Path, required=True)
+    parser.add_argument("--theo-portrait-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
 
@@ -371,7 +476,7 @@ def main() -> int:
         )
         + "\n"
     )
-    portrait_frame_count, portrait_color_count = pack_portraits(args.portrait_dir, args.madeline_portrait_dir, args.output_dir)
+    portrait_frame_count, portrait_color_count = pack_portraits(args.portrait_dir, args.madeline_portrait_dir, args.theo_portrait_dir, args.output_dir)
     print(
         f"packed granny idle: {len(idle_frames)} frames, "
         f"laugh: {len(laugh_frames)} frames, "

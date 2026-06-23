@@ -1,6 +1,9 @@
 const std = @import("std");
 const ziggba = @import("ziggba");
 
+const cached_asset_job_count = 43;
+var asset_progress_reset_step: ?*std.Build.Step = null;
+
 pub fn build(b: *std.Build) void {
     const mmutil_dep = b.dependency("mmutil_zig", .{});
     const maxmod_dep = b.dependency("maxmod_zig", .{});
@@ -35,7 +38,19 @@ pub fn build(b: *std.Build) void {
         "-p",
         b.pathFromRoot("src/generated/assets"),
     });
-    const build_soundbank = b.addRunArtifact(mmutil_dep.artifact("mmutil-zig"));
+    const reset_asset_progress = b.addSystemCommand(&.{
+        "python3",
+        b.pathFromRoot("tools/run_if_changed.py"),
+        "--reset-progress",
+        b.pathFromRoot("src/generated/assets/.asset-progress"),
+    });
+    reset_asset_progress.step.dependOn(&ensure_generated_assets_dir.step);
+    asset_progress_reset_step = &reset_asset_progress.step;
+    const build_soundbank = b.addSystemCommand(&.{
+        "python3",
+        b.pathFromRoot("tools/filter_mmutil_output.py"),
+    });
+    build_soundbank.addArtifactArg(mmutil_dep.artifact("mmutil-zig"));
     const soundbank_bin = b.pathFromRoot("src/generated/assets/prologue_soundbank.bin");
     const soundbank_header = b.pathFromRoot("src/generated/assets/prologue_soundbank.h");
 
@@ -223,6 +238,23 @@ pub fn build(b: *std.Build) void {
     build_splash3.addArg(b.pathFromRoot("src/generated/assets/ui/splash3_metadata.json"));
     assets_step.dependOn(&build_splash3.step);
 
+    const build_city_nap_ending = beginCachedPythonCommand(b, "city_nap_ending", "tools/convert_room_tilemap_8bpp.py");
+    addCacheInput(b, build_city_nap_ending, "assets/chapter_endings/city-nap.png");
+    addCacheOutput(b, build_city_nap_ending, "src/generated/assets/chapter_endings/city_nap_tiles.bin");
+    addCacheOutput(b, build_city_nap_ending, "src/generated/assets/chapter_endings/city_nap_map.bin");
+    addCacheOutput(b, build_city_nap_ending, "src/generated/assets/chapter_endings/city_nap_palette.bin");
+    addCacheOutput(b, build_city_nap_ending, "src/generated/assets/chapter_endings/city_nap_metadata.json");
+    finishCachedPythonCommand(b, build_city_nap_ending, "tools/convert_room_tilemap_8bpp.py");
+    build_city_nap_ending.addArg(b.pathFromRoot("assets/chapter_endings/city-nap.png"));
+    build_city_nap_ending.addArg(b.pathFromRoot("src/generated/assets/chapter_endings/city_nap_tiles.bin"));
+    build_city_nap_ending.addArg(b.pathFromRoot("src/generated/assets/chapter_endings/city_nap_map.bin"));
+    build_city_nap_ending.addArg(b.pathFromRoot("src/generated/assets/chapter_endings/city_nap_palette.bin"));
+    build_city_nap_ending.addArg("--rgb-bits");
+    build_city_nap_ending.addArg("5");
+    build_city_nap_ending.addArg("--metadata-output");
+    build_city_nap_ending.addArg(b.pathFromRoot("src/generated/assets/chapter_endings/city_nap_metadata.json"));
+    assets_step.dependOn(&build_city_nap_ending.step);
+
     const prepare_file_select = beginCachedPythonCommand(b, "file_select_prepare", "tools/pack_file_select_assets.py");
     addCacheInput(b, prepare_file_select, "assets/bg-file-select.png");
     addCacheInput(b, prepare_file_select, "assets/scroll.png");
@@ -386,11 +418,10 @@ pub fn build(b: *std.Build) void {
     pack_player_animations.addArg("--output-dir");
     pack_player_animations.addArg(b.pathFromRoot("src/generated/assets/player"));
     pack_player_animations.addArg("--animations");
-    pack_player_animations.addArg("idleLoop:idleA");
-    pack_player_animations.addArg("idleLoop:idleB");
-    pack_player_animations.addArg("idleLoop:idleA");
-    pack_player_animations.addArg("idleLoop:idleB");
-    pack_player_animations.addArg("idleLoop:idleC");
+    pack_player_animations.addArg("idle");
+    pack_player_animations.addArg("idleA");
+    pack_player_animations.addArg("idleB");
+    pack_player_animations.addArg("idleC");
     pack_player_animations.addArg("runSlow");
     pack_player_animations.addArg("jumpSlow");
     pack_player_animations.addArg("fallSlow");
@@ -398,6 +429,8 @@ pub fn build(b: *std.Build) void {
     pack_player_animations.addArg("climbup");
     pack_player_animations.addArg("dangling");
     pack_player_animations.addArg("climbPull");
+    pack_player_animations.addArg("sitDown");
+    pack_player_animations.addArg("asleep");
     if (player_death_animations.deadown_frame_count != 0) {
         pack_player_animations.addArg(player_death_animations.deadown_arg);
     }
@@ -478,12 +511,15 @@ pub fn build(b: *std.Build) void {
 
     const pack_strawberry = beginCachedPythonCommand(b, "strawberry", "tools/pack_strawberry_obj.py");
     addCacheInputDir(b, pack_strawberry, "assets/animations/strawberry");
+    addCacheInputDir(b, pack_strawberry, "assets/animations/strawberry_score");
     addCacheOutputDir(b, pack_strawberry, "src/generated/assets/entities/strawberry");
     finishCachedPythonCommand(b, pack_strawberry, "tools/pack_strawberry_obj.py");
     pack_strawberry.addArg("--input");
     pack_strawberry.addArg(b.pathFromRoot("assets/animations/strawberry"));
     pack_strawberry.addArg("--output-dir");
     pack_strawberry.addArg(b.pathFromRoot("src/generated/assets/entities/strawberry"));
+    pack_strawberry.addArg("--score-input");
+    pack_strawberry.addArg(b.pathFromRoot("assets/animations/strawberry_score"));
     assets_step.dependOn(&pack_strawberry.step);
 
     const pack_ghostberry = beginCachedPythonCommand(b, "ghostberry", "tools/pack_strawberry_obj.py");
@@ -497,6 +533,30 @@ pub fn build(b: *std.Build) void {
     pack_ghostberry.addArg("--name");
     pack_ghostberry.addArg("ghostberry");
     assets_step.dependOn(&pack_ghostberry.step);
+
+    const pack_goldberry = beginCachedPythonCommand(b, "goldberry", "tools/pack_strawberry_obj.py");
+    addCacheInputDir(b, pack_goldberry, "assets/animations/goldberry/goldberry");
+    addCacheOutputDir(b, pack_goldberry, "src/generated/assets/entities/goldberry");
+    finishCachedPythonCommand(b, pack_goldberry, "tools/pack_strawberry_obj.py");
+    pack_goldberry.addArg("--input");
+    pack_goldberry.addArg(b.pathFromRoot("assets/animations/goldberry/goldberry"));
+    pack_goldberry.addArg("--output-dir");
+    pack_goldberry.addArg(b.pathFromRoot("src/generated/assets/entities/goldberry"));
+    pack_goldberry.addArg("--name");
+    pack_goldberry.addArg("goldberry");
+    assets_step.dependOn(&pack_goldberry.step);
+
+    const pack_goldghostberry = beginCachedPythonCommand(b, "goldghostberry", "tools/pack_strawberry_obj.py");
+    addCacheInputDir(b, pack_goldghostberry, "assets/animations/goldberry/goldghostberry");
+    addCacheOutputDir(b, pack_goldghostberry, "src/generated/assets/entities/goldghostberry");
+    finishCachedPythonCommand(b, pack_goldghostberry, "tools/pack_strawberry_obj.py");
+    pack_goldghostberry.addArg("--input");
+    pack_goldghostberry.addArg(b.pathFromRoot("assets/animations/goldberry/goldghostberry"));
+    pack_goldghostberry.addArg("--output-dir");
+    pack_goldghostberry.addArg(b.pathFromRoot("src/generated/assets/entities/goldghostberry"));
+    pack_goldghostberry.addArg("--name");
+    pack_goldghostberry.addArg("goldghostberry");
+    assets_step.dependOn(&pack_goldghostberry.step);
 
     const pack_spring = beginCachedPythonCommand(b, "spring", "tools/pack_spring_obj.py");
     addCacheInputDir(b, pack_spring, "assets/animations/spring");
@@ -522,6 +582,37 @@ pub fn build(b: *std.Build) void {
     pack_dash_refill.addArg("--output-dir");
     pack_dash_refill.addArg(b.pathFromRoot("src/generated/assets/entities/dash_refill"));
     assets_step.dependOn(&pack_dash_refill.step);
+
+    const pack_crystal_heart = beginCachedPythonCommand(b, "crystal_heart", "tools/pack_crystal_heart_obj.py");
+    addCacheInputDir(b, pack_crystal_heart, "assets/animations/crystal_hearts/heartgem0");
+    addCacheInputDir(b, pack_crystal_heart, "assets/animations/crystal_hearts/heartGemGhost");
+    addCacheOutput(b, pack_crystal_heart, "src/generated/assets/entities/crystal_heart/crystal_heart_normal_tiles.bin");
+    addCacheOutput(b, pack_crystal_heart, "src/generated/assets/entities/crystal_heart/crystal_heart_normal_palette.bin");
+    addCacheOutput(b, pack_crystal_heart, "src/generated/assets/entities/crystal_heart/crystal_heart_ghost_tiles.bin");
+    addCacheOutput(b, pack_crystal_heart, "src/generated/assets/entities/crystal_heart/crystal_heart_ghost_palette.bin");
+    addCacheOutput(b, pack_crystal_heart, "src/generated/assets/entities/crystal_heart/crystal_heart_meta.zig");
+    addCacheOutput(b, pack_crystal_heart, "src/generated/assets/entities/crystal_heart/crystal_heart.json");
+    finishCachedPythonCommand(b, pack_crystal_heart, "tools/pack_crystal_heart_obj.py");
+    pack_crystal_heart.addArg("--normal");
+    pack_crystal_heart.addArg(b.pathFromRoot("assets/animations/crystal_hearts/heartgem0"));
+    pack_crystal_heart.addArg("--ghost");
+    pack_crystal_heart.addArg(b.pathFromRoot("assets/animations/crystal_hearts/heartGemGhost"));
+    pack_crystal_heart.addArg("--output-dir");
+    pack_crystal_heart.addArg(b.pathFromRoot("src/generated/assets/entities/crystal_heart"));
+    assets_step.dependOn(&pack_crystal_heart.step);
+
+    const pack_fire_small1 = beginCachedPythonCommand(b, "fire_small1", "tools/pack_fire_obj.py");
+    addCacheInputDir(b, pack_fire_small1, "assets/animations/fire/small1");
+    addCacheOutput(b, pack_fire_small1, "src/generated/assets/entities/fire/fire_small1_tiles.bin");
+    addCacheOutput(b, pack_fire_small1, "src/generated/assets/entities/fire/fire_small1_palette.bin");
+    addCacheOutput(b, pack_fire_small1, "src/generated/assets/entities/fire/fire_small1_meta.zig");
+    addCacheOutput(b, pack_fire_small1, "src/generated/assets/entities/fire/fire_small1.json");
+    finishCachedPythonCommand(b, pack_fire_small1, "tools/pack_fire_obj.py");
+    pack_fire_small1.addArg("--input-dir");
+    pack_fire_small1.addArg(b.pathFromRoot("assets/animations/fire/small1"));
+    pack_fire_small1.addArg("--output-dir");
+    pack_fire_small1.addArg(b.pathFromRoot("src/generated/assets/entities/fire"));
+    assets_step.dependOn(&pack_fire_small1.step);
 
     const pack_speech_bubbles = beginCachedPythonCommand(b, "speech_bubbles", "tools/pack_speech_bubbles_obj.py");
     addCacheInput(b, pack_speech_bubbles, "assets/speech-bubble-idle.png");
@@ -551,6 +642,52 @@ pub fn build(b: *std.Build) void {
     pack_textbox.addArg("--output-dir");
     pack_textbox.addArg(b.pathFromRoot("src/generated/assets/ui"));
     assets_step.dependOn(&pack_textbox.step);
+
+    const pack_ch1_textbox = beginCachedPythonCommand(b, "ch1_textbox", "tools/pack_textbox_obj.py");
+    addCacheInput(b, pack_ch1_textbox, "assets/ch1-textbox.png");
+    addCacheOutput(b, pack_ch1_textbox, "src/generated/assets/ui/ch1_textbox_tiles.bin");
+    addCacheOutput(b, pack_ch1_textbox, "src/generated/assets/ui/ch1_textbox_palette.bin");
+    addCacheOutput(b, pack_ch1_textbox, "src/generated/assets/ui/ch1_textbox_meta.zig");
+    addCacheOutput(b, pack_ch1_textbox, "src/generated/assets/ui/ch1_textbox.json");
+    finishCachedPythonCommand(b, pack_ch1_textbox, "tools/pack_textbox_obj.py");
+    pack_ch1_textbox.addArg("--input");
+    pack_ch1_textbox.addArg(b.pathFromRoot("assets/ch1-textbox.png"));
+    pack_ch1_textbox.addArg("--output-dir");
+    pack_ch1_textbox.addArg(b.pathFromRoot("src/generated/assets/ui"));
+    pack_ch1_textbox.addArg("--output-prefix");
+    pack_ch1_textbox.addArg("ch1_textbox");
+    pack_ch1_textbox.addArg("--fit-width");
+    assets_step.dependOn(&pack_ch1_textbox.step);
+
+    const pack_city_6zb_dialogue = beginCachedPythonCommand(b, "city_6zb_dialogue", "tools/pack_city_6zb_dialogue.py");
+    addCacheInput(b, pack_city_6zb_dialogue, "assets/chapters/1_city/6zb_cutscene.json");
+    addCacheOutput(b, pack_city_6zb_dialogue, "src/generated/assets/city/6zb_dialogue.zig");
+    finishCachedPythonCommand(b, pack_city_6zb_dialogue, "tools/pack_city_6zb_dialogue.py");
+    pack_city_6zb_dialogue.addArg("--input");
+    pack_city_6zb_dialogue.addArg(b.pathFromRoot("assets/chapters/1_city/6zb_cutscene.json"));
+    pack_city_6zb_dialogue.addArg("--output");
+    pack_city_6zb_dialogue.addArg(b.pathFromRoot("src/generated/assets/city/6zb_dialogue.zig"));
+    assets_step.dependOn(&pack_city_6zb_dialogue.step);
+
+    const pack_city_end_cutscene = beginCachedPythonCommand(b, "city_end_cutscene", "tools/pack_city_end_cutscene.py");
+    addCacheInput(b, pack_city_end_cutscene, "assets/chapters/1_city/end_cutscene.json");
+    addCacheOutput(b, pack_city_end_cutscene, "src/generated/assets/city/end_cutscene.zig");
+    finishCachedPythonCommand(b, pack_city_end_cutscene, "tools/pack_city_end_cutscene.py");
+    pack_city_end_cutscene.addArg("--input");
+    pack_city_end_cutscene.addArg(b.pathFromRoot("assets/chapters/1_city/end_cutscene.json"));
+    pack_city_end_cutscene.addArg("--output");
+    pack_city_end_cutscene.addArg(b.pathFromRoot("src/generated/assets/city/end_cutscene.zig"));
+    assets_step.dependOn(&pack_city_end_cutscene.step);
+
+    const pack_city_s1_tiny_birds = beginCachedPythonCommand(b, "city_s1_tiny_birds", "tools/pack_tiny_bird_room.py");
+    addCacheInput(b, pack_city_s1_tiny_birds, "assets/chapters/1_city/s1_tiny_birds.json");
+    addCacheOutput(b, pack_city_s1_tiny_birds, "src/generated/assets/city/s1_tiny_birds.zig");
+    finishCachedPythonCommand(b, pack_city_s1_tiny_birds, "tools/pack_tiny_bird_room.py");
+    pack_city_s1_tiny_birds.addArg("--input");
+    pack_city_s1_tiny_birds.addArg(b.pathFromRoot("assets/chapters/1_city/s1_tiny_birds.json"));
+    pack_city_s1_tiny_birds.addArg("--output");
+    pack_city_s1_tiny_birds.addArg(b.pathFromRoot("src/generated/assets/city/s1_tiny_birds.zig"));
+    assets_step.dependOn(&pack_city_s1_tiny_birds.step);
 
     const pack_cassette = beginCachedPythonCommand(b, "cassette", "tools/pack_cassette_obj.py");
     addCacheInput(b, pack_cassette, "assets/casette-uncollected.png");
@@ -639,6 +776,7 @@ pub fn build(b: *std.Build) void {
     addCacheInputDir(b, pack_granny, "assets/animations/granny");
     addCacheInputDir(b, pack_granny, "assets/portraits/granny");
     addCacheInputDir(b, pack_granny, "assets/portraits/madeline");
+    addCacheInputDir(b, pack_granny, "assets/portraits/theo");
     addCacheOutputDir(b, pack_granny, "src/generated/assets/granny");
     finishCachedPythonCommand(b, pack_granny, "tools/pack_granny_assets.py");
     pack_granny.addArg("--input-dir");
@@ -647,6 +785,8 @@ pub fn build(b: *std.Build) void {
     pack_granny.addArg(b.pathFromRoot("assets/portraits/granny"));
     pack_granny.addArg("--madeline-portrait-dir");
     pack_granny.addArg(b.pathFromRoot("assets/portraits/madeline"));
+    pack_granny.addArg("--theo-portrait-dir");
+    pack_granny.addArg(b.pathFromRoot("assets/portraits/theo"));
     pack_granny.addArg("--output-dir");
     pack_granny.addArg(b.pathFromRoot("src/generated/assets/granny"));
     assets_step.dependOn(&pack_granny.step);
@@ -674,7 +814,14 @@ fn beginCachedPythonCommand(b: *std.Build, job: []const u8, script: []const u8) 
         b.pathFromRoot("tools/run_if_changed.py"),
         "--input",
         b.pathFromRoot(script),
+        "--progress-file",
+        b.pathFromRoot("src/generated/assets/.asset-progress"),
+        "--progress-total",
+        b.fmt("{d}", .{cached_asset_job_count}),
     });
+    if (asset_progress_reset_step) |step| {
+        run.step.dependOn(step);
+    }
     if (!std.mem.eql(u8, script, "tools/split_foreground_tileset.py")) {
         addCacheInput(b, run, "tools/split_foreground_tileset.py");
     }
@@ -873,6 +1020,7 @@ const soundbank_sfx_files = [_][]const u8{
     "assets/audio/sfx/movers/zipmover_b_impact_01_001.wav",
     "assets/audio/sfx/movers/zipmover_c_return_01_001.wav",
     "assets/audio/sfx/movers/zipmover_d_reset_01_001.wav",
+    "assets/audio/raw/sfx/birds/squawk.wav",
 };
 
 const StartArgs = struct {
@@ -904,7 +1052,7 @@ const PlayerAnimationCandidate = struct {
 };
 
 fn playerDeathAnimationLayout(b: *std.Build) PlayerDeathAnimationLayout {
-    const base_player_frame_count: u16 = 121;
+    const base_player_frame_count: u16 = 108;
     const deadown = findAnimationSource(b, &.{
         .{ .path = "assets/animations/player/deadown", .arg = "deadown" },
         .{ .path = "assets/animations/player/deaddown", .arg = "deadown:deaddown" },

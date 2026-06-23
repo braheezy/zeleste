@@ -15,6 +15,7 @@ pub const DialogueVoice = enum {
 };
 
 var save_file_roll_index: u8 = 0;
+var save_file_roll_handle: audio.SoundEffectHandle = 0;
 var dialogue_madeline_normal_index: u8 = 0;
 var dialogue_madeline_angry_index: u8 = 0;
 var dialogue_madeline_sad_index: u8 = 0;
@@ -47,23 +48,28 @@ pub fn menuRollDown() void {
 }
 
 pub fn saveFileOpen() void {
+    cancelSaveFileRoll();
     play(sound_ids.sfx_ui_main_whoosh_savefile_in);
 }
 
 pub fn saveFileClose() void {
+    cancelSaveFileRoll();
     play(sound_ids.sfx_ui_main_whoosh_savefile_out);
 }
 
 pub fn saveFileRoll() void {
-    switch (save_file_roll_index) {
-        0 => play(sound_ids.sfx_ui_main_savefile_roll_01),
-        1 => play(sound_ids.sfx_ui_main_savefile_roll_02),
-        else => play(sound_ids.sfx_ui_main_savefile_roll_03),
-    }
+    cancelSaveFileRoll();
+    const sound_id = switch (save_file_roll_index) {
+        0 => sound_ids.sfx_ui_main_savefile_roll_01,
+        1 => sound_ids.sfx_ui_main_savefile_roll_02,
+        else => sound_ids.sfx_ui_main_savefile_roll_03,
+    };
+    save_file_roll_handle = audio.playSoundEffect(sound_id);
     save_file_roll_index = (save_file_roll_index + 1) % 3;
 }
 
 pub fn saveFileDelete() void {
+    cancelSaveFileRoll();
     play(sound_ids.sfx_ui_main_savefile_delete);
 }
 
@@ -118,6 +124,12 @@ pub fn dialogueText(voice: DialogueVoice) void {
 
 fn play(sound_id: u16) void {
     _ = audio.playSoundEffect(sound_id);
+}
+
+fn cancelSaveFileRoll() void {
+    if (save_file_roll_handle == 0) return;
+    _ = audio.cancelSoundEffect(save_file_roll_handle);
+    save_file_roll_handle = 0;
 }
 
 fn dialogueTextSound(voice: DialogueVoice) u16 {

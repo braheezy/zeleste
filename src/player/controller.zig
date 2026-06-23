@@ -63,6 +63,8 @@ const player_wall_jump_var_jump_frames = player_mod.wall_jump_var_jump_frames;
 const player_coyote_frames = player_mod.coyote_frames;
 const player_jump_buffer_frames = player_mod.jump_buffer_frames;
 const player_animation_speed = player_mod.animation_speed;
+const player_idle_first_frame = player_mod.idle_first_frame;
+const player_idle_frame_count = player_mod.idle_frame_count;
 const player_idle_a_first_frame = player_mod.idle_a_first_frame;
 const player_idle_a_frame_count = player_mod.idle_a_frame_count;
 const player_idle_b_first_frame = player_mod.idle_b_first_frame;
@@ -92,6 +94,8 @@ const climb_hop_y_speed: i32 = -0x15E;
 const climb_hop_force_frames: u8 = 7;
 const climb_hop_grab_lockout_frames: u8 = 10;
 const climb_ledge_pull_frames: u8 = 6;
+const idle_variant_neutral_min_loops: u8 = 2;
+const idle_variant_neutral_extra_loops: u8 = 3;
 
 const LedgeTarget = struct {
     x: i16,
@@ -646,9 +650,6 @@ fn updateClimb(player: *Player, grab_held: bool, vertical: i16, room_index: usiz
     }
 
     player.facing_left = climb_dir < 0;
-    if (player.climbing and vertical < 0 and tryClimbHopFromWall(player, climb_dir, room_index)) {
-        return;
-    }
 
     if (!player.climbing) {
         player_sfx.playGrab(player, room_index);
@@ -730,11 +731,6 @@ fn climbDangleContact(player: Player, dir: i16, room_index: usize) bool {
         player_collision.wallSolidAtPixel(x, y + 9, room_index) or
         player_collision.wallSolidAtPixel(x, y + player_body_height - 3, room_index);
     return hands_caught and !body_blocked;
-}
-
-fn tryClimbHopFromWall(player: *Player, dir: i16, room_index: usize) bool {
-    if (!climbLowerSideContact(player.*, dir, room_index)) return false;
-    return tryClimbHop(player, dir, room_index);
 }
 
 fn tryClimbHopAfterLostWall(player: *Player, dir: i16, room_index: usize) bool {
@@ -870,15 +866,26 @@ fn startClimbHop(player: *Player, dir: i16) void {
 }
 
 fn chooseNextIdle(player: *Player) void {
-    const choice = nextRandom() % 5;
-    if (choice == 4) {
-        player.idle_first_frame = player_idle_c_first_frame;
-        player.idle_frame_count = player_idle_c_frame_count;
-    } else if ((choice & 1) == 0) {
-        player.idle_first_frame = player_idle_a_first_frame;
-        player.idle_frame_count = player_idle_a_frame_count;
-    } else {
-        player.idle_first_frame = player_idle_b_first_frame;
-        player.idle_frame_count = player_idle_b_frame_count;
+    if (player.idle_neutral_loops_remaining > 0) {
+        player.idle_neutral_loops_remaining -= 1;
+        setIdleRange(player, player_idle_first_frame, player_idle_frame_count);
+        return;
     }
+
+    switch (player.idle_variant_index % 3) {
+        0 => setIdleRange(player, player_idle_a_first_frame, player_idle_a_frame_count),
+        1 => setIdleRange(player, player_idle_b_first_frame, player_idle_b_frame_count),
+        else => setIdleRange(player, player_idle_c_first_frame, player_idle_c_frame_count),
+    }
+    player.idle_variant_index = (player.idle_variant_index + 1) % 3;
+    player.idle_neutral_loops_remaining = idleNeutralLoopDelay();
+}
+
+fn setIdleRange(player: *Player, first_frame: u16, frame_count: u16) void {
+    player.idle_first_frame = first_frame;
+    player.idle_frame_count = frame_count;
+}
+
+fn idleNeutralLoopDelay() u8 {
+    return idle_variant_neutral_min_loops + @as(u8, @intCast(nextRandom() % idle_variant_neutral_extra_loops));
 }

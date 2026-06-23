@@ -2,6 +2,7 @@ const gba = @import("gba");
 const assets = @import("../core/assets.zig");
 const camera_mod = @import("../world/camera.zig");
 const math = @import("../core/math.zig");
+const obj_vram = @import("../core/obj_vram.zig");
 const oam = @import("../core/oam.zig");
 const player_mod = @import("state.zig");
 
@@ -25,8 +26,8 @@ const hideObject = oam.hideObject;
 const hair_palette_data align(4) = assets.hair_palette_data;
 const player_hair_anchors_data align(4) = assets.player_hair_anchors_data;
 
-pub const base_tile: u10 = 60;
-pub const bang_base_tile: u10 = base_tile + 4;
+pub const base_tile: u10 = @intCast(obj_vram.player_hair.start);
+pub const bang_base_tile: u10 = @intCast(obj_vram.player_bang.start);
 pub const palette_bank: u4 = 2;
 pub const root_object = 33;
 pub const object = 34;

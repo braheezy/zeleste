@@ -1,5 +1,7 @@
 const gba = @import("gba");
 
+const audio = @import("audio.zig");
+const audio_debug = @import("audio_debug.zig");
 const assets = @import("assets.zig");
 const background = @import("../world/background.zig");
 const frame = @import("frame.zig");
@@ -108,6 +110,9 @@ pub fn chooseSlot() u8 {
 }
 
 fn loadScreen() void {
+    audio.stopSoundEffects();
+    audio.stopMusic();
+    audio_debug.clearHold();
     gba.display.hideAllObjects();
     gba.display.ctrl.bg0 = false;
     gba.display.ctrl.bg1 = false;

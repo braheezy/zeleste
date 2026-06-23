@@ -28,6 +28,7 @@ const screen_tile_count = width_tiles * height_tiles;
 
 pub const Selection = enum(u8) {
     none,
+    back,
     prologue,
     city,
 };
@@ -46,6 +47,12 @@ const panel_fill: u8 = 252;
 const panel_border: u8 = 253;
 const panel_shadow: u8 = 254;
 const panel_accent: u8 = 255;
+const panel_gold_leaf: u8 = 244;
+const panel_gold_berry: u8 = 245;
+const panel_heart_blue: u8 = 246;
+const panel_heart_light: u8 = 247;
+const panel_berry_leaf: u8 = 248;
+const panel_berry_red: u8 = 249;
 
 const RespawnPoint = room_data.RespawnPoint;
 
@@ -156,6 +163,11 @@ pub fn update(input: gba.input.BufferedKeysState) Selection {
         }
     }
 
+    if (input.isJustPressed(.B)) {
+        ui_sfx.buttonBack();
+        return .back;
+    }
+
     if (changed) drawObjects();
 
     const confirm_down = input.isPressed(.A) or input.isPressed(.start);
@@ -189,6 +201,12 @@ fn loadPanelPaletteColors() void {
     gba.display.bg_palette.colors[panel_border] = gba.ColorRgb555.rgb(14, 19, 26);
     gba.display.bg_palette.colors[panel_shadow] = gba.ColorRgb555.rgb(0, 1, 4);
     gba.display.bg_palette.colors[panel_accent] = gba.ColorRgb555.rgb(31, 24, 12);
+    gba.display.bg_palette.colors[panel_gold_leaf] = gba.ColorRgb555.rgb(13, 18, 5);
+    gba.display.bg_palette.colors[panel_gold_berry] = gba.ColorRgb555.rgb(31, 23, 4);
+    gba.display.bg_palette.colors[panel_heart_blue] = gba.ColorRgb555.rgb(3, 18, 31);
+    gba.display.bg_palette.colors[panel_heart_light] = gba.ColorRgb555.rgb(18, 29, 31);
+    gba.display.bg_palette.colors[panel_berry_leaf] = gba.ColorRgb555.rgb(7, 23, 8);
+    gba.display.bg_palette.colors[panel_berry_red] = gba.ColorRgb555.rgb(31, 4, 9);
 }
 
 fn loadIcons() void {
@@ -492,6 +510,8 @@ fn drawChapterPanel() void {
     drawRatio(stats.strawberries, x + 40, y + 27, panel_text);
     if (!is_prologue) {
         if (stats.cassettes.collected > 0) drawTapeIcon(x + 88, y + 25);
+        if (chapter == city_chapter and stats.crystal_heart_collected) drawBlueHeartIcon(x + 108, y + 25);
+        if (chapter == city_chapter and stats.golden_strawberry_collected) drawGoldBerryIcon(x + 124, y + 25);
 
         text.drawSmallLine(setPixel, video.screen_width, "CHECKPOINTS", x + 8, y + 38, panel_accent);
         const area_count = chapterAreaCount(chapter);
@@ -525,10 +545,19 @@ fn drawCheckpointCursor(x: i16, y: i16) void {
 }
 
 fn drawBerryIcon(x: i16, y: i16) void {
-    setPixel(x + 2, y, panel_text);
-    drawRect(x + 1, y + 1, 3, 1, panel_accent);
-    drawRect(x, y + 2, 5, 2, panel_accent);
-    drawRect(x + 1, y + 4, 3, 1, panel_accent);
+    setPixel(x + 2, y, panel_berry_leaf);
+    drawRect(x + 1, y + 1, 3, 1, panel_berry_red);
+    drawRect(x, y + 2, 5, 2, panel_berry_red);
+    drawRect(x + 1, y + 4, 3, 1, panel_berry_red);
+    setPixel(x + 1, y + 2, panel_text);
+    setPixel(x + 3, y + 3, panel_text);
+}
+
+fn drawGoldBerryIcon(x: i16, y: i16) void {
+    setPixel(x + 2, y, panel_gold_leaf);
+    drawRect(x + 1, y + 1, 3, 1, panel_gold_berry);
+    drawRect(x, y + 2, 5, 2, panel_gold_berry);
+    drawRect(x + 1, y + 4, 3, 1, panel_gold_berry);
     setPixel(x + 1, y + 2, panel_text);
     setPixel(x + 3, y + 3, panel_text);
 }
@@ -543,6 +572,18 @@ fn drawTapeIcon(x: i16, y: i16) void {
     setPixel(x + 10, y + 1, panel_fill);
     setPixel(x + 1, y + 7, panel_fill);
     setPixel(x + 10, y + 7, panel_fill);
+}
+
+fn drawBlueHeartIcon(x: i16, y: i16) void {
+    drawRect(x + 1, y, 2, 1, panel_heart_blue);
+    drawRect(x + 5, y, 2, 1, panel_heart_blue);
+    drawRect(x, y + 1, 8, 3, panel_heart_blue);
+    drawRect(x + 1, y + 4, 6, 1, panel_heart_blue);
+    drawRect(x + 2, y + 5, 4, 1, panel_heart_blue);
+    drawRect(x + 3, y + 6, 2, 1, panel_heart_blue);
+    setPixel(x + 2, y + 1, panel_heart_light);
+    setPixel(x + 1, y + 2, panel_heart_light);
+    setPixel(x + 3, y + 2, panel_heart_light);
 }
 
 fn chapterTitle(chapter: u8) []const u8 {

@@ -200,6 +200,8 @@ def collect_city_rooms(city_dir: Path) -> list[dict]:
             "_respawnPoints": annotation_respawn_points(annotation, width, height),
             "exitLines": [],
         }
+        copy_optional_int(annotation, room, "windSnowStrength")
+        copy_optional_int(annotation, room, "windSnowDirX")
         fallback = str(annotation.get("exitTargetRoom") or "")
         for exit_line in annotation.get("exits", []) or []:
             target = city_target_id(str(exit_line.get("targetRoom") or ""), room_id, fallback, city_ids)
@@ -241,6 +243,11 @@ def collect_city_rooms(city_dir: Path) -> list[dict]:
         next_room.update(room["_edges"])
         out.append(next_room)
     return out
+
+
+def copy_optional_int(source: dict, target: dict, key: str) -> None:
+    if key in source:
+        target[key] = int(source[key])
 
 
 def add_synthetic_city_exits(by_id: dict[str, dict], explicit_edges: list[dict]) -> None:

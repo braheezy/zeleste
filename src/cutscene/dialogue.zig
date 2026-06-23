@@ -1,8 +1,8 @@
 const gba = @import("gba");
 const assets = @import("../core/assets.zig");
 const camera_mod = @import("../world/camera.zig");
-const dust = @import("../effects/dust.zig");
 const math = @import("../core/math.zig");
+const obj_vram = @import("../core/obj_vram.zig");
 const oam = @import("../core/oam.zig");
 const room_data = @import("../world/room_data.zig");
 const save_indicator = @import("../core/save_indicator.zig");
@@ -24,6 +24,13 @@ const portrait_tiles_data align(4) = assets.granny_portrait_tiles_data;
 const portrait_palette_data align(4) = assets.granny_portrait_palette_data;
 const textbox_tiles_data align(4) = assets.textbox_tiles_data;
 const textbox_palette_data align(4) = assets.textbox_palette_data;
+const ch1_textbox_tiles_data align(4) = assets.ch1_textbox_tiles_data;
+const ch1_textbox_palette_data align(4) = assets.ch1_textbox_palette_data;
+
+pub const TextboxSkin = enum {
+    prologue,
+    chapter1,
+};
 
 pub const Cache = struct {
     rendered_index: u8 = 255,
@@ -45,16 +52,17 @@ pub const width = textbox_meta.width;
 pub const height = textbox_meta.height;
 pub const tiles_per_object = textbox_meta.tiles_per_object;
 pub const tile_count = textbox_meta.tile_count;
-pub const base_tile: u10 = 800;
-pub const portrait_tile_count: u10 = 16;
-pub const portrait_base_tile: u10 = base_tile - portrait_tile_count;
-pub const palette_bank: u4 = dust.palette_bank;
+pub const base_tile: u10 = @intCast(obj_vram.dialogue_textbox.start);
+pub const portrait_tile_count: u10 = @intCast(obj_vram.dialogue_portrait.count);
+pub const portrait_base_tile: u10 = @intCast(obj_vram.dialogue_portrait.start);
+pub const palette_bank: u4 = 15;
 pub const portrait_palette_bank: u4 = 13;
 pub const text_max_chars = 34;
 pub const text_max_lines = 3;
 
 const madeline_name_color: u8 = textbox_meta.madeline_name_color;
 const granny_name_color: u8 = textbox_meta.granny_name_color;
+const theo_name_color: u8 = textbox_meta.theo_name_color;
 const default_name_color: u8 = textbox_meta.default_name_color;
 const body_text_color: u8 = textbox_meta.body_text_color;
 const portrait_text_max_chars = 26;
@@ -78,6 +86,8 @@ var tiles: [tile_count]gba.display.Tile4Bpp align(4) = [_]gba.display.Tile4Bpp{g
 var text_tiles_dirty: [tile_count]bool = [_]bool{false} ** tile_count;
 var upload_tiles_dirty: [tile_count]bool = [_]bool{false} ** tile_count;
 var textbox_tiles_loaded: bool = false;
+var active_textbox_skin: TextboxSkin = .prologue;
+var loaded_textbox_skin: TextboxSkin = .prologue;
 var loaded_portrait_frame: u16 = 0xffff;
 var portrait_palette_loaded: bool = false;
 var advance_indicator_visible: bool = false;
@@ -87,6 +97,14 @@ pub fn invalidateGraphics() void {
     textbox_tiles_loaded = false;
     loaded_portrait_frame = 0xffff;
     portrait_palette_loaded = false;
+    advance_indicator_visible = false;
+    advance_indicator_frame = 0xff;
+}
+
+pub fn setTextboxSkin(skin: TextboxSkin) void {
+    if (active_textbox_skin == skin) return;
+    active_textbox_skin = skin;
+    textbox_tiles_loaded = false;
     advance_indicator_visible = false;
     advance_indicator_frame = 0xff;
 }
@@ -105,6 +123,17 @@ pub fn renderPage(page: CutsceneDialoguePage, dialogue_index: u8, dialogue_offse
     }
 
     preloadTextbox();
+    const same_page = cache.rendered_index == dialogue_index and
+        cache.rendered_offset == dialogue_offset and
+        cache.rendered_portrait == effectivePortrait(page);
+    if (same_page and cache.rendered_reveal_offset <= reveal_end) {
+        upload_tiles_dirty = [_]bool{false} ** tile_count;
+        text_mod.drawWrappedBetween(setPixel, width, page.text, dialogue_offset, cache.rendered_reveal_offset, reveal_end, layout.text_start_x, body_y, layout.max_chars, text_max_lines, body_text_color);
+        uploadDirtyTextTiles();
+        cache.rendered_reveal_offset = reveal_end;
+        return page_end;
+    }
+
     beginTextTileUpdate();
     advance_indicator_visible = false;
     advance_indicator_frame = 0xff;
@@ -125,7 +154,7 @@ pub fn wrappedNextOffset(page: CutsceneDialoguePage, dialogue_offset: usize) usi
 }
 
 pub fn preloadTextbox() void {
-    if (textbox_tiles_loaded) return;
+    if (textbox_tiles_loaded and loaded_textbox_skin == active_textbox_skin) return;
     resetTextboxGraphics();
 }
 
@@ -136,6 +165,7 @@ pub fn resetTextboxGraphics() void {
     text_tiles_dirty = [_]bool{false} ** tile_count;
     upload_tiles_dirty = [_]bool{false} ** tile_count;
     textbox_tiles_loaded = true;
+    loaded_textbox_skin = active_textbox_skin;
     advance_indicator_visible = false;
     advance_indicator_frame = 0xff;
 }
@@ -148,6 +178,7 @@ pub fn preloadPortrait(page: CutsceneDialoguePage, portrait_timer: u16, text_rev
 }
 
 pub fn drawObjects(camera: Camera, first_object: usize, dialogue_box: SceneRect, page: CutsceneDialoguePage, portrait_timer: u16, text_revealing: bool) void {
+    loadTextboxPalette();
     const portrait = effectivePortrait(page);
     const has_portrait = portraitRange(portrait) != null;
     const position = room_data.Spawn{
@@ -187,13 +218,15 @@ pub fn hideObjects(first_object: usize) void {
         hideObject(first_object + index);
     }
     visible = false;
-    dust.loadPalette();
+    advance_indicator_visible = false;
+    advance_indicator_frame = 0xff;
     save_indicator.invalidateGraphics();
 }
 
 fn speakerNameColor(speaker: []const u8) u8 {
     if (text_mod.startsWith(speaker, "Madeline")) return madeline_name_color;
     if (text_mod.startsWith(speaker, "Old") or text_mod.startsWith(speaker, "Granny")) return granny_name_color;
+    if (text_mod.startsWith(speaker, "Theo")) return theo_name_color;
     return default_name_color;
 }
 
@@ -202,11 +235,15 @@ fn clearTiles() void {
 }
 
 fn loadTextboxPalette() void {
-    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(&textbox_palette_data), 16);
+    const palette_data = switch (active_textbox_skin) {
+        .prologue => &textbox_palette_data,
+        .chapter1 => &ch1_textbox_palette_data,
+    };
+    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(palette_data), 16);
 }
 
 fn loadStaticTextboxTiles() void {
-    const source: [*]align(4) const gba.display.Tile4Bpp = @ptrCast(&textbox_tiles_data);
+    const source: [*]align(4) const gba.display.Tile4Bpp = @ptrCast(textboxTileData());
     var index: usize = 0;
     while (index < tile_count) : (index += 1) {
         tiles[index] = source[index];
@@ -214,8 +251,15 @@ fn loadStaticTextboxTiles() void {
 }
 
 fn restoreStaticTextboxTile(index: usize) void {
-    const source: [*]align(4) const gba.display.Tile4Bpp = @ptrCast(&textbox_tiles_data);
+    const source: [*]align(4) const gba.display.Tile4Bpp = @ptrCast(textboxTileData());
     tiles[index] = source[index];
+}
+
+fn textboxTileData() *const [tile_count]gba.display.Tile4Bpp {
+    return switch (active_textbox_skin) {
+        .prologue => @ptrCast(&textbox_tiles_data),
+        .chapter1 => @ptrCast(&ch1_textbox_tiles_data),
+    };
 }
 
 fn beginTextTileUpdate() void {
@@ -243,6 +287,10 @@ fn uploadDirtyTextTiles() void {
             base_tile + @as(u10, @intCast(start)),
             tiles[start..index],
         );
+        var clear_index = start;
+        while (clear_index < index) : (clear_index += 1) {
+            upload_tiles_dirty[clear_index] = false;
+        }
     }
 }
 
@@ -320,12 +368,15 @@ fn layoutFor(page: CutsceneDialoguePage) Layout {
 fn effectivePortrait(page: CutsceneDialoguePage) DialoguePortrait {
     if (page.portrait != .none) return page.portrait;
     if (text_mod.startsWith(page.speaker, "Madeline")) return .madeline_idle;
+    if (text_mod.startsWith(page.speaker, "Theo")) return .theo_normal;
     return .none;
 }
 
 const PortraitRange = struct {
     first_frame: u16,
     frame_count: u16,
+    intro_frame_count: u16 = 0,
+    talk_first_frame: u16 = 0,
     talk_frame_count: u16 = 0,
     loop: bool = false,
 };
@@ -335,22 +386,34 @@ fn portraitRange(portrait: DialoguePortrait) ?PortraitRange {
         .madeline_idle => .{
             .first_frame = portrait_meta.madeline_idle_first_frame,
             .frame_count = portrait_meta.madeline_idle_frame_count,
+            .talk_first_frame = 4,
             .talk_frame_count = 3,
         },
         .madeline_angry => .{
             .first_frame = portrait_meta.madeline_angry_first_frame,
             .frame_count = portrait_meta.madeline_angry_frame_count,
+            .talk_first_frame = 4,
             .talk_frame_count = 3,
         },
         .madeline_sad => .{
             .first_frame = portrait_meta.madeline_sad_first_frame,
             .frame_count = portrait_meta.madeline_sad_frame_count,
+            .talk_first_frame = 4,
             .talk_frame_count = 3,
         },
         .madeline_upset => .{
             .first_frame = portrait_meta.madeline_upset_first_frame,
             .frame_count = portrait_meta.madeline_upset_frame_count,
+            .talk_first_frame = 4,
             .talk_frame_count = 3,
+        },
+        .madeline_distracted_short => .{
+            .first_frame = portrait_meta.madeline_distracted_short_first_frame,
+            .frame_count = portrait_meta.madeline_distracted_short_frame_count,
+        },
+        .madeline_deadpan_noblink => .{
+            .first_frame = portrait_meta.madeline_deadpan_noblink_first_frame,
+            .frame_count = portrait_meta.madeline_deadpan_noblink_frame_count,
         },
         .granny_normal => .{
             .first_frame = portrait_meta.normal_first_frame,
@@ -372,6 +435,40 @@ fn portraitRange(portrait: DialoguePortrait) ?PortraitRange {
         .granny_creep_b => .{
             .first_frame = portrait_meta.creep_b_first_frame,
             .frame_count = portrait_meta.creep_b_frame_count,
+        },
+        .theo_normal => .{
+            .first_frame = portrait_meta.theo_normal_first_frame,
+            .frame_count = portrait_meta.theo_normal_frame_count,
+            .talk_first_frame = 4,
+            .talk_frame_count = 4,
+        },
+        .theo_excited => .{
+            .first_frame = portrait_meta.theo_excited_first_frame,
+            .frame_count = portrait_meta.theo_excited_frame_count,
+            .talk_first_frame = 4,
+            .talk_frame_count = 3,
+        },
+        .theo_serious => .{
+            .first_frame = portrait_meta.theo_serious_first_frame,
+            .frame_count = portrait_meta.theo_serious_frame_count,
+            .talk_first_frame = 4,
+            .talk_frame_count = 3,
+        },
+        .theo_thinking => .{
+            .first_frame = portrait_meta.theo_thinking_first_frame,
+            .frame_count = portrait_meta.theo_thinking_frame_count,
+            .talk_first_frame = 4,
+            .talk_frame_count = 3,
+        },
+        .theo_nailed_it => .{
+            .first_frame = portrait_meta.theo_nailed_it_first_frame,
+            .frame_count = portrait_meta.theo_nailed_it_frame_count,
+        },
+        .theo_yolo => .{
+            .first_frame = portrait_meta.theo_yolo_first_frame,
+            .frame_count = portrait_meta.theo_yolo_frame_count,
+            .talk_first_frame = 1,
+            .talk_frame_count = 3,
         },
         else => null,
     };
@@ -422,12 +519,12 @@ fn loadPortraitFrame(portrait: DialoguePortrait, portrait_timer: u16, text_revea
 fn portraitLocalFrame(range: PortraitRange, portrait_timer: u16, text_revealing: bool) u16 {
     const timed_frame = portrait_timer / portrait_frame_ticks;
     if (range.loop) return timed_frame % range.frame_count;
-    if (timed_frame < range.frame_count) return timed_frame;
-    if (text_revealing and range.talk_frame_count > 0 and range.frame_count >= range.talk_frame_count) {
-        const talk_start = range.frame_count - range.talk_frame_count;
-        return talk_start + ((timed_frame - range.frame_count) % range.talk_frame_count);
+    const intro_frame_count = if (range.intro_frame_count == 0) range.frame_count else @min(range.intro_frame_count, range.frame_count);
+    if (timed_frame < intro_frame_count) return timed_frame;
+    if (text_revealing and range.talk_frame_count > 0 and range.talk_first_frame + range.talk_frame_count <= range.frame_count) {
+        return range.talk_first_frame + ((timed_frame - intro_frame_count) % range.talk_frame_count);
     }
-    return range.frame_count - 1;
+    return intro_frame_count - 1;
 }
 
 fn setPixel(x: i16, y: i16, color: u8) void {

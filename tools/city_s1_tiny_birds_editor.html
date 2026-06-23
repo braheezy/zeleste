@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>City s1 Tiny Birds</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --side-width: 360px;
+      --bg: #101419;
+      --panel: #171d24;
+      --panel-2: #202833;
+      --text: #e8edf2;
+      --muted: #97a3b3;
+      --line: #34404d;
+      --accent: #72d87f;
+      --danger: #e35d6a;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    body { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+    header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      background: #0d1116;
+    }
+    h1 { margin: 0; font-size: 14px; letter-spacing: .08em; text-transform: uppercase; }
+    main { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) var(--side-width); }
+    #stageWrap { overflow: auto; padding: 16px; }
+    #stage { position: relative; width: 0; height: 0; transform-origin: top left; image-rendering: pixelated; }
+    #roomImage, #overlay { position: absolute; inset: 0; image-rendering: pixelated; }
+    #side { min-width: 0; overflow: auto; border-left: 1px solid var(--line); background: var(--panel); padding: 12px; }
+    button, select, input {
+      min-height: 30px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: var(--panel-2);
+      color: var(--text);
+      font: inherit;
+    }
+    button { padding: 0 10px; cursor: pointer; }
+    button.primary { border-color: #368955; background: #1f5734; }
+    button.danger { border-color: #79404a; color: #ffd7dd; }
+    input, select { padding: 0 8px; }
+    input[type="number"] { width: 84px; }
+    .spacer { flex: 1; }
+    .status {
+      color: var(--muted);
+      min-width: 220px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    section {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #141a21;
+      padding: 10px;
+      margin-bottom: 12px;
+    }
+    h2 { margin: 0 0 8px; font-size: 12px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+    .row { display: flex; gap: 8px; align-items: center; margin: 7px 0; flex-wrap: wrap; }
+    .row label { color: var(--muted); min-width: 70px; }
+    .row input[type="text"] { flex: 1; min-width: 120px; }
+    .bird-list { display: grid; gap: 6px; max-height: 42vh; overflow: auto; }
+    .bird-item {
+      display: grid;
+      grid-template-columns: 16px minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: #10161d;
+      padding: 7px;
+      cursor: pointer;
+    }
+    .bird-item.selected { border-color: var(--accent); background: #132219; }
+    .swatch { width: 12px; height: 12px; border: 1px solid rgba(255,255,255,.7); border-radius: 50%; }
+    .bird-title, .bird-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bird-title { font-weight: 700; }
+    .bird-meta, .hint { color: var(--muted); font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>s1 Tiny Birds</h1>
+    <button id="addAmbient">Add Ambient</button>
+    <button id="addPuzzle" hidden>Add Puzzle</button>
+    <button id="save" class="primary">Save</button>
+    <label>Zoom <select id="zoom"></select></label>
+    <span class="spacer"></span>
+    <span id="status" class="status"></span>
+  </header>
+  <main>
+    <div id="stageWrap">
+      <div id="stage">
+        <img id="roomImage" alt="">
+        <canvas id="overlay"></canvas>
+      </div>
+    </div>
+    <aside id="side">
+      <section>
+        <h2>Selected</h2>
+        <div class="row"><label>ID</label><input id="birdId" type="text"></div>
+        <div class="row"><label>Role</label><select id="role"></select></div>
+        <div class="row"><label>Color</label><select id="variant"></select></div>
+        <div class="row"><label>Group</label><input id="group" type="number" min="0" max="15" step="1"></div>
+        <div class="row"><label>Direction</label><select id="direction"></select></div>
+        <div class="row"><label>Position</label><input id="x" type="number" step="1"><input id="y" type="number" step="1"></div>
+        <div class="row"><label>Phase</label><input id="phase" type="number" min="0" max="255" step="1"></div>
+        <div class="row"><button id="duplicate">Duplicate</button><button id="delete" class="danger">Delete</button></div>
+        <div class="hint">This tool marks ambient fly-away birds. The puzzle flock uses the cluster origin below.</div>
+      </section>
+      <section>
+        <h2>Puzzle Cluster</h2>
+        <div class="row"><label>Origin</label><input id="clusterX" type="number" step="1"><input id="clusterY" type="number" step="1"></div>
+        <div class="hint">Drag the colored cluster marker to place the crystal-heart puzzle flock origin.</div>
+      </section>
+      <section>
+        <h2>Puzzle Antenna</h2>
+        <div class="row"><label>Enabled</label><input id="antennaEnabled" type="checkbox"></div>
+        <div class="row"><label>Tip</label><input id="antennaX" type="number" step="1"><input id="antennaY" type="number" step="1"></div>
+        <div class="hint">Drag the antenna marker to place the round color-cycling tip on the dish.</div>
+      </section>
+      <section>
+        <h2>Birds</h2>
+        <div id="birdList" class="bird-list"></div>
+      </section>
+    </aside>
+  </main>
+  <script>
+    const state = {
+      image: "",
+      sprite: "",
+      width: 0,
+      height: 0,
+      data: null,
+      variants: [],
+      roles: [],
+      directions: [],
+      selected: -1,
+      zoom: 3,
+      dragging: false,
+      dragTarget: "",
+      dragOffsetX: 0,
+      dragOffsetY: 0,
+      birdSprites: {}
+    };
+    const colors = { cyan: "#8efff4", pink: "#ff8fb0", red: "#ff6f83", blue: "#75a8ff", green: "#78e887", gold: "#ffe36f", yellow: "#fff06f", white: "#f8fbff", purple: "#c483ff" };
+    const variantPalettes = {
+      cyan: [[56, 184, 216, 255], [96, 224, 248, 255], [168, 248, 255, 255]],
+      pink: [[168, 56, 72, 255], [224, 80, 96, 255], [248, 144, 152, 255]],
+      red: [[168, 56, 72, 255], [224, 80, 96, 255], [248, 144, 152, 255]],
+      blue: [[64, 96, 200, 255], [96, 144, 248, 255], [160, 200, 255, 255]],
+      green: [[64, 168, 80, 255], [104, 224, 104, 255], [176, 248, 152, 255]],
+      gold: [[184, 136, 40, 255], [232, 192, 72, 255], [248, 232, 144, 255]],
+      yellow: [[184, 136, 40, 255], [232, 192, 72, 255], [248, 232, 144, 255]],
+      white: [[184, 208, 224, 255], [224, 240, 248, 255], [255, 255, 255, 255]],
+      purple: [[80, 32, 144, 255], [144, 72, 216, 255], [216, 152, 248, 255]]
+    };
+    const puzzleClusterBirds = [
+      { variant: "white", offsetX: -1, offsetY: -2, dx: 0, dy: -42 },
+      { variant: "purple", offsetX: 2, offsetY: -1, dx: -48, dy: 0 },
+      { variant: "blue", offsetX: -2, offsetY: 1, dx: 40, dy: 40 },
+      { variant: "red", offsetX: 1, offsetY: 2, dx: 40, dy: -40 },
+      { variant: "yellow", offsetX: 0, offsetY: 0, dx: -40, dy: -40 }
+    ];
+    const antennaSequence = ["white", "purple", "blue", "red", "purple", "yellow"];
+    const antennaTipRows = [
+      { y: 1, x: 3, w: 2 },
+      { y: 2, x: 1, w: 6 },
+      { y: 3, x: 0, w: 8 },
+      { y: 4, x: 0, w: 8 },
+      { y: 5, x: 1, w: 6 },
+      { y: 6, x: 3, w: 2 }
+    ];
+    const els = {
+      roomImage: document.getElementById("roomImage"), overlay: document.getElementById("overlay"), stage: document.getElementById("stage"),
+      status: document.getElementById("status"), zoom: document.getElementById("zoom"), birdList: document.getElementById("birdList"),
+      birdId: document.getElementById("birdId"), role: document.getElementById("role"), variant: document.getElementById("variant"),
+      group: document.getElementById("group"), direction: document.getElementById("direction"), x: document.getElementById("x"),
+      y: document.getElementById("y"), phase: document.getElementById("phase"), addAmbient: document.getElementById("addAmbient"),
+      clusterX: document.getElementById("clusterX"), clusterY: document.getElementById("clusterY"),
+      antennaEnabled: document.getElementById("antennaEnabled"), antennaX: document.getElementById("antennaX"), antennaY: document.getElementById("antennaY"),
+      addPuzzle: document.getElementById("addPuzzle"), duplicate: document.getElementById("duplicate"), delete: document.getElementById("delete"),
+      save: document.getElementById("save")
+    };
+
+    async function load() {
+      const response = await fetch("/api/city-s1-tiny-birds");
+      const payload = await response.json();
+      if (!payload.ok) throw new Error(payload.error || "load failed");
+      state.image = payload.image; state.sprite = payload.sprite; state.width = payload.width; state.height = payload.height; state.data = payload.data;
+      state.variants = payload.variants; state.roles = payload.roles; state.directions = payload.directions;
+      ensureDataShape(); fillSelects(); fillZoom();
+      await loadBirdSprites(state.sprite);
+      els.roomImage.src = "/" + state.image; els.roomImage.width = state.width; els.roomImage.height = state.height;
+      els.overlay.width = state.width; els.overlay.height = state.height;
+      els.stage.style.width = state.width + "px"; els.stage.style.height = state.height + "px";
+      setZoom(state.zoom); state.selected = state.data.birds.length ? 0 : -1; render();
+      setStatus("Loaded " + payload.path);
+    }
+
+    function ensureDataShape() {
+      state.data.version = 1; state.data.id ||= "city_s1_tiny_birds"; state.data.chapter ||= "1_city"; state.data.room ||= "s1"; state.data.image ||= state.image;
+      if (!state.data.puzzleCluster || typeof state.data.puzzleCluster !== "object") state.data.puzzleCluster = { x: 216, y: 66 };
+      if (!state.data.puzzleAntennaTip || typeof state.data.puzzleAntennaTip !== "object") state.data.puzzleAntennaTip = { enabled: false, x: 216, y: 66 };
+      normalizePuzzleCluster();
+      normalizeAntennaTip();
+      if (!Array.isArray(state.data.birds)) state.data.birds = [];
+      state.data.birds.forEach((bird, index) => normalizeBird(bird, index));
+    }
+
+    function normalizePuzzleCluster() {
+      const cluster = state.data.puzzleCluster;
+      cluster.x = clampInt(cluster.x, 0, state.width - 1, 216);
+      cluster.y = clampInt(cluster.y, 0, state.height - 1, 66);
+    }
+
+    function normalizeAntennaTip() {
+      const tip = state.data.puzzleAntennaTip;
+      tip.enabled = tip.enabled === true;
+      tip.x = clampInt(tip.x, 0, state.width - 1, 216);
+      tip.y = clampInt(tip.y, 0, state.height - 1, 66);
+    }
+
+    function normalizeBird(bird, index) {
+      bird.id ||= "bird_" + index; bird.role ||= "ambient"; bird.variant ||= "gold"; bird.direction ||= "up";
+      bird.group = clampInt(bird.group, 0, 15, 0);
+      bird.x = clampInt(bird.x, 0, state.width - 1, Math.floor(state.width / 2));
+      bird.y = clampInt(bird.y, 0, state.height - 1, Math.floor(state.height / 2));
+      bird.phase = clampInt(bird.phase, 0, 255, index * 7);
+    }
+
+    function fillSelects() { fillOptions(els.role, state.roles); fillOptions(els.variant, state.variants); fillOptions(els.direction, state.directions); }
+    function fillOptions(select, values) {
+      select.innerHTML = "";
+      values.forEach((value) => { const option = document.createElement("option"); option.value = value; option.textContent = value; select.appendChild(option); });
+    }
+    function fillZoom() {
+      [1,2,3,4,5,6,8].forEach((value) => { const option = document.createElement("option"); option.value = value; option.textContent = value + "x"; if (value === state.zoom) option.selected = true; els.zoom.appendChild(option); });
+    }
+    function setZoom(value) {
+      state.zoom = Number(value); els.stage.style.transform = "scale(" + state.zoom + ")";
+      els.stage.style.marginRight = (state.width * (state.zoom - 1)) + "px"; els.stage.style.marginBottom = (state.height * (state.zoom - 1)) + "px";
+    }
+    function render() { renderList(); renderForm(); renderClusterForm(); renderAntennaForm(); renderCanvas(); }
+    function renderList() {
+      els.birdList.innerHTML = "";
+      state.data.birds.forEach((bird, index) => {
+        const item = document.createElement("div"); item.className = "bird-item" + (index === state.selected ? " selected" : "");
+        item.addEventListener("click", () => { state.selected = index; render(); });
+        const swatch = document.createElement("div"); swatch.className = "swatch"; swatch.style.background = colors[bird.variant] || "#fff";
+        const text = document.createElement("div");
+        const title = document.createElement("div"); title.className = "bird-title"; title.textContent = bird.id;
+        const meta = document.createElement("div"); meta.className = "bird-meta"; meta.textContent = bird.role + " " + bird.variant + " group " + bird.group + " (" + bird.x + "," + bird.y + ")";
+        text.append(title, meta);
+        const enabled = document.createElement("input"); enabled.type = "checkbox"; enabled.checked = bird.enabled !== false;
+        enabled.addEventListener("click", (event) => event.stopPropagation());
+        enabled.addEventListener("change", () => { bird.enabled = enabled.checked; render(); });
+        item.append(swatch, text, enabled); els.birdList.appendChild(item);
+      });
+    }
+    function renderForm() {
+      const bird = selectedBird(); const disabled = !bird;
+      [els.birdId, els.role, els.variant, els.group, els.direction, els.x, els.y, els.phase, els.duplicate, els.delete].forEach((el) => { el.disabled = disabled; });
+      if (!bird) { els.birdId.value = ""; return; }
+      els.birdId.value = bird.id; els.role.value = bird.role; els.variant.value = bird.variant; els.group.value = bird.group;
+      els.direction.value = bird.direction; els.x.value = bird.x; els.y.value = bird.y; els.phase.value = bird.phase;
+    }
+    function renderClusterForm() {
+      normalizePuzzleCluster();
+      els.clusterX.value = state.data.puzzleCluster.x;
+      els.clusterY.value = state.data.puzzleCluster.y;
+    }
+    function renderAntennaForm() {
+      normalizeAntennaTip();
+      els.antennaEnabled.checked = state.data.puzzleAntennaTip.enabled;
+      els.antennaX.value = state.data.puzzleAntennaTip.x;
+      els.antennaY.value = state.data.puzzleAntennaTip.y;
+    }
+    function renderCanvas() {
+      const ctx = els.overlay.getContext("2d"); ctx.clearRect(0, 0, state.width, state.height);
+      state.data.birds.forEach((bird, index) => {
+        const selected = index === state.selected; const color = colors[bird.variant] || "#fff";
+        ctx.save();
+        ctx.globalAlpha = bird.enabled === false ? 0.4 : 1;
+        const sprite = state.birdSprites[bird.variant];
+        if (sprite) {
+          ctx.drawImage(sprite, bird.x, bird.y);
+        } else {
+          ctx.fillStyle = color;
+          ctx.fillRect(bird.x, bird.y, 8, 8);
+        }
+        ctx.globalAlpha = 1;
+        if (bird.role === "puzzle") {
+          ctx.strokeStyle = "#ffffff";
+          ctx.strokeRect(bird.x - 1, bird.y - 1, 10, 10);
+        }
+        if (selected) {
+          ctx.strokeStyle = "#72d87f";
+          ctx.strokeRect(bird.x - 2, bird.y - 2, 12, 12);
+        }
+        ctx.fillStyle = "#fff"; ctx.font = "8px monospace"; ctx.fillText(String(bird.group), bird.x + 10, bird.y + 3); ctx.restore();
+      });
+      drawPuzzleCluster(ctx);
+      drawAntennaTip(ctx);
+    }
+    function drawPuzzleCluster(ctx) {
+      const cluster = state.data.puzzleCluster;
+      if (!cluster) return;
+      const selected = state.selected === -2;
+      ctx.save();
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.82;
+      puzzleClusterBirds.forEach((bird) => {
+        const startX = cluster.x + bird.offsetX + 4;
+        const startY = cluster.y + bird.offsetY + 4;
+        const endX = cluster.x + bird.dx + 4;
+        const endY = cluster.y + bird.dy + 4;
+        ctx.strokeStyle = colors[bird.variant] || "#fff";
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(endX, endY);
+        ctx.stroke();
+      });
+      ctx.globalAlpha = 1;
+      puzzleClusterBirds.forEach((bird) => {
+        const sprite = state.birdSprites[bird.variant];
+        const x = cluster.x + bird.offsetX;
+        const y = cluster.y + bird.offsetY;
+        if (sprite) {
+          ctx.drawImage(sprite, x, y);
+        } else {
+          ctx.fillStyle = colors[bird.variant] || "#fff";
+          ctx.fillRect(x, y, 8, 8);
+        }
+      });
+      ctx.strokeStyle = selected ? "#72d87f" : "#ffffff";
+      ctx.strokeRect(cluster.x - 4, cluster.y - 4, 16, 16);
+      ctx.fillStyle = "#fff";
+      ctx.font = "8px monospace";
+      ctx.fillText("puzzle", cluster.x + 14, cluster.y - 3);
+      ctx.restore();
+    }
+    function drawAntennaTip(ctx) {
+      const tip = state.data.puzzleAntennaTip;
+      if (!tip) return;
+      const selected = state.selected === -3;
+      ctx.save();
+      ctx.globalAlpha = tip.enabled ? 1 : 0.45;
+      antennaSequence.forEach((variant, index) => {
+        const x = tip.x + index * 6 - 17;
+        const y = tip.y - 14;
+        ctx.fillStyle = colors[variant] || "#fff";
+        ctx.beginPath();
+        ctx.arc(x, y, 2, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      const activeColor = colors[antennaSequence[0]] || "#fff";
+      drawAntennaTipShape(ctx, tip.x - 4, tip.y - 4, activeColor);
+      ctx.strokeStyle = selected ? "#72d87f" : "#ffffff";
+      ctx.strokeRect(tip.x - 5, tip.y - 4, 10, 8);
+      ctx.fillStyle = "#fff";
+      ctx.font = "8px monospace";
+      ctx.fillText(tip.enabled ? "antenna" : "antenna off", tip.x + 8, tip.y - 5);
+      ctx.restore();
+    }
+    function drawAntennaTipShape(ctx, x, y, color) {
+      ctx.fillStyle = color;
+      antennaTipRows.forEach((row) => ctx.fillRect(x + row.x, y + row.y, row.w, 1));
+    }
+    async function loadBirdSprites(spritePath) {
+      const image = await loadImage("/" + spritePath);
+      const sourceCanvas = document.createElement("canvas");
+      sourceCanvas.width = image.width;
+      sourceCanvas.height = image.height;
+      const sourceCtx = sourceCanvas.getContext("2d");
+      sourceCtx.imageSmoothingEnabled = false;
+      sourceCtx.drawImage(image, 0, 0);
+      const source = sourceCtx.getImageData(0, 0, image.width, image.height);
+      const sprites = {};
+      Object.entries(variantPalettes).forEach(([variant, palette]) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const ctx = canvas.getContext("2d");
+        const output = ctx.createImageData(image.width, image.height);
+        for (let offset = 0; offset < source.data.length; offset += 4) {
+          const alpha = source.data[offset + 3];
+          if (alpha === 0) continue;
+          const shade = shadeFor(source.data[offset], source.data[offset + 1], source.data[offset + 2]);
+          const color = palette[shade];
+          output.data[offset] = color[0];
+          output.data[offset + 1] = color[1];
+          output.data[offset + 2] = color[2];
+          output.data[offset + 3] = color[3];
+        }
+        ctx.putImageData(output, 0, 0);
+        sprites[variant] = canvas;
+      });
+      state.birdSprites = sprites;
+    }
+    function loadImage(src) {
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error("failed to load " + src));
+        image.src = src;
+      });
+    }
+    function pixelLuma(r, g, b) { return Math.floor((r * 30 + g * 59 + b * 11) / 100); }
+    function shadeFor(r, g, b) {
+      const luma = pixelLuma(r, g, b);
+      if (luma < 235) return 0;
+      if (luma < 250) return 1;
+      return 2;
+    }
+    function selectedBird() { return state.selected < 0 || state.selected >= state.data.birds.length ? null : state.data.birds[state.selected]; }
+    function addBird(role, point) {
+      const x = point ? point.x - 4 : Math.floor(state.width / 2);
+      const y = point ? point.y - 4 : Math.floor(state.height / 2);
+      const bird = {
+        id: role + "_" + state.data.birds.length,
+        role,
+        x: clampInt(x, 0, state.width - 1, 0),
+        y: clampInt(y, 0, state.height - 1, 0),
+        variant: role === "puzzle" ? "blue" : "gold",
+        group: nextGroup(role),
+        direction: "up",
+        phase: state.data.birds.length * 7
+      };
+      state.data.birds.push(bird); state.selected = state.data.birds.length - 1; render();
+      return bird;
+    }
+    function nextGroup(role) {
+      let maxGroup = -1; state.data.birds.forEach((bird) => { if (bird.role === role) maxGroup = Math.max(maxGroup, Number(bird.group) || 0); });
+      return Math.min(maxGroup + 1, 15);
+    }
+    function duplicateBird() {
+      const bird = selectedBird(); if (!bird) return;
+      const copy = JSON.parse(JSON.stringify(bird)); copy.id = bird.id + "_copy"; copy.x = Math.min(state.width - 1, copy.x + 8); copy.y = Math.min(state.height - 1, copy.y + 8);
+      state.data.birds.push(copy); state.selected = state.data.birds.length - 1; render();
+    }
+    function deleteBird() { if (state.selected < 0) return; state.data.birds.splice(state.selected, 1); state.selected = Math.min(state.selected, state.data.birds.length - 1); render(); }
+    function updateSelectedFromForm() {
+      const bird = selectedBird(); if (!bird) return;
+      bird.id = els.birdId.value.trim() || "bird_" + state.selected; bird.role = els.role.value; bird.variant = els.variant.value;
+      bird.group = clampInt(els.group.value, 0, 15, 0); bird.direction = els.direction.value;
+      bird.x = clampInt(els.x.value, 0, state.width - 1, 0); bird.y = clampInt(els.y.value, 0, state.height - 1, 0); bird.phase = clampInt(els.phase.value, 0, 255, 0); render();
+    }
+    function updateClusterFromForm() {
+      state.data.puzzleCluster.x = clampInt(els.clusterX.value, 0, state.width - 1, 216);
+      state.data.puzzleCluster.y = clampInt(els.clusterY.value, 0, state.height - 1, 66);
+      state.selected = -2;
+      render();
+    }
+    function updateAntennaFromForm() {
+      state.data.puzzleAntennaTip.enabled = els.antennaEnabled.checked;
+      state.data.puzzleAntennaTip.x = clampInt(els.antennaX.value, 0, state.width - 1, 216);
+      state.data.puzzleAntennaTip.y = clampInt(els.antennaY.value, 0, state.height - 1, 66);
+      state.selected = -3;
+      render();
+    }
+    async function save() {
+      normalizeForSave();
+      const response = await fetch("/api/city-s1-tiny-birds/save", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ data: state.data }) });
+      const payload = await response.json(); setStatus(payload.ok ? "Saved " + payload.path : payload.error || "save failed");
+    }
+    function normalizeForSave() { normalizePuzzleCluster(); normalizeAntennaTip(); state.data.birds.forEach((bird, index) => normalizeBird(bird, index)); }
+    function canvasPoint(event) {
+      const rect = els.overlay.getBoundingClientRect();
+      return { x: Math.floor((event.clientX - rect.left) / state.zoom), y: Math.floor((event.clientY - rect.top) / state.zoom) };
+    }
+    function pickBird(point) {
+      for (let index = state.data.birds.length - 1; index >= 0; index--) {
+        const bird = state.data.birds[index];
+        if (point.x >= bird.x - 3 && point.x <= bird.x + 10 && point.y >= bird.y - 3 && point.y <= bird.y + 10) return index;
+      }
+      return -1;
+    }
+    function pickPuzzleCluster(point) {
+      const cluster = state.data.puzzleCluster;
+      return cluster &&
+        point.x >= cluster.x - 5 &&
+        point.x <= cluster.x + 13 &&
+        point.y >= cluster.y - 5 &&
+        point.y <= cluster.y + 13;
+    }
+    function pickAntennaTip(point) {
+      const tip = state.data.puzzleAntennaTip;
+      return tip &&
+        point.x >= tip.x - 7 &&
+        point.x <= tip.x + 7 &&
+        point.y >= tip.y - 7 &&
+        point.y <= tip.y + 7;
+    }
+    function clampInt(value, min, max, fallback) { const parsed = Number.parseInt(value, 10); return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback; }
+    function setStatus(message) { els.status.textContent = message; }
+    els.addAmbient.addEventListener("click", () => addBird("ambient")); els.addPuzzle.addEventListener("click", () => addBird("puzzle"));
+    els.duplicate.addEventListener("click", duplicateBird); els.delete.addEventListener("click", deleteBird); els.save.addEventListener("click", save);
+    els.zoom.addEventListener("change", () => setZoom(els.zoom.value));
+    [els.birdId, els.role, els.variant, els.group, els.direction, els.x, els.y, els.phase].forEach((el) => { el.addEventListener("input", updateSelectedFromForm); el.addEventListener("change", updateSelectedFromForm); });
+    [els.clusterX, els.clusterY].forEach((el) => { el.addEventListener("input", updateClusterFromForm); el.addEventListener("change", updateClusterFromForm); });
+    [els.antennaEnabled, els.antennaX, els.antennaY].forEach((el) => { el.addEventListener("input", updateAntennaFromForm); el.addEventListener("change", updateAntennaFromForm); });
+    els.overlay.addEventListener("pointerdown", (event) => {
+      const point = canvasPoint(event); const index = pickBird(point);
+      if (pickAntennaTip(point)) {
+        const tip = state.data.puzzleAntennaTip;
+        tip.enabled = true;
+        state.selected = -3;
+        state.dragging = true;
+        state.dragTarget = "antenna";
+        state.dragOffsetX = point.x - tip.x;
+        state.dragOffsetY = point.y - tip.y;
+        els.overlay.setPointerCapture(event.pointerId);
+        render();
+        return;
+      }
+      if (pickPuzzleCluster(point)) {
+        const cluster = state.data.puzzleCluster;
+        state.selected = -2;
+        state.dragging = true;
+        state.dragTarget = "cluster";
+        state.dragOffsetX = point.x - cluster.x;
+        state.dragOffsetY = point.y - cluster.y;
+        els.overlay.setPointerCapture(event.pointerId);
+        render();
+        return;
+      }
+      if (index < 0) {
+        addBird("ambient", point);
+        state.dragging = true;
+        state.dragTarget = "bird";
+        state.dragOffsetX = 4;
+        state.dragOffsetY = 4;
+        els.overlay.setPointerCapture(event.pointerId);
+        setStatus("Added ambient bird");
+        return;
+      }
+      state.selected = index; const bird = selectedBird(); state.dragging = true; state.dragTarget = "bird"; state.dragOffsetX = point.x - bird.x; state.dragOffsetY = point.y - bird.y;
+      els.overlay.setPointerCapture(event.pointerId); render();
+    });
+    els.overlay.addEventListener("pointermove", (event) => {
+      if (!state.dragging) return;
+      const point = canvasPoint(event);
+      if (state.dragTarget === "antenna") {
+        state.data.puzzleAntennaTip.enabled = true;
+        state.data.puzzleAntennaTip.x = clampInt(point.x - state.dragOffsetX, 0, state.width - 1, state.data.puzzleAntennaTip.x);
+        state.data.puzzleAntennaTip.y = clampInt(point.y - state.dragOffsetY, 0, state.height - 1, state.data.puzzleAntennaTip.y);
+        render();
+        return;
+      }
+      if (state.dragTarget === "cluster") {
+        state.data.puzzleCluster.x = clampInt(point.x - state.dragOffsetX, 0, state.width - 1, state.data.puzzleCluster.x);
+        state.data.puzzleCluster.y = clampInt(point.y - state.dragOffsetY, 0, state.height - 1, state.data.puzzleCluster.y);
+        render();
+        return;
+      }
+      const bird = selectedBird(); if (!bird) return;
+      bird.x = clampInt(point.x - state.dragOffsetX, 0, state.width - 1, bird.x); bird.y = clampInt(point.y - state.dragOffsetY, 0, state.height - 1, bird.y); render();
+    });
+    els.overlay.addEventListener("pointerup", () => { state.dragging = false; state.dragTarget = ""; });
+    els.overlay.addEventListener("pointercancel", () => { state.dragging = false; state.dragTarget = ""; });
+    load().catch((error) => setStatus(error.message));
+  </script>
+</body>
+</html>

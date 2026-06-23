@@ -25,6 +25,12 @@ pub fn loadObjectGraphics(room_index: usize) void {
     city.entities.loadObjectGraphics(room_index);
 }
 
+pub fn hideInactiveObjects(room_index: usize) void {
+    if (!isCityRoom(room_index)) return;
+
+    city.entities.hideInactiveObjects();
+}
+
 pub fn updateDynamicHazards(player: *Player, room_index: usize) ?PlayerDeathCause {
     if (!isCityRoom(room_index)) return null;
 
