@@ -1020,7 +1020,7 @@ const soundbank_sfx_files = [_][]const u8{
     "assets/audio/sfx/movers/zipmover_b_impact_01_001.wav",
     "assets/audio/sfx/movers/zipmover_c_return_01_001.wav",
     "assets/audio/sfx/movers/zipmover_d_reset_01_001.wav",
-    "assets/audio/raw/sfx/birds/squawk.wav",
+    "assets/audio/sfx/birds/squawk.wav",
 };
 
 const StartArgs = struct {
