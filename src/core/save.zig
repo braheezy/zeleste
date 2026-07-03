@@ -53,6 +53,9 @@ const fnv_offset_basis: u32 = 2166136261;
 const fnv_prime: u32 = 16777619;
 const strawberry_record_bytes: usize = 8;
 const cassette_record_bytes: usize = 8;
+const death_count_bits = 16;
+const death_count_mask: u32 = 0xffff;
+const packed_death_chapter_count: u8 = 2;
 pub const max_chapter_area_count: usize = 3;
 
 const SaveSlot = struct {
@@ -103,6 +106,7 @@ pub const ChapterStats = struct {
     crystal_heart_collected: bool = false,
     golden_strawberry_collected: bool = false,
     playtime_frames: u32 = 0,
+    deaths: u32 = 0,
 };
 
 pub const ChapterAreaSummary = struct {
@@ -234,15 +238,20 @@ pub fn restartChapterRunForRoom(room_index: usize) void {
     writeNextCopy();
 }
 
-pub fn noteDeathInRoom(_: usize) void {
-    noteDeath();
+pub fn noteDeathInRoom(room_index: usize) void {
+    noteDeathForChapter(chapterForRoom(room_index));
 }
 
 pub fn noteDeath() void {
     ensureInitialized();
+    noteDeathForChapter(activeSlot().current_chapter);
+}
+
+fn noteDeathForChapter(chapter: u8) void {
+    ensureInitialized();
     var slot = activeSlotPtr();
     slot.exists = true;
-    if (slot.total_deaths != 0xffffffff) slot.total_deaths += 1;
+    incrementChapterDeathCount(slot, chapter);
     if (current_run_deaths != 0xffff) current_run_deaths += 1;
 }
 
@@ -392,7 +401,8 @@ pub fn setAudioDebugEnabled(enabled: bool) void {
 }
 
 pub fn totalDeaths() u32 {
-    return activeSlot().total_deaths;
+    ensureInitialized();
+    return totalDeathsForSlot(activeSlot());
 }
 
 pub fn completedChapters() u32 {
@@ -440,7 +450,7 @@ fn summaryForSlot(slot: SaveSlot) SlotSummary {
         .has_session = slot.has_session,
         .current_chapter = slot.current_chapter,
         .current_room_index = slot.current_room_index,
-        .total_deaths = slot.total_deaths,
+        .total_deaths = totalDeathsForSlot(&slot),
         .playtime_frames = slot.playtime_frames,
         .unlocked_chapters = slot.unlocked_chapters,
         .completed_chapters = slot.completed_chapters,
@@ -553,6 +563,7 @@ fn chapterAreaDefs(chapter: u8) []const ChapterAreaDef {
 fn chapterStatsForSlot(slot: *const SaveSlot, chapter: u8) ChapterStats {
     var stats: ChapterStats = .{
         .playtime_frames = chapterPlaytimeForSlot(slot, chapter),
+        .deaths = chapterDeathsForSlot(slot, chapter),
     };
     stats.golden_strawberry_collected = goldenStrawberryCollectedForChapter(slot, chapter);
     var room_index: usize = 0;
@@ -563,6 +574,35 @@ fn chapterStatsForSlot(slot: *const SaveSlot, chapter: u8) ChapterStats {
         if (crystalHeartCollectedForRoom(slot, room_index)) stats.crystal_heart_collected = true;
     }
     return stats;
+}
+
+fn chapterDeathsForSlot(slot: *const SaveSlot, chapter: u8) u32 {
+    if (chapter < packed_death_chapter_count) return packedDeathCount(slot.total_deaths, chapter);
+    return 0;
+}
+
+fn totalDeathsForSlot(slot: *const SaveSlot) u32 {
+    var total: u32 = 0;
+    var chapter: u8 = 0;
+    while (chapter < packed_death_chapter_count) : (chapter += 1) {
+        total += packedDeathCount(slot.total_deaths, chapter);
+    }
+    return total;
+}
+
+fn incrementChapterDeathCount(slot: *SaveSlot, chapter: u8) void {
+    if (chapter >= packed_death_chapter_count) return;
+    const count = packedDeathCount(slot.total_deaths, chapter);
+    if (count >= death_count_mask) return;
+    slot.total_deaths += @as(u32, 1) << deathCountShift(chapter);
+}
+
+fn packedDeathCount(value: u32, chapter: u8) u32 {
+    return (value >> deathCountShift(chapter)) & death_count_mask;
+}
+
+fn deathCountShift(chapter: u8) u5 {
+    return @intCast(@as(u16, chapter) * death_count_bits);
 }
 
 fn chapterPlaytimeForSlot(slot: *const SaveSlot, chapter: u8) u32 {

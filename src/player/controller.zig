@@ -36,9 +36,11 @@ const player_jump_speed = player_mod.jump_speed;
 const player_wall_jump_speed = player_mod.wall_jump_speed;
 const player_wall_jump_h_speed = player_mod.wall_jump_h_speed;
 const player_wall_jump_force_frames = player_mod.wall_jump_force_frames;
+const player_super_dash_speed = player_mod.super_dash_speed;
 const player_dash_speed = player_mod.dash_speed;
 const player_dash_end_speed = player_mod.dash_end_speed;
 const player_dash_frames = player_mod.dash_frames;
+const player_dash_buffer_frames = player_mod.dash_buffer_frames;
 const player_dash_cooldown_frames = player_mod.dash_cooldown_frames;
 const player_dash_refill_cooldown_frames = player_mod.dash_refill_cooldown_frames;
 const player_dash_effect_frames = player_mod.dash_effect_frames;
@@ -109,6 +111,8 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
     const vertical: i16 = @intCast(input.getAxisVertical());
     const grab_held = input.isPressed(.L) or input.isPressed(.R);
     const dash_pressed = input.isJustPressed(.B);
+    const jump_pressed = input.isJustPressed(.A);
+    const jump_held = input.isPressed(.A);
     if (player.room_transition_cooldown > 0) {
         player.room_transition_cooldown -= 1;
     }
@@ -159,11 +163,22 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
     }
 
     if (player.dash_timer > 0) {
+        updateJumpBuffer(player, jump_pressed);
+        if (tryStartSuperDash(player, horizontal, room_index, player.grounded)) {
+            updatePostTechMovement(player, room_index, false, landing_dust_air_frames, false, 0);
+            return;
+        }
         updateDashMovement(player, room_index);
         return;
     }
 
+    const grounded_for_dash_tech = was_grounded or player.coyote_timer > 0;
     if (dash_pressed and tryStartDash(player, horizontal, vertical, dash_unlocked)) {
+        updateJumpBuffer(player, jump_pressed);
+        if (tryStartSuperDash(player, horizontal, room_index, grounded_for_dash_tech)) {
+            updatePostTechMovement(player, room_index, was_grounded, landing_dust_air_frames, grab_held, vertical);
+            return;
+        }
         updateDashMovement(player, room_index);
         return;
     }
@@ -173,14 +188,7 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
         player.facing_left = horizontal < 0;
     }
 
-    const jump_pressed = input.isJustPressed(.A);
-    const jump_held = input.isPressed(.A);
-
-    if (jump_pressed) {
-        player.jump_buffer_timer = player_jump_buffer_frames;
-    } else if (player.jump_buffer_timer > 0) {
-        player.jump_buffer_timer -= 1;
-    }
+    updateJumpBuffer(player, jump_pressed);
 
     if (player.grounded) {
         player.coyote_timer = player_coyote_frames;
@@ -188,6 +196,12 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
     } else if (player.coyote_timer > 0) {
         player.coyote_timer -= 1;
     }
+
+    if (tryStartSuperDash(player, horizontal, room_index, player.grounded or player.coyote_timer > 0)) {
+        updatePostTechMovement(player, room_index, was_grounded, landing_dust_air_frames, grab_held, vertical);
+        return;
+    }
+    tickDashBuffer(player);
 
     const effective_horizontal: i16 = if (player.force_move_x_timer > 0) player.force_move_x else horizontal;
     updateHorizontalSpeed(player, effective_horizontal);
@@ -297,6 +311,77 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
         updateVerticalSpeed(player, jump_held, input.isPressed(.down), effective_horizontal, room_index);
     }
 
+    updatePostTechMovement(player, room_index, was_grounded, landing_dust_air_frames, grab_held, vertical);
+}
+
+fn updateJumpBuffer(player: *Player, jump_pressed: bool) void {
+    if (jump_pressed) {
+        player.jump_buffer_timer = player_jump_buffer_frames;
+    } else if (player.jump_buffer_timer > 0) {
+        player.jump_buffer_timer -= 1;
+    }
+}
+
+fn tryStartSuperDash(player: *Player, horizontal: i16, room_index: usize, grounded_for_super: bool) bool {
+    if (player.jump_buffer_timer == 0) return false;
+    if (!grounded_for_super) return false;
+    if (player.dash_timer == 0 and player.dash_buffer_timer == 0) return false;
+    if (player.dash_dir_x == 0 or player.dash_dir_y != 0) return false;
+
+    const dir: i16 = if (horizontal != 0) horizontal else player.dash_dir_x;
+    chapter_systems.releaseActorAtPlayer(room_index, player.*);
+    dust.spawnJumpAtFeet(player.*);
+    player_sfx.playJump();
+
+    player.vx = @as(i32, dir) * player_super_dash_speed;
+    player.vy = player_jump_speed;
+    applyLiftBoostToJump(player);
+    player.var_jump_speed = player.vy;
+    player.var_jump_timer = player_var_jump_frames;
+
+    player.jump_buffer_timer = 0;
+    player.coyote_timer = 0;
+    player.dash_timer = 0;
+    player.dash_buffer_timer = 0;
+    player.dash_dir_x = 0;
+    player.dash_dir_y = 0;
+    player.dash_effect_timer = 0;
+    player.dash_trail_timer = 0;
+    player.force_move_x_timer = 0;
+    player.climbing = false;
+    player.climb_dangling = false;
+    player.climb_dir = 0;
+    player.wall_sliding = false;
+    player.grounded = false;
+    player.moving = true;
+    player.facing_left = dir < 0;
+    if (player.dash_refill_cooldown_timer == 0) {
+        refillPlayerDash(player);
+    }
+    return true;
+}
+
+fn tickDashBuffer(player: *Player) void {
+    if (player.dash_buffer_timer == 0) return;
+    player.dash_buffer_timer -= 1;
+    if (player.dash_buffer_timer == 0 and player.dash_timer == 0) {
+        clearDashDirection(player);
+    }
+}
+
+fn clearDashDirection(player: *Player) void {
+    player.dash_dir_x = 0;
+    player.dash_dir_y = 0;
+}
+
+fn updatePostTechMovement(
+    player: *Player,
+    room_index: usize,
+    was_grounded: bool,
+    landing_dust_air_frames: u8,
+    grab_held: bool,
+    vertical: i16,
+) void {
     const previous_x = player.x;
     const vertical_speed_before_move = player.vy;
     moveHorizontal(player, player.vx, room_index);
@@ -344,6 +429,7 @@ pub fn tryStartDash(player: *Player, horizontal: i16, vertical: i16, allow_dash:
 
     player.dashes -= 1;
     player.dash_timer = player_dash_frames;
+    player.dash_buffer_timer = 0;
     player.dash_cooldown_timer = player_dash_cooldown_frames;
     player.dash_refill_cooldown_timer = player_dash_refill_cooldown_frames;
     player.dash_effect_timer = player_dash_effect_frames;
@@ -494,10 +580,15 @@ fn endDash(player: *Player) void {
     if (next_vy < 0) {
         next_vy = fixedMul(next_vy, player_dash_end_up_mult);
     }
+    const keep_horizontal_dash_buffer = player.dash_dir_x != 0 and player.dash_dir_y == 0;
     player.vx = next_vx;
     player.vy = next_vy;
-    player.dash_dir_x = 0;
-    player.dash_dir_y = 0;
+    if (keep_horizontal_dash_buffer) {
+        player.dash_buffer_timer = player_dash_buffer_frames;
+    } else {
+        player.dash_buffer_timer = 0;
+        clearDashDirection(player);
+    }
 }
 
 fn applyBreakableWallImpact(player: *Player, room_index: usize, impact: chapter_entities.BreakableWallImpact) void {
@@ -521,6 +612,7 @@ fn applyBreakableWallImpact(player: *Player, room_index: usize, impact: chapter_
     player.vx = @as(i32, recoil_x) * recoil_speed;
     player.vy = @as(i32, recoil_y) * recoil_speed;
     player.dash_timer = 0;
+    player.dash_buffer_timer = 0;
     player.dash_dir_x = 0;
     player.dash_dir_y = 0;
     player.dash_effect_timer = 0;

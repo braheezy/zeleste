@@ -531,6 +531,7 @@ fn updateWalkToRest(player: *Player, room_index: usize) void {
     player.climb_dangling = false;
     player.climb_dir = 0;
     player.dash_timer = 0;
+    player.dash_buffer_timer = 0;
     player.dash_cooldown_timer = 0;
     player.dash_refill_cooldown_timer = 0;
     player.facing_left = dx < 0;
@@ -565,6 +566,7 @@ fn updateWalkPastFire(player: *Player, room_index: usize) void {
     player.climb_dangling = false;
     player.climb_dir = 0;
     player.dash_timer = 0;
+    player.dash_buffer_timer = 0;
     player.dash_cooldown_timer = 0;
     player.dash_refill_cooldown_timer = 0;
     player.facing_left = false;
@@ -598,6 +600,7 @@ fn holdPlayer(player: *Player) void {
     player.climb_dangling = false;
     player.climb_dir = 0;
     player.dash_timer = 0;
+    player.dash_buffer_timer = 0;
     player.dash_cooldown_timer = 0;
     player.dash_refill_cooldown_timer = 0;
 }

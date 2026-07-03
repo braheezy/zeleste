@@ -199,6 +199,7 @@ fn playerTouchesSpring(player: Player, spring: Spring) bool {
 fn bouncePlayer(player: *Player, spring: Spring) void {
     player.dashes = 1;
     player.dash_timer = 0;
+    player.dash_buffer_timer = 0;
     player.dash_cooldown_timer = 0;
     player.dash_refill_cooldown_timer = 0;
     player.dash_effect_timer = 0;

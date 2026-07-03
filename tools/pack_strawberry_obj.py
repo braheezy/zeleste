@@ -231,7 +231,7 @@ def main() -> int:
 
     if args.score_input is not None:
         score_variants = load_score_frames(args.score_input)
-        score_palette = build_palette_from_frame_lists(score_variants)
+        score_palette = collect_palette
         score_tiles, score_manifest = pack_score_variants(score_variants, score_palette)
         (args.output_dir / f"{args.name}_score_tiles.bin").write_bytes(score_tiles)
         (args.output_dir / f"{args.name}_score_palette.bin").write_bytes(

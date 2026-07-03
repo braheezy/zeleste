@@ -232,6 +232,7 @@ fn lockPlayer(player: *Player) void {
     player.climb_dangling = false;
     player.climb_dir = 0;
     player.dash_timer = 0;
+    player.dash_buffer_timer = 0;
     player.dash_cooldown_timer = 0;
 }
 

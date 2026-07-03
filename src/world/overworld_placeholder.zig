@@ -492,7 +492,6 @@ fn drawSequentialMap() void {
 fn drawChapterPanel() void {
     const chapter = selected_chapter orelse return;
     const stats = save.activeChapterStats(chapter);
-    const summary = save.slotSummary(save.activeSlotIndex());
 
     const x: i16 = 8;
     const y: i16 = 8;
@@ -504,7 +503,7 @@ fn drawChapterPanel() void {
     text.drawSmallLine(setPixel, video.screen_width, "TIME", x + 8, y + 16, panel_muted);
     drawTimeValue(stats.playtime_frames, x + 28, y + 16, panel_text);
     text.drawSmallLine(setPixel, video.screen_width, "DEATHS", x + 78, y + 16, panel_muted);
-    drawNumber(summary.total_deaths, x + 104, y + 16, panel_text);
+    drawNumber(stats.deaths, x + 104, y + 16, panel_text);
 
     text.drawSmallLine(setPixel, video.screen_width, "BERRIES", x + 8, y + 27, panel_muted);
     drawRatio(stats.strawberries, x + 40, y + 27, panel_text);

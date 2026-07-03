@@ -108,6 +108,7 @@ pub fn startEndLevelTransition(player: *Player, camera: Camera) void {
     player.vy = 0;
     player.dashes = 1;
     player.dash_timer = 0;
+    player.dash_buffer_timer = 0;
     player.dash_cooldown_timer = 0;
     player.dash_refill_cooldown_timer = 0;
     player.moving = false;
@@ -140,6 +141,7 @@ fn holdPlayerForBridgeEnding(player: *Player) void {
     player.vy = 0;
     player.dashes = 1;
     player.dash_timer = 0;
+    player.dash_buffer_timer = 0;
     player.dash_cooldown_timer = 0;
     player.dash_refill_cooldown_timer = 0;
     player.grounded = false;

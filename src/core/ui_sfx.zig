@@ -16,6 +16,7 @@ pub const DialogueVoice = enum {
 
 var save_file_roll_index: u8 = 0;
 var save_file_roll_handle: audio.SoundEffectHandle = 0;
+var dialogue_text_handle: audio.SoundEffectHandle = 0;
 var dialogue_madeline_normal_index: u8 = 0;
 var dialogue_madeline_angry_index: u8 = 0;
 var dialogue_madeline_sad_index: u8 = 0;
@@ -94,6 +95,7 @@ pub fn worldChapterSelect() void {
 }
 
 pub fn dialogueBoxIn(madeline: bool) void {
+    cancelDialogueText();
     if (madeline) {
         play(sound_ids.sfx_ui_game_textbox_madeline_in);
     } else {
@@ -102,6 +104,7 @@ pub fn dialogueBoxIn(madeline: bool) void {
 }
 
 pub fn dialogueBoxOut(madeline: bool) void {
+    cancelDialogueText();
     if (madeline) {
         play(sound_ids.sfx_ui_game_textbox_madeline_out);
     } else {
@@ -110,6 +113,7 @@ pub fn dialogueBoxOut(madeline: bool) void {
 }
 
 pub fn dialogueAdvance(madeline: bool) void {
+    cancelDialogueText();
     if (madeline) {
         play(sound_ids.sfx_ui_game_textadvance_madeline);
     } else {
@@ -118,8 +122,9 @@ pub fn dialogueAdvance(madeline: bool) void {
 }
 
 pub fn dialogueText(voice: DialogueVoice) void {
-    const handle = audio.playSoundEffect(dialogueTextSound(voice));
-    if (handle != 0) audio.setSoundEffectVolume(handle, dialogue_text_volume);
+    cancelDialogueText();
+    dialogue_text_handle = audio.playSoundEffect(dialogueTextSound(voice));
+    if (dialogue_text_handle != 0) audio.setSoundEffectVolume(dialogue_text_handle, dialogue_text_volume);
 }
 
 fn play(sound_id: u16) void {
@@ -130,6 +135,12 @@ fn cancelSaveFileRoll() void {
     if (save_file_roll_handle == 0) return;
     _ = audio.cancelSoundEffect(save_file_roll_handle);
     save_file_roll_handle = 0;
+}
+
+fn cancelDialogueText() void {
+    if (dialogue_text_handle == 0) return;
+    _ = audio.cancelSoundEffect(dialogue_text_handle);
+    dialogue_text_handle = 0;
 }
 
 fn dialogueTextSound(voice: DialogueVoice) u16 {

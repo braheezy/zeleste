@@ -35,7 +35,6 @@ const collect_tiles_data align(4) = assets.strawberry_collect_tiles_data;
 const score_tiles_data align(4) = assets.strawberry_score_tiles_data;
 const palette_data align(4) = assets.strawberry_palette_data;
 const collect_palette_data align(4) = assets.strawberry_collect_palette_data;
-const score_palette_data align(4) = assets.strawberry_score_palette_data;
 const ghost_idle_tiles_data align(4) = assets.ghostberry_idle_tiles_data;
 const ghost_flap_tiles_data align(4) = assets.ghostberry_flap_tiles_data;
 const ghost_collect_tiles_data align(4) = assets.ghostberry_collect_tiles_data;
@@ -58,7 +57,6 @@ const carry_trail_spacing_frames = 4;
 const carry_anchor_y_offset_px = -10;
 const palette_bank: u4 = 8;
 const collect_palette_bank: u4 = 9;
-const score_palette_bank: u4 = 12;
 
 const idle_frame_count: u16 = 36;
 const idle_frame_ticks: u16 = 4;
@@ -187,7 +185,6 @@ var loaded_ghost_collect_frames: [collect_slot_count]u16 = [_]u16{invalid_frame}
 var loaded_score_frames: [score_slot_count]u16 = [_]u16{invalid_frame} ** score_slot_count;
 var loaded_main_palette: PaletteVariant = .invalid;
 var loaded_collect_palette: PaletteVariant = .invalid;
-var loaded_score_palette: bool = false;
 var last_drawn_objects: usize = 0;
 
 pub fn load(room_index: usize) void {
@@ -244,17 +241,14 @@ pub fn loadGraphics() void {
     if (!hasVisibleSprites()) return;
     loaded_main_palette = .invalid;
     loaded_collect_palette = .invalid;
-    loaded_score_palette = false;
     loadMainPalette(mainPaletteVariant());
     loadCollectPalette(collectPaletteVariant());
-    if (score_effect_count > 0) loadScorePalette();
     invalidateFrames();
 }
 
 pub fn invalidateGraphics() void {
     loaded_main_palette = .invalid;
     loaded_collect_palette = .invalid;
-    loaded_score_palette = false;
     invalidateFrames();
 }
 
@@ -277,7 +271,6 @@ pub fn draw(camera: Camera, anim_counter: u16) void {
     if (!hasVisibleSprites() and last_drawn_objects == 0) return;
     loadMainPalette(mainPaletteVariant());
     loadCollectPalette(collectPaletteVariant());
-    if (score_effect_count > 0) loadScorePalette();
 
     var object_offset: usize = 0;
 
@@ -461,12 +454,6 @@ fn loadCollectPalette(variant: PaletteVariant) void {
         gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, collect_palette_bank) * 16], @ptrCast(&collect_palette_data), 16);
     }
     loaded_collect_palette = desired;
-}
-
-fn loadScorePalette() void {
-    if (loaded_score_palette) return;
-    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, score_palette_bank) * 16], @ptrCast(&score_palette_data), 16);
-    loaded_score_palette = true;
 }
 
 fn pickupLoaded(player: Player) void {
@@ -846,7 +833,7 @@ fn drawScoreObject(object_index: usize, center_x: i16, center_y: i16, variant: u
         .y = objY(y),
         .base_tile = scoreSlotBase(slot_index),
         .priority = 1,
-        .palette = score_palette_bank,
+        .palette = collect_palette_bank,
     });
     return true;
 }

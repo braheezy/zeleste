@@ -24,7 +24,6 @@ pub const strawberry_collect_tiles_data align(4) = @embedFile("../generated/asse
 pub const strawberry_score_tiles_data align(4) = @embedFile("../generated/assets/entities/strawberry/strawberry_score_tiles.bin").*;
 pub const strawberry_palette_data align(4) = @embedFile("../generated/assets/entities/strawberry/strawberry_palette.bin").*;
 pub const strawberry_collect_palette_data align(4) = @embedFile("../generated/assets/entities/strawberry/strawberry_collect_palette.bin").*;
-pub const strawberry_score_palette_data align(4) = @embedFile("../generated/assets/entities/strawberry/strawberry_score_palette.bin").*;
 pub const strawberry_score_meta = @import("../generated/assets/entities/strawberry/strawberry_score_meta.zig");
 pub const ghostberry_idle_tiles_data align(4) = @embedFile("../generated/assets/entities/ghostberry/ghostberry_idle_tiles.bin").*;
 pub const ghostberry_flap_tiles_data align(4) = @embedFile("../generated/assets/entities/ghostberry/ghostberry_flap_tiles.bin").*;
