@@ -1,4 +1,4 @@
-assets/
+assets
 src/generated/
 src/generated_rooms.zig
 __pycache__
