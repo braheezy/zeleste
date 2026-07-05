@@ -2,6 +2,10 @@
 
 The first two levels of [Celeste](https://en.wikipedia.org/wiki/Celeste_(video_game)), but on a Game Boy Advance.
 
+
+https://github.com/user-attachments/assets/4bd118cf-0c27-497c-9c74-7f01db10c8f6
+
+
 You can play it online here: [braheezy.github.io/zeleste-web](https://braheezy.github.io/zeleste-web/).
 
 ## how
