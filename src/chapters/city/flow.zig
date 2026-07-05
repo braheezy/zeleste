@@ -8,6 +8,7 @@ const file_select = @import("../../core/file_select.zig");
 const frame = @import("../../core/frame.zig");
 const gameplay_scene = @import("../../room/gameplay_scene.zig");
 const hair = @import("../../player/hair.zig");
+const inner_monologue = @import("../../core/inner_monologue.zig");
 const level = @import("../../generated_rooms.zig");
 const overworld_placeholder = @import("../../world/overworld_placeholder.zig");
 const player_mod = @import("../../player/state.zig");
@@ -127,6 +128,7 @@ fn updateChapterCompleteTransition(player: *Player, camera: *Camera, room_index:
                     overworld_placeholder.loadScreen();
                 },
                 .prologue => {
+                    inner_monologue.showPrologueIntro();
                     startGameplayFromOverworld(level.start_room_index, player, camera, room_index, respawn);
                     return;
                 },

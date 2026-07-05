@@ -3,6 +3,7 @@ const gba = @import("gba");
 const city = @import("../chapters/city.zig");
 const file_select = @import("file_select.zig");
 const frame = @import("frame.zig");
+const inner_monologue = @import("inner_monologue.zig");
 const level = @import("../generated_rooms.zig");
 const overworld_placeholder = @import("../world/overworld_placeholder.zig");
 const room_data = @import("../world/room_data.zig");
@@ -37,6 +38,9 @@ pub fn runMapOnly() StartSelection {
             .city => city.flow.firstRoomIndex() orelse level.start_room_index,
             .none, .back => level.start_room_index,
         };
+        if (chapter_selection == .prologue) {
+            inner_monologue.showPrologueIntro();
+        }
         save.beginChapterRunForRoom(room_index);
         return .{
             .room_index = room_index,

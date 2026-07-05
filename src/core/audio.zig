@@ -15,6 +15,8 @@ const audio_mix_mode = audio_mix_mode_13khz;
 const wave_memory_len = wave_memory_len_13khz;
 pub const volume_step_count: u8 = 10;
 const max_volume: mm.Word = 1024;
+const sfx_volume_numerator: mm.Word = 4;
+const sfx_volume_denominator: mm.Word = 5;
 const default_effect_volume: mm.Word = 255;
 const tracked_sfx_count: usize = 16;
 const no_music: u16 = 0xffff;
@@ -311,7 +313,7 @@ fn applyMusicVolume() void {
 }
 
 fn applySfxVolume() void {
-    mm.sfx.setEffectsVolume(volumeForStep(sfx_volume_step));
+    mm.sfx.setEffectsVolume(sfxVolumeForStep(sfx_volume_step));
     applyTrackedSoundEffectVolumes();
 }
 
@@ -326,6 +328,10 @@ fn applyTrackedSoundEffectVolumes() void {
 
 fn volumeForStep(step: u8) mm.Word {
     return (@as(mm.Word, clampVolumeStep(step)) * max_volume) / @as(mm.Word, volume_step_count);
+}
+
+fn sfxVolumeForStep(step: u8) mm.Word {
+    return (volumeForStep(step) * sfx_volume_numerator) / sfx_volume_denominator;
 }
 
 fn clampVolumeStep(step: u8) u8 {
