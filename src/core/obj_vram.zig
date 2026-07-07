@@ -1,16 +1,9 @@
+const gba = @import("gba");
+
 const assets = @import("assets.zig");
 
-pub const max_tiles: u16 = 1024;
-
-pub const Range = struct {
-    name: []const u8,
-    start: u16,
-    count: u16,
-
-    pub fn end(self: Range) u16 {
-        return self.start + self.count;
-    }
-};
+const ObjectTileRange = gba.display.ObjectTileRange;
+const range = ObjectTileRange.init;
 
 pub const player_body = range("player body", 0, 16);
 pub const falling_block_fixed = range("falling block fixed", 32, 28);
@@ -55,7 +48,7 @@ pub const dialogue_portrait = range("dialogue portrait", 784, assets.granny_port
 pub const dialogue_textbox = range("dialogue textbox", 800, assets.textbox_meta.tile_count);
 pub const pause_menu = range("pause menu", 800, 224);
 
-const shared_gameplay_ranges = [_]Range{
+const shared_gameplay_ranges = [_]ObjectTileRange{
     player_body,
     falling_block_fixed,
     player_hair,
@@ -73,7 +66,7 @@ const shared_gameplay_ranges = [_]Range{
     audio_debug,
 };
 
-const prologue_room_ranges = [_]Range{
+const prologue_room_ranges = [_]ObjectTileRange{
     bridge,
     room_wires,
     laugh_text,
@@ -81,7 +74,7 @@ const prologue_room_ranges = [_]Range{
     bird_actor,
 };
 
-const city_collectible_ranges = [_]Range{
+const city_collectible_ranges = [_]ObjectTileRange{
     strawberry_score,
     strawberry_normal,
     strawberry_ghost,
@@ -92,64 +85,39 @@ const city_collectible_ranges = [_]Range{
     crystal_heart_title,
 };
 
-const city_breakable_ranges = [_]Range{
+const city_breakable_ranges = [_]ObjectTileRange{
     breakable_ice,
     breakable_dirt,
     breakable_ice_6c,
     breakable_ice_7z,
 };
 
-const theo_dialogue_prompt_ranges = [_]Range{
+const theo_dialogue_prompt_ranges = [_]ObjectTileRange{
     theo_prompt_bubble,
 };
 
-const city_end_cutscene_ranges = [_]Range{
+const city_end_cutscene_ranges = [_]ObjectTileRange{
     city_end_actor,
     city_end_memorial_text,
 };
 
-const dialogue_modal_ranges = [_]Range{
+const dialogue_modal_ranges = [_]ObjectTileRange{
     dialogue_portrait,
     dialogue_textbox,
 };
 
-const pause_modal_ranges = [_]Range{
+const pause_modal_ranges = [_]ObjectTileRange{
     pause_menu,
 };
 
 comptime {
     @setEvalBranchQuota(10_000);
-    checkNoOverlap("shared gameplay", &shared_gameplay_ranges);
-    checkNoOverlap("prologue room", &prologue_room_ranges);
-    checkNoOverlap("city collectibles", &city_collectible_ranges);
-    checkNoOverlap("city breakables", &city_breakable_ranges);
-    checkNoOverlap("theo dialogue prompt", &theo_dialogue_prompt_ranges);
-    checkNoOverlap("city end cutscene", &city_end_cutscene_ranges);
-    checkNoOverlap("dialogue modal", &dialogue_modal_ranges);
-    checkNoOverlap("pause modal", &pause_modal_ranges);
-}
-
-fn range(name: []const u8, start: u16, count: u16) Range {
-    if (start + count > max_tiles) {
-        @compileError(name ++ " OBJ tile range exceeds OBJ VRAM");
-    }
-    return .{
-        .name = name,
-        .start = start,
-        .count = count,
-    };
-}
-
-fn checkNoOverlap(group_name: []const u8, ranges: []const Range) void {
-    for (ranges, 0..) |left, left_index| {
-        for (ranges[left_index + 1 ..]) |right| {
-            if (overlaps(left, right)) {
-                @compileError(group_name ++ " OBJ tile overlap: " ++ left.name ++ " overlaps " ++ right.name);
-            }
-        }
-    }
-}
-
-fn overlaps(left: Range, right: Range) bool {
-    return left.start < right.end() and right.start < left.end();
+    gba.display.checkNoObjectTileOverlap("shared gameplay", &shared_gameplay_ranges);
+    gba.display.checkNoObjectTileOverlap("prologue room", &prologue_room_ranges);
+    gba.display.checkNoObjectTileOverlap("city collectibles", &city_collectible_ranges);
+    gba.display.checkNoObjectTileOverlap("city breakables", &city_breakable_ranges);
+    gba.display.checkNoObjectTileOverlap("theo dialogue prompt", &theo_dialogue_prompt_ranges);
+    gba.display.checkNoObjectTileOverlap("city end cutscene", &city_end_cutscene_ranges);
+    gba.display.checkNoObjectTileOverlap("dialogue modal", &dialogue_modal_ranges);
+    gba.display.checkNoObjectTileOverlap("pause modal", &pause_modal_ranges);
 }
