@@ -57,6 +57,8 @@ const ending_cutscene_trigger_before_platform: i16 = 8;
 const scripted_scene_record_offset: usize = 48;
 const scripted_scene_record_len: usize = 38;
 const collapse_keep_behind_px: i16 = 160;
+const run_gap_width_chunks: usize = 3;
+const run_gap_starts = [_]usize{ 34, 65 };
 const max_chunks = 128;
 const extra_first_object = foreground_stamps.behind_first_object + foreground_stamps.max_stamps;
 const extra_object_count = 6;
@@ -164,6 +166,7 @@ pub fn load(room_index: usize, active_room: bool) void {
     chunk_count = count;
     ending_start_index = finalPlatformStart();
     loadEnding(room_index);
+    carveRunGaps();
 }
 
 pub fn update(player: *Player, active_room: bool) void {
@@ -520,6 +523,18 @@ fn loadEnding(room_index: usize) void {
         .start_index = start,
         .end_index = end,
     };
+}
+
+fn carveRunGaps() void {
+    for (run_gap_starts) |gap_start| {
+        var index = gap_start;
+        while (index < gap_start + run_gap_width_chunks and index < chunk_count) : (index += 1) {
+            if (ending.active and index >= ending.start_index and index <= ending.end_index) continue;
+            chunks[index].state = .inactive;
+            chunks[index].variant = empty_chunk;
+            chunks[index].group = no_group;
+        }
+    }
 }
 
 fn readSceneRect(data: []align(4) const u8, offset: usize) SceneRect {
