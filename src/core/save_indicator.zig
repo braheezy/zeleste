@@ -16,7 +16,8 @@ const meta = assets.save_icon_meta;
 
 const first_object_index = 4;
 const object_count = 4;
-const base_tile: u10 = @intCast(obj_vram.save_indicator.start);
+const tile_range = obj_vram.save_indicator;
+const base_tile = tile_range.baseTile();
 const palette_bank: u4 = 14;
 const frame_ticks: u8 = 8;
 const hold_frames: u8 = 30;
@@ -26,7 +27,7 @@ const visible_frames: u8 = @intCast(meta.frame_count * frame_ticks + hold_frames
 var observed_commit_serial: u32 = 0;
 var timer: u8 = 0;
 var palette_loaded = false;
-var loaded_frame: u16 = 0xffff;
+var frame_cache: gba.display.ObjectTileFrameCache4Bpp = .{};
 var suppressed = false;
 
 pub fn reset() void {
@@ -38,7 +39,7 @@ pub fn reset() void {
 
 pub fn invalidateGraphics() void {
     palette_loaded = false;
-    loaded_frame = 0xffff;
+    frame_cache.invalidate();
 }
 
 pub fn update() void {
@@ -89,12 +90,7 @@ fn loadPalette() void {
 }
 
 fn loadFrame(frame: u16) void {
-    if (loaded_frame == frame) return;
-    const byte_offset = @as(usize, frame) * @as(usize, meta.tiles_per_frame) * 32;
-    const byte_len = @as(usize, meta.tiles_per_frame) * 32;
-    const frame_bytes = tiles_data[byte_offset .. byte_offset + byte_len];
-    gba.display.memcpyObjectTiles4Bpp(base_tile, @ptrCast(@alignCast(frame_bytes)));
-    loaded_frame = frame;
+    frame_cache.upload4Bpp(tile_range, &tiles_data, frame, meta.tiles_per_frame);
 }
 
 fn drawChunk(chunk: usize, x: i16, y: i16, size: gba.display.Object.Size, tile_offset: u10) void {

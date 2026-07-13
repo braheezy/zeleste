@@ -35,14 +35,15 @@ const meta = assets.cassette_meta;
 const max_cassettes = 4;
 const record_bytes = 8;
 const frame_ticks: u16 = 4;
-const base_tile: u10 = @intCast(obj_vram.cassette.start);
-const bubble_base_tile: u10 = @intCast(obj_vram.cassette_bubble.start);
+const tile_range = obj_vram.cassette;
+const bubble_tile_range = obj_vram.cassette_bubble;
+const base_tile = tile_range.baseTile();
+const bubble_base_tile = bubble_tile_range.baseTile();
 const palette_bank: u4 = 11;
 const object_capacity = 2;
 const first_object = 123;
 const screen_width: i16 = 240;
 const screen_height: i16 = 160;
-const invalid_frame: u16 = 0xffff;
 const return_frames: u8 = 72;
 
 const PaletteMode = enum {
@@ -76,8 +77,7 @@ const ReturnState = struct {
 var cassettes: [max_cassettes]Cassette = [_]Cassette{.{}} ** max_cassettes;
 var cassette_count: usize = 0;
 var last_drawn_objects: usize = 0;
-var loaded_frame: u16 = invalid_frame;
-var loaded_collected: bool = false;
+var frame_cache: gba.display.ObjectTileVariantFrameCache4Bpp = .{};
 var loaded_palette: PaletteMode = .invalid;
 var bubble_tiles_loaded: bool = false;
 var return_state: ReturnState = .{};
@@ -308,14 +308,9 @@ fn playerTouchesCassette(player: Player, cassette: Cassette) bool {
 }
 
 fn loadFrame(frame: u16, collected: bool) void {
-    if (loaded_frame == frame and loaded_collected == collected) return;
     const tile_data = if (collected) &collected_tiles_data else &uncollected_tiles_data;
-    const byte_offset = @as(usize, frame) * @as(usize, meta.tiles_per_frame) * 32;
-    const byte_len = @as(usize, meta.tiles_per_frame) * 32;
-    const frame_bytes = tile_data[byte_offset .. byte_offset + byte_len];
-    gba.display.memcpyObjectTiles4Bpp(base_tile, @ptrCast(@alignCast(frame_bytes)));
-    loaded_frame = frame;
-    loaded_collected = collected;
+    const variant: u16 = if (collected) 1 else 0;
+    frame_cache.upload4Bpp(tile_range, variant, tile_data, frame, meta.tiles_per_frame);
 }
 
 fn loadCassettePalette() void {
@@ -349,8 +344,7 @@ fn drawBubble(object_index: usize, camera: Camera) void {
 }
 
 fn invalidateFrame() void {
-    loaded_frame = invalid_frame;
-    loaded_collected = false;
+    frame_cache.invalidate();
 }
 
 fn easeProgress(timer: u8, duration: u8) i32 {

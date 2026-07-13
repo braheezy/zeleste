@@ -61,21 +61,22 @@ const collect_palette_bank: u4 = 9;
 const idle_frame_count: u16 = 36;
 const idle_frame_ticks: u16 = 4;
 const idle_tiles_per_frame = 8;
-const idle_base_tile: u10 = 496;
+const normal_tile_range = obj_vram.strawberry_normal;
+const ghost_tile_range = obj_vram.strawberry_ghost;
+const idle_base_tile = normal_tile_range.baseTile();
 const idle_cell_width: i16 = 32;
 const idle_cell_height: i16 = 16;
 
 const flap_frame_count: u16 = 27;
 const flap_frame_ticks: u16 = 2;
 const flap_tiles_per_frame = 32;
-const flap_base_tile: u10 = idle_base_tile + idle_tiles_per_frame;
+const flap_base_tile = normal_tile_range.tile(idle_tiles_per_frame);
 const flap_cell_width: i16 = 64;
 const flap_cell_height: i16 = 32;
 
 const collect_frame_count: u16 = 5;
 const collect_frame_ticks: u16 = 3;
 const collect_tiles_per_frame = 8;
-const collect_base_tile: u10 = flap_base_tile + flap_tiles_per_frame;
 const collect_slot_count = 2;
 const collect_effect_capacity = collect_slot_count;
 const collect_cell_width: i16 = 32;
@@ -85,17 +86,14 @@ const score_variant_count: u16 = assets.strawberry_score_meta.variant_count;
 const score_frame_count: u16 = assets.strawberry_score_meta.frame_count;
 const score_frame_ticks: u16 = 1;
 const score_tiles_per_frame: usize = assets.strawberry_score_meta.tiles_per_frame;
-const score_base_tile: u10 = @intCast(obj_vram.strawberry_score.start);
+const score_tile_range = obj_vram.strawberry_score;
 const score_slot_count = 3;
 const score_effect_capacity = score_slot_count;
 const score_cell_width: i16 = assets.strawberry_score_meta.cell_width;
 const score_cell_height: i16 = assets.strawberry_score_meta.cell_height;
 
-const ghost_idle_base_tile: u10 = 664;
-const ghost_flap_base_tile: u10 = ghost_idle_base_tile + idle_tiles_per_frame;
-const ghost_collect_base_tile: u10 = ghost_flap_base_tile + flap_tiles_per_frame;
-
-const invalid_frame: u16 = 0xffff;
+const ghost_idle_base_tile = ghost_tile_range.baseTile();
+const ghost_flap_base_tile = ghost_tile_range.tile(idle_tiles_per_frame);
 
 const Kind = enum(u8) {
     normal = 0,
@@ -176,13 +174,13 @@ var collect_cooldown: u8 = collect_chain_cooldown_frames;
 var chain_combo_index: u8 = 0;
 var previous_player_grounded: bool = false;
 var wingflap_variant: u8 = 0;
-var loaded_idle_frame: u16 = invalid_frame;
-var loaded_flap_frame: u16 = invalid_frame;
-var loaded_collect_frames: [collect_slot_count]u16 = [_]u16{invalid_frame} ** collect_slot_count;
-var loaded_ghost_idle_frame: u16 = invalid_frame;
-var loaded_ghost_flap_frame: u16 = invalid_frame;
-var loaded_ghost_collect_frames: [collect_slot_count]u16 = [_]u16{invalid_frame} ** collect_slot_count;
-var loaded_score_frames: [score_slot_count]u16 = [_]u16{invalid_frame} ** score_slot_count;
+var idle_frame_cache: gba.display.ObjectTileFrameCache4Bpp = .{};
+var flap_frame_cache: gba.display.ObjectTileFrameCache4Bpp = .{};
+var collect_frame_caches: [collect_slot_count]gba.display.ObjectTileFrameCache4Bpp = [_]gba.display.ObjectTileFrameCache4Bpp{.{}} ** collect_slot_count;
+var ghost_idle_frame_cache: gba.display.ObjectTileFrameCache4Bpp = .{};
+var ghost_flap_frame_cache: gba.display.ObjectTileFrameCache4Bpp = .{};
+var ghost_collect_frame_caches: [collect_slot_count]gba.display.ObjectTileFrameCache4Bpp = [_]gba.display.ObjectTileFrameCache4Bpp{.{}} ** collect_slot_count;
+var score_frame_caches: [score_slot_count]gba.display.ObjectTileFrameCache4Bpp = [_]gba.display.ObjectTileFrameCache4Bpp{.{}} ** score_slot_count;
 var loaded_main_palette: PaletteVariant = .invalid;
 var loaded_collect_palette: PaletteVariant = .invalid;
 var last_drawn_objects: usize = 0;
@@ -842,24 +840,24 @@ fn loadAnimationFrame(animation: Animation, frame: u16, collect_slot: u8, ghost:
     switch (animation) {
         .idle => {
             if (ghost) {
-                loadTileFrame(&ghost_idle_tiles_data, ghost_idle_base_tile, frame, idle_tiles_per_frame, &loaded_ghost_idle_frame);
+                ghost_idle_frame_cache.upload4Bpp(ghost_tile_range, &ghost_idle_tiles_data, frame, idle_tiles_per_frame);
             } else {
-                loadTileFrame(&idle_tiles_data, idle_base_tile, frame, idle_tiles_per_frame, &loaded_idle_frame);
+                idle_frame_cache.upload4Bpp(normal_tile_range, &idle_tiles_data, frame, idle_tiles_per_frame);
             }
         },
         .flap => {
             if (ghost) {
-                loadTileFrame(&ghost_flap_tiles_data, ghost_flap_base_tile, frame, flap_tiles_per_frame, &loaded_ghost_flap_frame);
+                ghost_flap_frame_cache.upload4BppAt(ghost_tile_range, idle_tiles_per_frame, &ghost_flap_tiles_data, frame, flap_tiles_per_frame);
             } else {
-                loadTileFrame(&flap_tiles_data, flap_base_tile, frame, flap_tiles_per_frame, &loaded_flap_frame);
+                flap_frame_cache.upload4BppAt(normal_tile_range, idle_tiles_per_frame, &flap_tiles_data, frame, flap_tiles_per_frame);
             }
         },
         .collect => {
             const slot = collectSlotIndex(collect_slot);
             if (ghost) {
-                loadTileFrame(&ghost_collect_tiles_data, ghostCollectSlotBase(slot), frame, collect_tiles_per_frame, &loaded_ghost_collect_frames[slot]);
+                ghost_collect_frame_caches[slot].upload4BppAt(ghost_tile_range, collectSlotOffset(slot), &ghost_collect_tiles_data, frame, collect_tiles_per_frame);
             } else {
-                loadTileFrame(&collect_tiles_data, collectSlotBase(slot), frame, collect_tiles_per_frame, &loaded_collect_frames[slot]);
+                collect_frame_caches[slot].upload4BppAt(normal_tile_range, collectSlotOffset(slot), &collect_tiles_data, frame, collect_tiles_per_frame);
             }
         },
     }
@@ -868,16 +866,7 @@ fn loadAnimationFrame(animation: Animation, frame: u16, collect_slot: u8, ghost:
 fn loadScoreFrame(variant: u8, frame: u16, slot: usize) void {
     const variant_index = @as(u16, scoreVariant(variant));
     const frame_index = variant_index * score_frame_count + frame;
-    loadTileFrame(&score_tiles_data, scoreSlotBase(slot), frame_index, score_tiles_per_frame, &loaded_score_frames[slot]);
-}
-
-fn loadTileFrame(tile_data: []align(4) const u8, target_tile: u10, frame: u16, tiles_per_frame: usize, loaded_frame: *u16) void {
-    if (loaded_frame.* == frame) return;
-    const byte_offset = @as(usize, frame) * tiles_per_frame * 32;
-    const byte_len = tiles_per_frame * 32;
-    const frame_bytes = tile_data[byte_offset .. byte_offset + byte_len];
-    gba.display.memcpyObjectTiles4Bpp(target_tile, @ptrCast(@alignCast(frame_bytes)));
-    loaded_frame.* = frame;
+    score_frame_caches[slot].upload4BppAt(score_tile_range, scoreSlotOffset(slot), &score_tiles_data, frame_index, score_tiles_per_frame);
 }
 
 fn animationSpec(animation: Animation, collect_slot: u8, ghost: bool) struct {
@@ -905,25 +894,33 @@ fn scoreSlotIndex(slot: u8) usize {
 }
 
 fn collectSlotBase(slot: usize) u10 {
-    return collect_base_tile + @as(u10, @intCast(slot * collect_tiles_per_frame));
+    return normal_tile_range.tile(collectSlotOffset(slot));
 }
 
 fn ghostCollectSlotBase(slot: usize) u10 {
-    return ghost_collect_base_tile + @as(u10, @intCast(slot * collect_tiles_per_frame));
+    return ghost_tile_range.tile(collectSlotOffset(slot));
 }
 
 fn scoreSlotBase(slot: usize) u10 {
-    return score_base_tile + @as(u10, @intCast(slot * score_tiles_per_frame));
+    return score_tile_range.tile(scoreSlotOffset(slot));
+}
+
+fn collectSlotOffset(slot: usize) u16 {
+    return @intCast(idle_tiles_per_frame + flap_tiles_per_frame + slot * collect_tiles_per_frame);
+}
+
+fn scoreSlotOffset(slot: usize) u16 {
+    return @intCast(slot * score_tiles_per_frame);
 }
 
 fn invalidateFrames() void {
-    loaded_idle_frame = invalid_frame;
-    loaded_flap_frame = invalid_frame;
-    loaded_collect_frames = [_]u16{invalid_frame} ** collect_slot_count;
-    loaded_ghost_idle_frame = invalid_frame;
-    loaded_ghost_flap_frame = invalid_frame;
-    loaded_ghost_collect_frames = [_]u16{invalid_frame} ** collect_slot_count;
-    loaded_score_frames = [_]u16{invalid_frame} ** score_slot_count;
+    idle_frame_cache.invalidate();
+    flap_frame_cache.invalidate();
+    collect_frame_caches = [_]gba.display.ObjectTileFrameCache4Bpp{.{}} ** collect_slot_count;
+    ghost_idle_frame_cache.invalidate();
+    ghost_flap_frame_cache.invalidate();
+    ghost_collect_frame_caches = [_]gba.display.ObjectTileFrameCache4Bpp{.{}} ** collect_slot_count;
+    score_frame_caches = [_]gba.display.ObjectTileFrameCache4Bpp{.{}} ** score_slot_count;
 }
 
 fn loopFrame(anim_counter: u16, frame_count: u16, frame_ticks: u16) u16 {

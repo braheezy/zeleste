@@ -32,10 +32,11 @@ const hint_palette_data align(4) = assets.bird_hint_palette_data;
 
 pub const object = 126;
 pub const hint_object = object + 1;
-pub const base_tile: u10 = @intCast(obj_vram.bird_actor.start);
+const tile_range = obj_vram.bird_actor;
+pub const base_tile = tile_range.baseTile();
 pub const palette_bank: u4 = 8;
 pub const tiles_per_frame = 16;
-pub const hint_base_tile: u10 = base_tile + tiles_per_frame;
+pub const hint_base_tile = tile_range.tile(tiles_per_frame);
 pub const hint_palette_bank: u4 = 9;
 
 const squawk_first_frame: u16 = 0;
@@ -62,7 +63,6 @@ const origin_offset_x: i16 = 5;
 const origin_offset_y: i16 = 9;
 const max_path_points = 32;
 const max_triggers = 8;
-const invalid_loaded_frame: u16 = 0xffff;
 const rooms = level.rooms;
 
 const State = enum(u8) {
@@ -128,7 +128,7 @@ const HintKind = enum(u8) {
 };
 
 var npc: Npc = .{};
-var loaded_frame: u16 = invalid_loaded_frame;
+var frame_cache: gba.display.ObjectTileFrameCache4Bpp = .{};
 var loaded_hint_kind: HintKind = .none;
 
 pub fn load(room_index: usize) void {
@@ -369,7 +369,7 @@ pub fn hideObjects() void {
 }
 
 pub fn invalidate() void {
-    loaded_frame = invalid_loaded_frame;
+    frame_cache.invalidate();
     loaded_hint_kind = .none;
 }
 
@@ -465,12 +465,7 @@ fn advanceAlongPath() bool {
 
 fn loadFrame(frame: u16) void {
     const safe_frame = @min(frame, total_frame_count - 1);
-    if (loaded_frame == safe_frame) return;
-    const byte_offset = @as(usize, safe_frame) * tiles_per_frame * 32;
-    const byte_len = tiles_per_frame * 32;
-    const frame_bytes = intro_tiles_data[byte_offset .. byte_offset + byte_len];
-    gba.display.memcpyObjectTiles4Bpp(base_tile, @ptrCast(@alignCast(frame_bytes)));
-    loaded_frame = safe_frame;
+    frame_cache.upload4Bpp(tile_range, &intro_tiles_data, safe_frame, tiles_per_frame);
 }
 
 fn loadHint(kind: HintKind) void {

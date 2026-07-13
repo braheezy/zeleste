@@ -55,7 +55,8 @@ const memorial_shadow_color: u8 = 5;
 const memorial_text_color: u8 = 6;
 const bird_object = 125;
 const campfire_object = 124;
-const bird_base_tile: u10 = @intCast(obj_vram.city_end_actor.start);
+const actor_tile_range = obj_vram.city_end_actor;
+const bird_base_tile = actor_tile_range.baseTile();
 const bird_palette_bank: u4 = 8;
 const bird_tiles_per_frame: u10 = 16;
 const bird_fly_first_frame: u16 = 49;
@@ -77,7 +78,7 @@ const asleep_head_anchor_x: i16 = 7;
 const asleep_head_anchor_y: i16 = 18;
 const start_fire_bend_frame_offset: u16 = 8;
 const rest_floor_snap_max_pixels: u8 = 24;
-const campfire_base_tile: u10 = bird_base_tile + bird_tiles_per_frame;
+const campfire_base_tile = actor_tile_range.tile(bird_tiles_per_frame);
 const campfire_palette_bank: u4 = 10;
 const campfire_tiles_per_frame: u10 = @intCast(assets.fire_small1_meta.tiles_per_frame);
 const campfire_frame_count: u16 = assets.fire_small1_meta.frame_count;
@@ -138,8 +139,8 @@ var memorial_chunks: [memorial_max_objects]MemorialChunk = [_]MemorialChunk{.{}}
 var memorial_object_count: usize = 0;
 var memorial_tiles_dirty: bool = true;
 var memorial_tile_write_base: usize = 0;
-var loaded_bird_frame: u16 = 0xffff;
-var loaded_campfire_frame: u16 = 0xffff;
+var bird_frame_cache: gba.display.ObjectTileFrameCache4Bpp = .{};
+var campfire_frame_cache: gba.display.ObjectTileFrameCache4Bpp = .{};
 
 pub fn loadGraphics(room_index: usize) void {
     if (!isEndRoom(room_index)) return;
@@ -703,12 +704,7 @@ fn birdFrame(anim_counter: u16) u16 {
 }
 
 fn loadBirdFrame(frame: u16) void {
-    if (loaded_bird_frame == frame) return;
-    const byte_offset = @as(usize, frame) * @as(usize, bird_tiles_per_frame) * 32;
-    const byte_len = @as(usize, bird_tiles_per_frame) * 32;
-    const frame_bytes = bird_tiles_data[byte_offset .. byte_offset + byte_len];
-    gba.display.memcpyObjectTiles4Bpp(bird_base_tile, @ptrCast(@alignCast(frame_bytes)));
-    loaded_bird_frame = frame;
+    bird_frame_cache.upload4Bpp(actor_tile_range, &bird_tiles_data, frame, bird_tiles_per_frame);
 }
 
 fn birdPosition(room_index: usize) Spawn {
@@ -747,7 +743,7 @@ fn birdLandPoint(room_index: usize) Spawn {
 
 fn loadCampfireGraphics() void {
     gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, campfire_palette_bank) * 16], @ptrCast(&fire_small1_palette_data), 16);
-    loaded_campfire_frame = 0xffff;
+    campfire_frame_cache.invalidate();
 }
 
 fn loadMemorialPalette() void {
@@ -759,17 +755,12 @@ fn loadMemorialPalette() void {
 }
 
 fn loadCampfireFrame(frame: u16) void {
-    if (loaded_campfire_frame == frame) return;
-    const byte_offset = @as(usize, frame) * @as(usize, campfire_tiles_per_frame) * 32;
-    const byte_len = @as(usize, campfire_tiles_per_frame) * 32;
-    const frame_bytes = fire_small1_tiles_data[byte_offset .. byte_offset + byte_len];
-    gba.display.memcpyObjectTiles4Bpp(campfire_base_tile, @ptrCast(@alignCast(frame_bytes)));
-    loaded_campfire_frame = frame;
+    campfire_frame_cache.upload4BppAt(actor_tile_range, bird_tiles_per_frame, &fire_small1_tiles_data, frame, campfire_tiles_per_frame);
 }
 
 fn invalidateCutsceneActorTiles() void {
-    loaded_bird_frame = 0xffff;
-    loaded_campfire_frame = 0xffff;
+    bird_frame_cache.invalidate();
+    campfire_frame_cache.invalidate();
 }
 
 fn loadMemorialTextTiles() void {

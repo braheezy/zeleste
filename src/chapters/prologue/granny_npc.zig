@@ -28,16 +28,15 @@ pub const base_tile: u10 = foreground_stamps.base_tile;
 pub const palette_bank: u4 = bird_npc.palette_bank;
 
 const tiles_per_frame = 16;
+const tile_range = gba.display.ObjectTileRange.init("granny npc", foreground_stamps.base_tile, tiles_per_frame);
 const idle_frame_count: u16 = @intCast(idle_tiles_data.len / (tiles_per_frame * 32));
 const laugh_frame_count: u16 = @intCast(laugh_tiles_data.len / (tiles_per_frame * 32));
 const quotes_frame_count: u16 = @intCast(quotes_tiles_data.len / (tiles_per_frame * 32));
 const anim_speed = 10;
 const origin_offset_x: i16 = 16;
 const origin_offset_y: i16 = 32;
-const invalid_loaded_frame: u16 = 0xffff;
 
-var loaded_frame: u16 = invalid_loaded_frame;
-var loaded_animation: Animation = .none;
+var frame_cache: gba.display.ObjectTileVariantFrameCache4Bpp = .{};
 var visible: bool = false;
 
 pub fn loadPalette() void {
@@ -45,8 +44,7 @@ pub fn loadPalette() void {
 }
 
 pub fn invalidate() void {
-    loaded_frame = invalid_loaded_frame;
-    loaded_animation = .none;
+    frame_cache.invalidate();
 }
 
 pub fn draw(camera: Camera, object: usize, position: Spawn, animation: Animation, anim_counter: u16, facing_left: bool) void {
@@ -82,15 +80,10 @@ fn frameCount(animation: Animation) u16 {
 fn loadFrame(animation: Animation, frame: u16) void {
     const frame_count = frameCount(animation);
     const safe_frame = @min(frame, frame_count - 1);
-    if (loaded_animation == animation and loaded_frame == safe_frame) return;
-    const byte_offset = @as(usize, safe_frame) * tiles_per_frame * 32;
-    const byte_len = tiles_per_frame * 32;
-    const frame_bytes = switch (animation) {
-        .laugh => laugh_tiles_data[byte_offset .. byte_offset + byte_len],
-        .quotes => quotes_tiles_data[byte_offset .. byte_offset + byte_len],
-        else => idle_tiles_data[byte_offset .. byte_offset + byte_len],
+    const tile_data = switch (animation) {
+        .laugh => &laugh_tiles_data,
+        .quotes => &quotes_tiles_data,
+        else => &idle_tiles_data,
     };
-    gba.display.memcpyObjectTiles4Bpp(base_tile, @ptrCast(@alignCast(frame_bytes)));
-    loaded_frame = safe_frame;
-    loaded_animation = animation;
+    frame_cache.upload4Bpp(tile_range, @intFromEnum(animation), tile_data, safe_frame, tiles_per_frame);
 }

@@ -22,7 +22,10 @@ const sweat_palette_data align(4) = assets.player_sweat_palette_data;
 
 pub const object = 32;
 pub const sweat_tiles_per_frame = 16;
-pub const sweat_base_tile: u10 = @intCast(obj_vram.player_sweat.start);
+const player_tile_range = obj_vram.player_body;
+const sweat_tile_range = obj_vram.player_sweat;
+const player_base_tile = player_tile_range.baseTile();
+pub const sweat_base_tile = sweat_tile_range.baseTile();
 pub const sweat_palette_bank: u4 = 4;
 pub const sweat_object = 71;
 
@@ -31,8 +34,8 @@ const sweat_still_frame_count = 6;
 const sweat_climb_first_frame = 6;
 const sweat_climb_frame_count = 6;
 
-var loaded_frame: u16 = 0xffff;
-var loaded_sweat_frame: u16 = 0xffff;
+var frame_cache: gba.display.ObjectTileFrameCache4Bpp = .{};
+var sweat_frame_cache: gba.display.ObjectTileFrameCache4Bpp = .{};
 var loaded_palette_mode: PaletteMode = .invalid;
 
 const PaletteMode = enum {
@@ -42,8 +45,8 @@ const PaletteMode = enum {
 };
 
 pub fn invalidate() void {
-    loaded_frame = 0xffff;
-    loaded_sweat_frame = 0xffff;
+    frame_cache.invalidate();
+    sweat_frame_cache.invalidate();
     loaded_palette_mode = .invalid;
 }
 
@@ -65,12 +68,7 @@ pub fn hideObjects() void {
 }
 
 pub fn loadFrame(frame: u16) void {
-    if (loaded_frame == frame) return;
-    const byte_offset = @as(usize, frame) * player_mod.tiles_per_frame * 32;
-    const byte_len = player_mod.tiles_per_frame * 32;
-    const frame_bytes = player_tiles_data[byte_offset .. byte_offset + byte_len];
-    gba.display.memcpyObjectTiles4Bpp(0, @ptrCast(@alignCast(frame_bytes)));
-    loaded_frame = frame;
+    frame_cache.upload4Bpp(player_tile_range, &player_tiles_data, frame, player_mod.tiles_per_frame);
 }
 
 pub fn draw(player: Player, camera: Camera, foreground_anim_counter: u16) void {
@@ -82,7 +80,7 @@ pub fn draw(player: Player, camera: Camera, foreground_anim_counter: u16) void {
         .size = .size_32x32,
         .x = objX(draw_x),
         .y = objY(draw_y),
-        .base_tile = 0,
+        .base_tile = player_base_tile,
         .priority = 1,
         .palette = 0,
         .flip = gba.math.Vec2B.init(player.facing_left, false),
@@ -116,12 +114,7 @@ pub fn drawSweat(player: *Player, camera: Camera) void {
 }
 
 fn loadSweatFrame(frame: u16) void {
-    if (loaded_sweat_frame == frame) return;
-    const byte_offset = @as(usize, frame) * sweat_tiles_per_frame * 32;
-    const byte_len = sweat_tiles_per_frame * 32;
-    const frame_bytes = sweat_tiles_data[byte_offset .. byte_offset + byte_len];
-    gba.display.memcpyObjectTiles4Bpp(sweat_base_tile, @ptrCast(@alignCast(frame_bytes)));
-    loaded_sweat_frame = frame;
+    sweat_frame_cache.upload4Bpp(sweat_tile_range, &sweat_tiles_data, frame, sweat_tiles_per_frame);
 }
 
 fn updatePalette(player: Player, foreground_anim_counter: u16) void {

@@ -52,9 +52,11 @@ pub const width = textbox_meta.width;
 pub const height = textbox_meta.height;
 pub const tiles_per_object = textbox_meta.tiles_per_object;
 pub const tile_count = textbox_meta.tile_count;
-pub const base_tile: u10 = @intCast(obj_vram.dialogue_textbox.start);
-pub const portrait_tile_count: u10 = @intCast(obj_vram.dialogue_portrait.count);
-pub const portrait_base_tile: u10 = @intCast(obj_vram.dialogue_portrait.start);
+const textbox_tile_range = obj_vram.dialogue_textbox;
+const portrait_tile_range = obj_vram.dialogue_portrait;
+pub const base_tile = textbox_tile_range.baseTile();
+pub const portrait_tile_count = portrait_tile_range.count;
+pub const portrait_base_tile = portrait_tile_range.baseTile();
 pub const palette_bank: u4 = 15;
 pub const portrait_palette_bank: u4 = 13;
 pub const text_max_chars = 34;
@@ -88,14 +90,14 @@ var upload_tiles_dirty: [tile_count]bool = [_]bool{false} ** tile_count;
 var textbox_tiles_loaded: bool = false;
 var active_textbox_skin: TextboxSkin = .prologue;
 var loaded_textbox_skin: TextboxSkin = .prologue;
-var loaded_portrait_frame: u16 = 0xffff;
+var portrait_frame_cache: gba.display.ObjectTileFrameCache4Bpp = .{};
 var portrait_palette_loaded: bool = false;
 var advance_indicator_visible: bool = false;
 var advance_indicator_frame: u8 = 0xff;
 
 pub fn invalidateGraphics() void {
     textbox_tiles_loaded = false;
-    loaded_portrait_frame = 0xffff;
+    portrait_frame_cache.invalidate();
     portrait_palette_loaded = false;
     advance_indicator_visible = false;
     advance_indicator_frame = 0xff;
@@ -174,7 +176,7 @@ pub fn preloadPortrait(page: CutsceneDialoguePage, portrait_timer: u16, text_rev
     const portrait = effectivePortrait(page);
     if (portraitRange(portrait) == null) return;
     loadPortraitPalette();
-    loadPortraitFrame(portrait, portrait_timer, text_revealing, false);
+    loadPortraitFrame(portrait, portrait_timer, text_revealing);
 }
 
 pub fn drawObjects(camera: Camera, first_object: usize, dialogue_box: SceneRect, page: CutsceneDialoguePage, portrait_timer: u16, text_revealing: bool) void {
@@ -476,7 +478,7 @@ fn portraitRange(portrait: DialoguePortrait) ?PortraitRange {
 
 fn drawPortrait(first_object: usize, position: room_data.Spawn, portrait: DialoguePortrait, portrait_timer: u16, text_revealing: bool) void {
     loadPortraitPalette();
-    loadPortraitFrame(portrait, portrait_timer, text_revealing, false);
+    loadPortraitFrame(portrait, portrait_timer, text_revealing);
     gba.display.objects[first_object] = gba.display.Object.init(.{
         .size = .size_32x32,
         .x = objX(position.x + portrait_x),
@@ -501,19 +503,13 @@ fn loadPortraitPalette() void {
     portrait_palette_loaded = true;
 }
 
-fn loadPortraitFrame(portrait: DialoguePortrait, portrait_timer: u16, text_revealing: bool, force: bool) void {
+fn loadPortraitFrame(portrait: DialoguePortrait, portrait_timer: u16, text_revealing: bool) void {
     const range = portraitRange(portrait) orelse return;
     if (range.frame_count == 0) return;
 
     const local_frame = portraitLocalFrame(range, portrait_timer, text_revealing);
     const frame = range.first_frame + local_frame;
-    if (!force and loaded_portrait_frame == frame) return;
-
-    const bytes_per_frame = @as(usize, portrait_tile_count) * @sizeOf(gba.display.Tile4Bpp);
-    const start = @as(usize, frame) * bytes_per_frame;
-    const frame_bytes = portrait_tiles_data[start .. start + bytes_per_frame];
-    gba.display.memcpyObjectTiles4Bpp(portrait_base_tile, @ptrCast(@alignCast(frame_bytes)));
-    loaded_portrait_frame = frame;
+    portrait_frame_cache.upload4Bpp(portrait_tile_range, &portrait_tiles_data, frame, portrait_tile_count);
 }
 
 fn portraitLocalFrame(range: PortraitRange, portrait_timer: u16, text_revealing: bool) u16 {

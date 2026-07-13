@@ -37,10 +37,12 @@ const end_room_index = level.roomIndexFor(level.chapter_index, "city_end") orels
 const object = strawberries.first_object + strawberries.object_capacity - 1;
 const palette_bank: u4 = 8;
 const collect_palette_bank: u4 = 9;
-const idle_base_tile: u10 = @intCast(obj_vram.strawberry_normal.start);
-const collect_base_tile: u10 = idle_base_tile + idle_tiles_per_frame;
-const ghost_idle_base_tile: u10 = @intCast(obj_vram.strawberry_ghost.start);
-const ghost_collect_base_tile: u10 = ghost_idle_base_tile + idle_tiles_per_frame;
+const normal_tile_range = obj_vram.strawberry_normal;
+const ghost_tile_range = obj_vram.strawberry_ghost;
+const idle_base_tile = normal_tile_range.baseTile();
+const collect_base_tile = normal_tile_range.tile(idle_tiles_per_frame);
+const ghost_idle_base_tile = ghost_tile_range.baseTile();
+const ghost_collect_base_tile = ghost_tile_range.tile(idle_tiles_per_frame);
 const idle_tiles_per_frame: u10 = 8;
 const collect_tiles_per_frame: u10 = 8;
 const gold_idle_frame_count: u16 = 32;
@@ -52,7 +54,6 @@ const cell_width: i16 = 32;
 const cell_height: i16 = 16;
 const collision_half_w: i16 = 9;
 const collision_half_h: i16 = 8;
-const invalid_frame: u16 = 0xffff;
 
 const PaletteVariant = enum {
     invalid,
@@ -67,10 +68,10 @@ var collect_timer: u8 = 0;
 var center_x: i16 = 0;
 var center_y: i16 = 0;
 var golden_id: u16 = 0;
-var loaded_idle_frame: u16 = invalid_frame;
-var loaded_idle_ghost: bool = false;
-var loaded_collect_frame: u16 = invalid_frame;
-var loaded_collect_ghost: bool = false;
+var gold_idle_frame_cache: gba.display.ObjectTileFrameCache4Bpp = .{};
+var ghost_idle_frame_cache: gba.display.ObjectTileFrameCache4Bpp = .{};
+var gold_collect_frame_cache: gba.display.ObjectTileFrameCache4Bpp = .{};
+var ghost_collect_frame_cache: gba.display.ObjectTileFrameCache4Bpp = .{};
 var loaded_main_palette: PaletteVariant = .invalid;
 var loaded_collect_palette: PaletteVariant = .invalid;
 
@@ -214,27 +215,20 @@ fn drawObject(camera: Camera, animation: Animation, frame: u16) void {
 fn loadAnimationFrame(animation: Animation, frame: u16) void {
     switch (animation) {
         .idle => {
-            if (loaded_idle_frame == frame and loaded_idle_ghost == ghost) return;
-            const data = if (ghost) &ghost_idle_tiles_data else &gold_idle_tiles_data;
-            loadTileFrame(data, if (ghost) ghost_idle_base_tile else idle_base_tile, frame, idle_tiles_per_frame);
-            loaded_idle_frame = frame;
-            loaded_idle_ghost = ghost;
+            if (ghost) {
+                ghost_idle_frame_cache.upload4Bpp(ghost_tile_range, &ghost_idle_tiles_data, frame, idle_tiles_per_frame);
+            } else {
+                gold_idle_frame_cache.upload4Bpp(normal_tile_range, &gold_idle_tiles_data, frame, idle_tiles_per_frame);
+            }
         },
         .collect => {
-            if (loaded_collect_frame == frame and loaded_collect_ghost == ghost) return;
-            const data = if (ghost) &ghost_collect_tiles_data else &gold_collect_tiles_data;
-            loadTileFrame(data, if (ghost) ghost_collect_base_tile else collect_base_tile, frame, collect_tiles_per_frame);
-            loaded_collect_frame = frame;
-            loaded_collect_ghost = ghost;
+            if (ghost) {
+                ghost_collect_frame_cache.upload4BppAt(ghost_tile_range, idle_tiles_per_frame, &ghost_collect_tiles_data, frame, collect_tiles_per_frame);
+            } else {
+                gold_collect_frame_cache.upload4BppAt(normal_tile_range, idle_tiles_per_frame, &gold_collect_tiles_data, frame, collect_tiles_per_frame);
+            }
         },
     }
-}
-
-fn loadTileFrame(tile_data: []align(4) const u8, target_tile: u10, frame: u16, tiles_per_frame: u10) void {
-    const byte_offset = @as(usize, frame) * @as(usize, tiles_per_frame) * 32;
-    const byte_len = @as(usize, tiles_per_frame) * 32;
-    const frame_bytes = tile_data[byte_offset .. byte_offset + byte_len];
-    gba.display.memcpyObjectTiles4Bpp(target_tile, @ptrCast(@alignCast(frame_bytes)));
 }
 
 fn loadMainPalette() void {
@@ -254,8 +248,10 @@ fn loadCollectPalette() void {
 }
 
 fn invalidateFrames() void {
-    loaded_idle_frame = invalid_frame;
-    loaded_collect_frame = invalid_frame;
+    gold_idle_frame_cache.invalidate();
+    ghost_idle_frame_cache.invalidate();
+    gold_collect_frame_cache.invalidate();
+    ghost_collect_frame_cache.invalidate();
 }
 
 fn loopFrame(anim_counter: u16, frame_count: u16, frame_ticks: u16) u16 {

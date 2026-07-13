@@ -86,7 +86,8 @@ pub const AntennaTipStart = struct {
 pub const base_tile: u10 = @intCast(obj_vram.bird_actor.start);
 pub const palette_bank: u4 = 6;
 const puzzle_palette_bank: u4 = 7;
-const crystal_heart_base_tile: u10 = @intCast(obj_vram.crystal_heart.start);
+const crystal_heart_tile_range = obj_vram.crystal_heart;
+const crystal_heart_base_tile = crystal_heart_tile_range.baseTile();
 const crystal_heart_palette_bank: u4 = 10;
 const heart_title_base_tile: u10 = @intCast(obj_vram.crystal_heart_title.start);
 const heart_title_palette_bank: u4 = 11;
@@ -241,9 +242,7 @@ var heart_vx: i32 = 0;
 var heart_vy: i32 = 0;
 var heart_collect_player_x: i16 = 0;
 var heart_collect_player_y: i16 = 0;
-var loaded_heart_frame: u16 = 0xffff;
-var loaded_heart_tiles_valid: bool = false;
-var loaded_heart_tiles_ghost: bool = false;
+var heart_frame_cache: gba.display.ObjectTileVariantFrameCache4Bpp = .{};
 var loaded_heart_palette_valid: bool = false;
 var loaded_heart_palette_ghost: bool = false;
 var heart_title_loaded: bool = false;
@@ -468,9 +467,7 @@ fn resetHeartState() void {
     heart_vy = 0;
     heart_collect_player_x = 0;
     heart_collect_player_y = 0;
-    loaded_heart_frame = 0xffff;
-    loaded_heart_tiles_valid = false;
-    loaded_heart_tiles_ghost = false;
+    heart_frame_cache.invalidate();
     loaded_heart_palette_valid = false;
     loaded_heart_palette_ghost = false;
     heart_title_loaded = false;
@@ -975,15 +972,9 @@ fn heartFrame(anim_counter: u16) u16 {
 
 fn loadCrystalHeartFrame(frame: u16, ghost: bool) void {
     loadCrystalHeartPalette(ghost);
-    if (loaded_heart_tiles_valid and loaded_heart_frame == frame and loaded_heart_tiles_ghost == ghost) return;
     const tile_data = if (ghost) &crystal_heart_ghost_tiles_data else &crystal_heart_normal_tiles_data;
-    const byte_offset = @as(usize, frame) * crystal_heart_tiles_per_frame * 32;
-    const byte_len = crystal_heart_tiles_per_frame * 32;
-    const frame_bytes = tile_data[byte_offset .. byte_offset + byte_len];
-    gba.display.memcpyObjectTiles4Bpp(crystal_heart_base_tile, @ptrCast(@alignCast(frame_bytes)));
-    loaded_heart_frame = frame;
-    loaded_heart_tiles_valid = true;
-    loaded_heart_tiles_ghost = ghost;
+    const variant: u16 = if (ghost) 1 else 0;
+    heart_frame_cache.upload4Bpp(crystal_heart_tile_range, variant, tile_data, frame, crystal_heart_tiles_per_frame);
 }
 
 fn loadCrystalHeartPalette(ghost: bool) void {
