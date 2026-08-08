@@ -1,11 +1,11 @@
 const gba = @import("gba");
+const std = @import("std");
 const level = @import("../../generated_rooms.zig");
 const camera_mod = @import("../../world/camera.zig");
 const dash_effects = @import("../../player/dash_effects.zig");
 const oam = @import("../../core/oam.zig");
 
 const Camera = camera_mod.Camera;
-const hideObject = oam.hideObject;
 const objX = oam.objX;
 const objY = oam.objY;
 
@@ -13,6 +13,8 @@ const Origin = struct {
     x: i16,
     y: i16,
 };
+
+const ObjectSlotRange = gba.display.ObjectSlotRange;
 
 pub const base_tile: u10 = dash_effects.base_tile + 16;
 pub const object_count = 3;
@@ -35,24 +37,24 @@ pub fn loadPalette() void {
     gba.display.obj_palette.colors[@as(usize, palette_bank) * 16 + @as(usize, soft_color)] = gba.ColorRgb555.rgb(25, 28, 29);
 }
 
-pub fn reset(first_object: usize) void {
+pub fn reset(object_range: ObjectSlotRange) void {
     counter = 0;
     uploaded_counter = 0xff;
-    hideObjects(first_object);
+    hideObjects(object_range);
 }
 
-pub fn update(active_room_index: usize, anim_counter: u16, first_object: usize) void {
+pub fn update(active_room_index: usize, anim_counter: u16, object_range: ObjectSlotRange) void {
     if (!active(active_room_index)) {
-        hideObjects(first_object);
+        hideObjects(object_range);
         return;
     }
     if ((anim_counter & 1) != 0) return;
     counter +%= 1;
 }
 
-pub fn draw(camera: Camera, active_room_index: usize, first_object: usize) void {
+pub fn draw(camera: Camera, active_room_index: usize, object_range: ObjectSlotRange) void {
     if (!active(active_room_index)) {
-        hideObjects(first_object);
+        hideObjects(object_range);
         return;
     }
 
@@ -68,7 +70,7 @@ pub fn draw(camera: Camera, active_room_index: usize, first_object: usize) void 
         const rise: i16 = @intCast(particle_age / 5);
         const draw_x = origin.x + wobble(particle_age, index) - camera.x - 8;
         const draw_y = origin.y - rise - camera.y - 8;
-        gba.display.objects[first_object + index] = gba.display.Object.init(.{
+        object_range.object(index).* = gba.display.Object.init(.{
             .size = .size_16x16,
             .x = objX(draw_x),
             .y = objY(draw_y),
@@ -84,11 +86,9 @@ pub fn draw(camera: Camera, active_room_index: usize, first_object: usize) void 
     }
 }
 
-pub fn hideObjects(first_object: usize) void {
-    var index: usize = 0;
-    while (index < object_count) : (index += 1) {
-        hideObject(first_object + index);
-    }
+pub fn hideObjects(object_range: ObjectSlotRange) void {
+    std.debug.assert(object_range.contains(0, object_count));
+    object_range.hide();
 }
 
 fn active(active_room_index: usize) bool {

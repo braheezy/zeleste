@@ -186,19 +186,19 @@ pub fn windSnowLimited(room_index: usize) bool {
 
 pub fn resetSceneEffects(room_index: usize, slots: SceneSlots) void {
     _ = room_index;
-    chimney_smoke.reset(slots.scene_effect_first_object);
+    chimney_smoke.reset(slots.scene_effect_slots);
 }
 
 pub fn updateSceneEffects(room_index: usize, anim_counter: u16, slots: SceneSlots) void {
     if (granny_cutscene.activeInRoom(room_index)) {
-        chimney_smoke.hideObjects(slots.scene_effect_first_object);
+        chimney_smoke.hideObjects(slots.scene_effect_slots);
         return;
     }
-    chimney_smoke.update(room_index, anim_counter, slots.scene_effect_first_object);
+    chimney_smoke.update(room_index, anim_counter, slots.scene_effect_slots);
 }
 
 pub fn hideSceneEffectObjects(slots: SceneSlots) void {
-    chimney_smoke.hideObjects(slots.scene_effect_first_object);
+    chimney_smoke.hideObjects(slots.scene_effect_slots);
 }
 
 pub fn drawPlatformActors(camera: Camera, room_index: usize, slots: SceneSlots) void {
@@ -214,10 +214,10 @@ pub fn drawDynamicSolids(camera: Camera, room_index: usize) void {
 
 pub fn drawSceneEffects(camera: Camera, room_index: usize, slots: SceneSlots) void {
     if (granny_cutscene.activeInRoom(room_index)) {
-        chimney_smoke.hideObjects(slots.scene_effect_first_object);
+        chimney_smoke.hideObjects(slots.scene_effect_slots);
         return;
     }
-    chimney_smoke.draw(camera, room_index, slots.scene_effect_first_object);
+    chimney_smoke.draw(camera, room_index, slots.scene_effect_slots);
 }
 
 pub fn drawRoomOverlays(camera: Camera, room_index: usize) void {

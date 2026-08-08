@@ -1,6 +1,7 @@
 const gba = @import("gba");
 const camera_mod = @import("../world/camera.zig");
 const math = @import("../core/math.zig");
+const obj_oam = @import("../core/obj_oam.zig");
 const obj_vram = @import("../core/obj_vram.zig");
 const oam = @import("../core/oam.zig");
 const player_mod = @import("../player/state.zig");
@@ -17,7 +18,8 @@ const nextRandom = rng.next;
 
 pub const base_tile: u10 = @intCast(obj_vram.dust.start);
 pub const palette_bank: u4 = 3;
-pub const first_object = 35;
+const object_range = obj_oam.dust;
+pub const first_object = object_range.baseSlot();
 pub const max_particles = 8;
 
 const Particle = struct {
@@ -155,10 +157,7 @@ pub fn update() void {
 
 pub fn clear() void {
     particles = [_]Particle{.{}} ** max_particles;
-    var index: usize = 0;
-    while (index < max_particles) : (index += 1) {
-        hideObject(first_object + index);
-    }
+    object_range.hide();
     last_drawn_slots = 0;
 }
 
@@ -169,7 +168,7 @@ pub fn draw(camera: Camera) void {
     var highest_active: usize = 0;
     while (index < max_particles) : (index += 1) {
         if (!particles[index].active) {
-            if (index < last_drawn_slots) hideObject(first_object + index);
+            if (index < last_drawn_slots) object_range.object(index).mode = .hidden;
             continue;
         }
 
@@ -178,7 +177,7 @@ pub fn draw(camera: Camera) void {
         drawShape(index, particles[index]);
         const draw_x = fixedToPixel(particles[index].x) - camera.x - 4;
         const draw_y = fixedToPixel(particles[index].y) - camera.y - 4;
-        gba.display.objects[first_object + index] = gba.display.Object.init(.{
+        object_range.object(index).* = gba.display.Object.init(.{
             .size = .size_8x8,
             .x = objX(draw_x),
             .y = objY(draw_y),

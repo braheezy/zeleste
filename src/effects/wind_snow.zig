@@ -2,6 +2,7 @@ const gba = @import("gba");
 const camera_mod = @import("../world/camera.zig");
 const level = @import("../generated_rooms.zig");
 const math = @import("../core/math.zig");
+const obj_oam = @import("../core/obj_oam.zig");
 const obj_vram = @import("../core/obj_vram.zig");
 const oam = @import("../core/oam.zig");
 const video = @import("../core/video.zig");
@@ -15,7 +16,8 @@ const objX = oam.objX;
 const objY = oam.objY;
 
 pub const base_tile: u10 = @intCast(obj_vram.wind_snow.start);
-pub const first_object = 43;
+const object_range = obj_oam.wind_snow;
+pub const first_object = object_range.baseSlot();
 pub const palette_bank: u4 = 3;
 
 // Slots 64..70 are reserved for springs; keep wind/snow in 43..63.
@@ -143,12 +145,12 @@ pub fn draw(camera: Camera) void {
     var index: usize = 0;
     while (index < particle_count) : (index += 1) {
         if (!particles[index].active) {
-            hideObject(first_object + index);
+            object_range.object(index).mode = .hidden;
             continue;
         }
         const screen_x = fixedToPixel(particles[index].x) - camera.x;
         const screen_y = fixedToPixel(particles[index].y) - camera.y;
-        gba.display.objects[first_object + index] = gba.display.Object.init(.{
+        object_range.object(index).* = gba.display.Object.init(.{
             .size = .size_8x8,
             .x = objX(screen_x),
             .y = objY(screen_y),
@@ -161,17 +163,14 @@ pub fn draw(camera: Camera) void {
 
 pub fn hideObjects() void {
     particle_count = 0;
-    var index: usize = 0;
-    while (index < max_particles) : (index += 1) {
-        hideObject(first_object + index);
-    }
+    object_range.hide();
 }
 
 fn hideObjectsPastLimit(limit: usize) void {
     if (limit >= particle_count) return;
     var index = limit;
     while (index < particle_count) : (index += 1) {
-        hideObject(first_object + index);
+        object_range.object(index).mode = .hidden;
     }
 }
 
