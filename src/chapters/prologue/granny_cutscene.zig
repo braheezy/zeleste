@@ -11,6 +11,7 @@ const granny_npc = @import("granny_npc.zig");
 const level = @import("../../generated_rooms.zig");
 const math = @import("../../core/math.zig");
 const player_mod = @import("../../player/state.zig");
+const object_slots = @import("../../room/object_slots.zig");
 const room_data = @import("../../world/room_data.zig");
 const text_mod = @import("../../core/text.zig");
 const ui_sfx = @import("../../core/ui_sfx.zig");
@@ -31,7 +32,7 @@ const readU16Le = room_data.readU16Le;
 const rooms = level.rooms;
 const player_body_width = player_mod.body_width;
 const player_body_height = player_mod.body_height;
-const dialogue_first_object = falling_blocks.first_object;
+const dialogue_object_range = object_slots.cutscene_dialogue_slots;
 const granny_scene_room_index = level.roomIndexFor(level.chapter_index, "2") orelse rooms.len;
 const granny_laugh_carry_room_index = level.roomIndexFor(level.chapter_index, "3") orelse rooms.len;
 const dialogue_reveal_interval_frames: u8 = 5;
@@ -81,7 +82,7 @@ pub fn resetOnRoomLoad(room_index: usize) void {
     if (!state.active) return;
     state = .{};
     bg_darkened = false;
-    cutscene_dialogue.hideObjects(dialogue_first_object);
+    cutscene_dialogue.hideObjects(dialogue_object_range);
 }
 
 pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: usize) bool {
@@ -182,11 +183,11 @@ pub fn drawOverlay(camera: Camera, room_index: usize, anim_counter: u16) void {
         if (rooms[room_index].granny_cutscene) |cutscene| {
             renderDialogueTiles(cutscene);
             if (state.dialogue_index < cutscene.dialogue.len) {
-                cutscene_dialogue.drawObjects(camera, dialogue_first_object, cutscene.dialogue_box, cutscene.dialogue[state.dialogue_index], state.dialogue_portrait_timer, dialogueTextRevealing());
+                cutscene_dialogue.drawObjects(camera, dialogue_object_range, cutscene.dialogue_box, cutscene.dialogue[state.dialogue_index], state.dialogue_portrait_timer, dialogueTextRevealing());
             }
         }
     } else {
-        cutscene_dialogue.hideObjects(dialogue_first_object);
+        cutscene_dialogue.hideObjects(dialogue_object_range);
     }
 
     if (laughTextAllowedInRoom(room_index)) {
@@ -219,7 +220,7 @@ fn start(player: *Player, room_index: usize) void {
     startDialogue(0);
     dust.clear();
     dash_effects.clear();
-    cutscene_dialogue.hideObjects(dialogue_first_object);
+    cutscene_dialogue.hideObjects(dialogue_object_range);
 }
 
 fn lockPlayer(player: *Player) void {
@@ -263,20 +264,20 @@ fn updateDialogue(input: gba.input.BufferedKeysState, cutscene: *const GrannyCut
     if (completed_page == 0) {
         ui_sfx.dialogueBoxOut(pageSpeakerIsMadeline(page));
         state.phase = .walk_talk;
-        cutscene_dialogue.hideObjects(dialogue_first_object);
+        cutscene_dialogue.hideObjects(dialogue_object_range);
         return;
     }
     if (completed_page == 2) {
         ui_sfx.dialogueBoxOut(pageSpeakerIsMadeline(page));
         state.phase = .walk_edge;
-        cutscene_dialogue.hideObjects(dialogue_first_object);
+        cutscene_dialogue.hideObjects(dialogue_object_range);
         return;
     }
     if (completed_page == 3) {
         ui_sfx.dialogueBoxOut(pageSpeakerIsMadeline(page));
         state.phase = .laugh_pause;
         state.laugh_pause_timer = laugh_text.pause_frames;
-        cutscene_dialogue.hideObjects(dialogue_first_object);
+        cutscene_dialogue.hideObjects(dialogue_object_range);
         laugh_text.startFromCutscene(cutscene, state.room_index, 3, false, false);
         return;
     }
@@ -320,7 +321,7 @@ fn finish(cutscene: *const GrannyCutscene) void {
     intro_done = true;
     setDarkened(room_index, false);
     state = .{};
-    cutscene_dialogue.hideObjects(dialogue_first_object);
+    cutscene_dialogue.hideObjects(dialogue_object_range);
     laugh_text.startFromCutscene(cutscene, room_index, 0, true, true);
 }
 

@@ -1,3 +1,4 @@
+const gba = @import("gba");
 const cutscene_dialogue = @import("../cutscene/dialogue.zig");
 const obj_oam = @import("../core/obj_oam.zig");
 const dynamic_object_slots = @import("dynamic_object_slots.zig");
@@ -27,3 +28,14 @@ pub const scene_slots: SceneSlots = .{
     .cutscene_npc_object = cutscene_npc_object,
     .scene_effect_slots = scene_effect_slots,
 };
+
+const cutscene_scene_ranges = [_]ObjectSlotRange{
+    cutscene_dialogue_slots,
+    scene_effect_slots,
+};
+
+// These slots intentionally overlap dynamic gameplay and foreground-behind
+// layouts, which are inactive while cutscene scene effects own this layout.
+comptime {
+    gba.display.checkNoObjectSlotOverlap("cutscene scene", &cutscene_scene_ranges);
+}

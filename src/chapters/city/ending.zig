@@ -33,6 +33,7 @@ const objY = oam.objY;
 
 const end_room_index = level.roomIndexFor(level.chapter_index, "city_end") orelse level.rooms.len;
 const sound_ids = assets.sound_ids;
+const dialogue_object_range = object_slots.cutscene_dialogue_slots;
 const dialogue_first_object = object_slots.cutscene_dialogue_first_object;
 const dialogue_reveal_interval_frames: u8 = 5;
 const dialogue_words_per_tick: u8 = 1;
@@ -156,7 +157,7 @@ pub fn resetOnRoomLoad(room_index: usize) void {
     if (isEndRoom(room_index)) {
         hidePlaceholders();
         hideMemorialTextObjects();
-        cutscene_dialogue.hideObjects(dialogue_first_object);
+        cutscene_dialogue.hideObjects(dialogue_object_range);
         if (state.phase == .completion_pending) return;
         if (state.phase != .inactive) {
             state = .{};
@@ -166,7 +167,7 @@ pub fn resetOnRoomLoad(room_index: usize) void {
     state = .{};
     hidePlaceholders();
     hideMemorialTextObjects();
-    cutscene_dialogue.hideObjects(dialogue_first_object);
+    cutscene_dialogue.hideObjects(dialogue_object_range);
 }
 
 pub fn handleRoomTransition(from_room: usize, to_room: usize) void {
@@ -174,7 +175,7 @@ pub fn handleRoomTransition(from_room: usize, to_room: usize) void {
         state = .{};
         hidePlaceholders();
         hideMemorialTextObjects();
-        cutscene_dialogue.hideObjects(dialogue_first_object);
+        cutscene_dialogue.hideObjects(dialogue_object_range);
     }
 }
 
@@ -183,7 +184,7 @@ pub fn handlePlayerDeathStart(room_index: usize) void {
     state = .{};
     hidePlaceholders();
     hideMemorialTextObjects();
-    cutscene_dialogue.hideObjects(dialogue_first_object);
+    cutscene_dialogue.hideObjects(dialogue_object_range);
 }
 
 pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: usize) bool {
@@ -294,7 +295,7 @@ pub fn applyPlayerFrameOverride(player: *Player, room_index: usize) void {
 
 pub fn drawOverlay(camera: Camera, room_index: usize, anim_counter: u16) void {
     if (!isEndRoom(room_index)) {
-        cutscene_dialogue.hideObjects(dialogue_first_object);
+        cutscene_dialogue.hideObjects(dialogue_object_range);
         hidePlaceholders();
         hideMemorialTextObjects();
         return;
@@ -305,9 +306,9 @@ pub fn drawOverlay(camera: Camera, room_index: usize, anim_counter: u16) void {
         drawPlaceholders(camera, room_index, anim_counter);
         renderDialogueTiles();
         const page_data = currentPage();
-        cutscene_dialogue.drawObjects(camera, dialogue_first_object, activeDialogueBox(), page_data, state.dialogue_portrait_timer, dialogueTextRevealing());
+        cutscene_dialogue.drawObjects(camera, dialogue_object_range, activeDialogueBox(), page_data, state.dialogue_portrait_timer, dialogueTextRevealing());
     } else {
-        cutscene_dialogue.hideObjects(dialogue_first_object);
+        cutscene_dialogue.hideObjects(dialogue_object_range);
         drawPlaceholders(camera, room_index, anim_counter);
         if (state.memorial_visible and state.phase == .inactive) {
             drawMemorialText(camera);
@@ -349,7 +350,7 @@ pub fn deactivateAfterChapterComplete() void {
     state = .{};
     hidePlaceholders();
     hideMemorialTextObjects();
-    cutscene_dialogue.hideObjects(dialogue_first_object);
+    cutscene_dialogue.hideObjects(dialogue_object_range);
 }
 
 fn startOutro(player: *Player) void {
@@ -402,7 +403,7 @@ fn finishDialogue() void {
     state.dialogue_next_offset = 0;
     state.dialogue_portrait_timer = 0;
     state.dialogue_cache.invalidate();
-    cutscene_dialogue.hideObjects(dialogue_first_object);
+    cutscene_dialogue.hideObjects(dialogue_object_range);
 }
 
 fn updateDialogue(input: gba.input.BufferedKeysState) void {

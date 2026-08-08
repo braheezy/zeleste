@@ -1,4 +1,5 @@
 const gba = @import("gba");
+const std = @import("std");
 const assets = @import("../core/assets.zig");
 const camera_mod = @import("../world/camera.zig");
 const math = @import("../core/math.zig");
@@ -14,7 +15,6 @@ const CutsceneDialoguePage = room_data.CutsceneDialoguePage;
 const DialoguePortrait = room_data.DialoguePortrait;
 const SceneRect = room_data.SceneRect;
 const clampI16 = math.clampI16;
-const hideObject = oam.hideObject;
 const objX = oam.objX;
 const objY = oam.objY;
 const portrait_meta = assets.granny_portrait_meta;
@@ -179,7 +179,8 @@ pub fn preloadPortrait(page: CutsceneDialoguePage, portrait_timer: u16, text_rev
     loadPortraitFrame(portrait, portrait_timer, text_revealing);
 }
 
-pub fn drawObjects(camera: Camera, first_object: usize, dialogue_box: SceneRect, page: CutsceneDialoguePage, portrait_timer: u16, text_revealing: bool) void {
+pub fn drawObjects(camera: Camera, object_range: gba.display.ObjectSlotRange, dialogue_box: SceneRect, page: CutsceneDialoguePage, portrait_timer: u16, text_revealing: bool) void {
+    std.debug.assert(object_range.count == object_count);
     loadTextboxPalette();
     const portrait = effectivePortrait(page);
     const has_portrait = portraitRange(portrait) != null;
@@ -189,18 +190,18 @@ pub fn drawObjects(camera: Camera, first_object: usize, dialogue_box: SceneRect,
     };
     updateAdvanceIndicator(!text_revealing, portrait_timer);
     if (has_portrait) {
-        drawPortrait(portraitObject(first_object), position, portrait, portrait_timer, text_revealing);
+        drawPortrait(object_range, position, portrait, portrait_timer, text_revealing);
     } else {
-        hideObject(portraitObject(first_object));
+        object_range.object(0).mode = .hidden;
     }
 
     var row: usize = 0;
     while (row < rows) : (row += 1) {
         var col: usize = 0;
         while (col < cols) : (col += 1) {
-            const object_index = boxObject(first_object, row, col);
+            const object_offset = portrait_object_count + row * cols + col;
             const tile_index: u10 = @intCast((row * cols + col) * tiles_per_object);
-            gba.display.objects[object_index] = gba.display.Object.init(.{
+            object_range.object(object_offset).* = gba.display.Object.init(.{
                 .size = .size_32x16,
                 .x = objX(position.x + @as(i16, @intCast(col * 32))),
                 .y = objY(position.y + @as(i16, @intCast(row * 16))),
@@ -213,12 +214,10 @@ pub fn drawObjects(camera: Camera, first_object: usize, dialogue_box: SceneRect,
     visible = true;
 }
 
-pub fn hideObjects(first_object: usize) void {
+pub fn hideObjects(object_range: gba.display.ObjectSlotRange) void {
     if (!visible) return;
-    var index: usize = 0;
-    while (index < object_count) : (index += 1) {
-        hideObject(first_object + index);
-    }
+    std.debug.assert(object_range.count == object_count);
+    object_range.hide();
     visible = false;
     advance_indicator_visible = false;
     advance_indicator_frame = 0xff;
@@ -476,10 +475,10 @@ fn portraitRange(portrait: DialoguePortrait) ?PortraitRange {
     };
 }
 
-fn drawPortrait(first_object: usize, position: room_data.Spawn, portrait: DialoguePortrait, portrait_timer: u16, text_revealing: bool) void {
+fn drawPortrait(object_range: gba.display.ObjectSlotRange, position: room_data.Spawn, portrait: DialoguePortrait, portrait_timer: u16, text_revealing: bool) void {
     loadPortraitPalette();
     loadPortraitFrame(portrait, portrait_timer, text_revealing);
-    gba.display.objects[first_object] = gba.display.Object.init(.{
+    object_range.object(0).* = gba.display.Object.init(.{
         .size = .size_32x32,
         .x = objX(position.x + portrait_x),
         .y = objY(position.y + portrait_y),
@@ -487,14 +486,6 @@ fn drawPortrait(first_object: usize, position: room_data.Spawn, portrait: Dialog
         .priority = 0,
         .palette = portrait_palette_bank,
     });
-}
-
-fn portraitObject(first_object: usize) usize {
-    return first_object;
-}
-
-fn boxObject(first_object: usize, row: usize, col: usize) usize {
-    return first_object + portrait_object_count + row * cols + col;
 }
 
 fn loadPortraitPalette() void {

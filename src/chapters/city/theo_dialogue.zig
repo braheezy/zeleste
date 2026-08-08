@@ -32,7 +32,7 @@ const palette_data align(4) = assets.speech_bubble_palette_data;
 const meta = assets.speech_bubble_meta;
 
 const theo_room_index = flow.roomIndexFor(1, "6zb") orelse level.rooms.len;
-const dialogue_first_object = object_slots.cutscene_dialogue_first_object;
+const dialogue_object_range = object_slots.cutscene_dialogue_slots;
 const bubble_object = 127;
 const bubble_base_tile: u10 = @intCast(obj_vram.theo_prompt_bubble.start);
 const bubble_palette_bank: u4 = 6;
@@ -114,7 +114,7 @@ pub fn update(player: *Player, input: gba.input.BufferedKeysState, room_index: u
 pub fn drawOverlay(camera: Camera, room_index: usize, anim_counter: u16) void {
     _ = anim_counter;
     if (!isTheoRoom(room_index)) {
-        cutscene_dialogue.hideObjects(dialogue_first_object);
+        cutscene_dialogue.hideObjects(dialogue_object_range);
         hideBubble();
         return;
     }
@@ -124,12 +124,12 @@ pub fn drawOverlay(camera: Camera, room_index: usize, anim_counter: u16) void {
         renderDialogueTiles();
         const pages = currentPages();
         if (state.page_index < pages.len) {
-            cutscene_dialogue.drawObjects(camera, dialogue_first_object, dialogue_box, pages[state.page_index], state.dialogue_portrait_timer, dialogueTextRevealing());
+            cutscene_dialogue.drawObjects(camera, dialogue_object_range, dialogue_box, pages[state.page_index], state.dialogue_portrait_timer, dialogueTextRevealing());
         }
         return;
     }
 
-    cutscene_dialogue.hideObjects(dialogue_first_object);
+    cutscene_dialogue.hideObjects(dialogue_object_range);
     if (hasAvailableConversation()) {
         drawBubble(camera, state.near_prompt);
     } else {
@@ -226,7 +226,7 @@ fn finishDialogue() void {
     state.dialogue_next_offset = 0;
     state.dialogue_portrait_timer = 0;
     state.dialogue_cache.invalidate();
-    cutscene_dialogue.hideObjects(dialogue_first_object);
+    cutscene_dialogue.hideObjects(dialogue_object_range);
 }
 
 fn abortDialogue() void {
@@ -239,7 +239,7 @@ fn abortDialogue() void {
     state.dialogue_next_offset = 0;
     state.dialogue_portrait_timer = 0;
     state.dialogue_cache.invalidate();
-    cutscene_dialogue.hideObjects(dialogue_first_object);
+    cutscene_dialogue.hideObjects(dialogue_object_range);
 }
 
 fn lockPlayer(player: *Player) void {
