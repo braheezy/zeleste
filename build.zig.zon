@@ -5,13 +5,16 @@
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .ziggba = .{
-            .path = "../../gba/ziggba",
+            .url = "git+https://github.com/braheezy/ZigGBA#f96a87bc421c63fba3e3a918c5504989e6ae4a4f",
+            .hash = "ziggba-0.0.0-t2qCXv5vDgA-vienqfvJbHAxa6EnX5WvFk-emVFZKABO",
         },
         .maxmod_zig = .{
-            .path = "../../gba/maxmod-zig",
+            .url = "git+https://github.com/braheezy/maxmod-zig#ff3256527675d5c91679ad98be9fbc612b41c7b7",
+            .hash = "maxmod_zig-0.0.0-QJRpsfdjAwD8BI0hR6VWpPI5Bls7xikqdkDDMBCQgdiq",
         },
         .mmutil_zig = .{
-            .path = "../../gba/mmutil-zig",
+            .url = "git+https://github.com/braheezy/mmutil-zig#e92b5fe3638ea1e39891356de07d68c0927f188f",
+            .hash = "mmutil_zig-0.0.0-y590hZAJAABq_AMp0EERZvf34RbJaQYmt8w2ie-QyqT5",
         },
     },
     .paths = .{
