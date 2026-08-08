@@ -976,8 +976,5 @@ fn playWingFlapSound() void {
     };
     const index: usize = @intCast(wingflap_variant % @as(u8, @intCast(samples.len)));
     wingflap_variant +%= 1;
-    const handle = audio.playSoundEffect(samples[index]);
-    if (handle != 0) {
-        audio.setSoundEffectVolume(handle, 112);
-    }
+    _ = audio.playSoundEffectAtVolume(samples[index], 112);
 }

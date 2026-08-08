@@ -108,10 +108,7 @@ fn play(surface: Surface, player: *Player) void {
     if (player.footstep_handle != 0) {
         _ = audio.cancelSoundEffect(player.footstep_handle);
     }
-    player.footstep_handle = audio.playSoundEffect(samples[index]);
-    if (player.footstep_handle != 0) {
-        audio.setSoundEffectVolume(player.footstep_handle, volume);
-    }
+    player.footstep_handle = audio.playSoundEffectAtVolume(samples[index], volume);
 }
 
 fn samplesFor(surface: Surface) []const u16 {

@@ -139,8 +139,5 @@ fn playVariant(player: *Player, samples: []const u16, volume: u16) void {
 }
 
 fn play(sound_id: u16, volume: u16) void {
-    const handle = audio.playSoundEffect(sound_id);
-    if (handle != 0) {
-        audio.setSoundEffectVolume(handle, volume);
-    }
+    _ = audio.playSoundEffectAtVolume(sound_id, volume);
 }

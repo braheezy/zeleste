@@ -10,9 +10,7 @@ const prologue_soundbank_data align(4) = @embedFile("../generated/assets/prologu
 const background_music_enabled = true;
 const audio_channel_count: mm.Word = 32;
 const audio_mix_mode_13khz = 2;
-const wave_memory_len_13khz = 896;
 const audio_mix_mode = audio_mix_mode_13khz;
-const wave_memory_len = wave_memory_len_13khz;
 pub const volume_step_count: u8 = 10;
 const max_volume: mm.Word = 1024;
 const sfx_volume_numerator: mm.Word = 4;
@@ -38,11 +36,11 @@ const TrackedSoundEffect = struct {
     volume: mm.Word = default_effect_volume,
 };
 
-var module_channels: [audio_channel_count]mm.ModuleChannel align(4) = [_]mm.ModuleChannel{.{}} ** audio_channel_count;
-var active_channels: [audio_channel_count]mm.ActiveChannel align(4) = [_]mm.ActiveChannel{.{}} ** audio_channel_count;
-var mixing_channels: [audio_channel_count]mm.MixerChannel align(4) = [_]mm.MixerChannel{.{}} ** audio_channel_count;
-var mixing_memory: [wave_memory_len / @sizeOf(u32)]u32 align(4) = [_]u32{0} ** (wave_memory_len / @sizeOf(u32));
-var wave_memory: [wave_memory_len]u8 align(4) = [_]u8{0} ** wave_memory_len;
+var runtime = mm.gba.Runtime(.{
+    .mixing_mode = @enumFromInt(audio_mix_mode),
+    .module_channels = audio_channel_count,
+    .mix_channels = audio_channel_count,
+}){};
 
 var current_music: u16 = no_music;
 var prologue_music_mode: PrologueMusicMode = .none;
@@ -53,20 +51,7 @@ var tracked_sfx: [tracked_sfx_count]TrackedSoundEffect = [_]TrackedSoundEffect{.
 pub fn init() void {
     gba.interrupt.init();
     gba.interrupt.isr_default_redirect = audioVBlankHandler;
-    var setup = mm.gba.GBASystem{
-        // Maxmod MixMode enum: 0=8k, 1=10k, 2=13k, 3=16k.
-        // Keep wave_memory_len matched to this mode's MixLen.
-        .mixing_mode = @enumFromInt(audio_mix_mode),
-        .mod_channel_count = audio_channel_count,
-        .mix_channel_count = audio_channel_count,
-        .module_channels = @ptrCast(&module_channels[0]),
-        .active_channels = @ptrCast(&active_channels[0]),
-        .mixing_channels = @ptrCast(&mixing_channels[0]),
-        .mixing_memory = @ptrCast(&mixing_memory[0]),
-        .wave_memory = @ptrCast(&wave_memory[0]),
-        .soundbank = @ptrCast(@constCast(&prologue_soundbank_data[0])),
-    };
-    if (!mm.gba.init(&setup)) unreachable;
+    runtime.init(&prologue_soundbank_data) catch unreachable;
     current_music = no_music;
     prologue_music_mode = .none;
     music_volume_step = volume_step_count;
@@ -147,9 +132,20 @@ pub fn playSoundEffect(sound_id: u16) mm.Sfxhand {
     return playTrackedSoundEffect(sound_id);
 }
 
+pub fn playSoundEffectAtVolume(sound_id: u16, volume: u16) mm.Sfxhand {
+    if (sfx_volume_step == 0) return 0;
+    if (!hasFreeEffectChannel()) return 0;
+    return playTrackedSoundEffectAtVolume(sound_id, volume);
+}
+
 pub fn playImportantSoundEffect(sound_id: u16) mm.Sfxhand {
     if (sfx_volume_step == 0) return 0;
     return playTrackedSoundEffect(sound_id);
+}
+
+pub fn playImportantSoundEffectAtVolume(sound_id: u16, volume: u16) mm.Sfxhand {
+    if (sfx_volume_step == 0) return 0;
+    return playTrackedSoundEffectAtVolume(sound_id, volume);
 }
 
 pub fn setSoundEffectVolume(handle: mm.Sfxhand, volume: u16) void {
@@ -257,17 +253,21 @@ fn hasFreeEffectChannel() bool {
 }
 
 fn playTrackedSoundEffect(sound_id: u16) mm.Sfxhand {
-    const handle = mm.sfx.effect(sound_id);
-    if (handle != 0) trackSoundEffect(handle, sound_id);
+    return playTrackedSoundEffectAtVolume(sound_id, default_effect_volume);
+}
+
+fn playTrackedSoundEffectAtVolume(sound_id: u16, volume: mm.Word) mm.Sfxhand {
+    const handle = mm.sfx.playAtVolume(sound_id, volume);
+    if (handle != 0) trackSoundEffect(handle, sound_id, volume);
     return handle;
 }
 
-fn trackSoundEffect(handle: mm.Sfxhand, sound_id: u16) void {
+fn trackSoundEffect(handle: mm.Sfxhand, sound_id: u16, volume: mm.Word) void {
     if (trackedSoundEffectSlot(handle)) |slot| {
         tracked_sfx[slot] = .{
             .handle = handle,
             .sound_id = sound_id,
-            .volume = default_effect_volume,
+            .volume = volume,
         };
     }
 }

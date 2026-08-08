@@ -222,10 +222,7 @@ fn playReturnSound(index: u8) void {
 }
 
 fn playSound(sound_id: u16, volume: u16) void {
-    const handle = audio.playImportantSoundEffect(sound_id);
-    if (handle != 0) {
-        audio.setSoundEffectVolume(handle, volume);
-    }
+    _ = audio.playImportantSoundEffectAtVolume(sound_id, volume);
 }
 
 fn visible(x: i16, y: i16, width: i16, height: i16) bool {

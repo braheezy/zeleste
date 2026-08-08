@@ -123,8 +123,7 @@ pub fn dialogueAdvance(madeline: bool) void {
 
 pub fn dialogueText(voice: DialogueVoice) void {
     cancelDialogueText();
-    dialogue_text_handle = audio.playSoundEffect(dialogueTextSound(voice));
-    if (dialogue_text_handle != 0) audio.setSoundEffectVolume(dialogue_text_handle, dialogue_text_volume);
+    dialogue_text_handle = audio.playSoundEffectAtVolume(dialogueTextSound(voice), dialogue_text_volume);
 }
 
 fn play(sound_id: u16) void {
