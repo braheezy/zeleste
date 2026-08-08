@@ -374,8 +374,8 @@ pub fn invalidate() void {
 }
 
 fn loadPalettes() void {
-    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(&palette_data), 16);
-    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, hint_palette_bank) * 16], @ptrCast(&hint_palette_data), 16);
+    gba.display.memcpyObjectPaletteBank(palette_bank, 0, @ptrCast(&palette_data));
+    gba.display.memcpyObjectPaletteBank(hint_palette_bank, 0, @ptrCast(&hint_palette_data));
     invalidate();
 }
 

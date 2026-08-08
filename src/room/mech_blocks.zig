@@ -174,7 +174,8 @@ pub fn loadGraphics() void {
     if (block_count == 0) return;
     const room = rooms[active_room_index];
     if (room.traffic_block_palette.len >= 32) {
-        gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(room.traffic_block_palette.ptr), 16);
+        const palette: [*]align(2) const gba.ColorRgb555 = @ptrCast(room.traffic_block_palette.ptr);
+        gba.display.memcpyObjectPaletteBank(palette_bank, 0, palette[0..16]);
     }
     const tile_count = @min(room.traffic_block_tiles.len / 32, max_tiles);
     if (tile_count == 0) return;

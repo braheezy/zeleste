@@ -50,7 +50,8 @@ pub fn loadParallax(room: room_data.RoomBackground) void {
         return;
     }
     if (room.parallax) |parallax| {
-        gba.mem.memcpy16(&gba.display.bg_palette.colors[@as(usize, 15) * 16], @ptrCast(parallax.palette.ptr), 16);
+        const palette: *align(2) const gba.display.Palette.Bank = @ptrCast(parallax.palette.ptr);
+        gba.display.memcpyBackgroundPaletteBank(15, 0, palette);
         const tile_count = parallax.tiles.len / 32;
         const tiles: [*]align(2) const gba.display.Tile4Bpp = @ptrCast(parallax.tiles.ptr);
         const charblock3_start_bytes: usize = 3 * 16 * 1024;
@@ -366,7 +367,8 @@ fn visibleRoomMapEntry(room_index: usize, room: room_data.RoomBackground, x: i16
 }
 
 fn loadHiddenCoverLayer(room: room_data.RoomBackground) void {
-    gba.mem.memcpy16(&gba.display.bg_palette.colors[@as(usize, 15) * 16], @ptrCast(room.hidden_cover_palette.ptr), 16);
+    const palette: [*]align(2) const gba.ColorRgb555 = @ptrCast(room.hidden_cover_palette.ptr);
+    gba.display.memcpyBackgroundPaletteBank(15, 0, palette[0..16]);
     const tile_count = room.hidden_cover_tiles.len / 32;
     const tiles: [*]align(2) const gba.display.Tile4Bpp = @ptrCast(room.hidden_cover_tiles.ptr);
     const charblock3_start_bytes: usize = 3 * 16 * 1024;

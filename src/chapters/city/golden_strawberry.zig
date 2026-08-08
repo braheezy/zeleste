@@ -235,7 +235,7 @@ fn loadMainPalette() void {
     const desired: PaletteVariant = if (ghost) .ghost else .gold;
     if (loaded_main_palette == desired) return;
     const data = if (ghost) &ghost_palette_data else &gold_palette_data;
-    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(data), 16);
+    gba.display.memcpyObjectPaletteBank(palette_bank, 0, @ptrCast(data));
     loaded_main_palette = desired;
 }
 
@@ -243,7 +243,7 @@ fn loadCollectPalette() void {
     const desired: PaletteVariant = if (ghost) .ghost else .gold;
     if (loaded_collect_palette == desired) return;
     const data = if (ghost) &ghost_collect_palette_data else &gold_collect_palette_data;
-    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, collect_palette_bank) * 16], @ptrCast(data), 16);
+    gba.display.memcpyObjectPaletteBank(collect_palette_bank, 0, @ptrCast(data));
     loaded_collect_palette = desired;
 }
 

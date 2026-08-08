@@ -446,7 +446,7 @@ fn hidePuzzleObjects() void {
 }
 
 fn loadGraphics(include_puzzle_palette: bool) void {
-    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(&palette_data), 16);
+    gba.display.memcpyObjectPaletteBank(palette_bank, 0, @ptrCast(&palette_data));
     if (include_puzzle_palette) loadPuzzlePalette();
     gba.display.memcpyObjectTiles4Bpp(base_tile, @ptrCast(&tiles_data));
     if (include_puzzle_palette) loadAntennaTipTiles();
@@ -980,9 +980,9 @@ fn loadCrystalHeartFrame(frame: u16, ghost: bool) void {
 fn loadCrystalHeartPalette(ghost: bool) void {
     if (loaded_heart_palette_valid and loaded_heart_palette_ghost == ghost) return;
     if (ghost) {
-        gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, crystal_heart_palette_bank) * 16], @ptrCast(&crystal_heart_ghost_palette_data), 16);
+        gba.display.memcpyObjectPaletteBank(crystal_heart_palette_bank, 0, @ptrCast(&crystal_heart_ghost_palette_data));
     } else {
-        gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, crystal_heart_palette_bank) * 16], @ptrCast(&crystal_heart_normal_palette_data), 16);
+        gba.display.memcpyObjectPaletteBank(crystal_heart_palette_bank, 0, @ptrCast(&crystal_heart_normal_palette_data));
     }
     loaded_heart_palette_valid = true;
     loaded_heart_palette_ghost = ghost;

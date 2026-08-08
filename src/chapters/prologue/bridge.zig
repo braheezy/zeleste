@@ -140,7 +140,7 @@ pub fn load(room_index: usize, active_room: bool) void {
     hideObjects();
     if (!bridge_active) return;
 
-    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(&palette_data), 16);
+    gba.display.memcpyObjectPaletteBank(palette_bank, 0, @ptrCast(&palette_data));
     loadDarkPalette();
     gba.display.memcpyObjectTiles4Bpp(base_tile, @ptrCast(&tiles_data));
 

@@ -110,7 +110,7 @@ pub fn loadGraphics(room_index: usize) void {
 
     const room = rooms[room_index];
     if (allBlocksUseFixedSprite()) {
-        gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(&palette_data), 16);
+        gba.display.memcpyObjectPaletteBank(palette_bank, 0, @ptrCast(&palette_data));
         loadFixedSpriteTiles();
         return;
     }
@@ -119,7 +119,8 @@ pub fn loadGraphics(room_index: usize) void {
         if (hasFixedSpriteBlock()) {
             loadFixedSpriteTiles();
         }
-        gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(room.falling_block_palette.ptr), 16);
+        const palette: [*]align(2) const gba.ColorRgb555 = @ptrCast(room.falling_block_palette.ptr);
+        gba.display.memcpyObjectPaletteBank(palette_bank, 0, palette[0..16]);
         const tile_count = @min(room.falling_block_tiles.len / 32, max_room_visual_tiles);
         if (tile_count > 0) {
             const tiles: [*]align(2) const gba.display.Tile4Bpp = @ptrCast(room.falling_block_tiles.ptr);
@@ -129,7 +130,7 @@ pub fn loadGraphics(room_index: usize) void {
         return;
     }
 
-    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(&palette_data), 16);
+    gba.display.memcpyObjectPaletteBank(palette_bank, 0, @ptrCast(&palette_data));
     loadFixedSpriteTiles();
     loadGenericTiles();
 }

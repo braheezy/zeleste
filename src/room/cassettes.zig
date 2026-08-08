@@ -315,13 +315,13 @@ fn loadFrame(frame: u16, collected: bool) void {
 
 fn loadCassettePalette() void {
     if (loaded_palette == .cassette) return;
-    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(&palette_data), 16);
+    gba.display.memcpyObjectPaletteBank(palette_bank, 0, @ptrCast(&palette_data));
     loaded_palette = .cassette;
 }
 
 fn loadBubbleGraphics() void {
     if (loaded_palette != .bubble) {
-        gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(&bubble_palette_data), 16);
+        gba.display.memcpyObjectPaletteBank(palette_bank, 0, @ptrCast(&bubble_palette_data));
         loaded_palette = .bubble;
     }
     if (!bubble_tiles_loaded) {

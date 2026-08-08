@@ -50,7 +50,7 @@ const PaletteMode = enum(u8) {
 var palette_mode: PaletteMode = .invalid;
 
 pub fn loadPalette() void {
-    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(&hair_palette_data), 16);
+    gba.display.memcpyObjectPaletteBank(palette_bank, 0, @ptrCast(&hair_palette_data));
     palette_mode = .red;
 }
 

@@ -240,7 +240,7 @@ fn loadTextboxPalette() void {
         .prologue => &textbox_palette_data,
         .chapter1 => &ch1_textbox_palette_data,
     };
-    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(palette_data), 16);
+    gba.display.memcpyObjectPaletteBank(palette_bank, 0, @ptrCast(palette_data));
 }
 
 fn loadStaticTextboxTiles() void {
@@ -490,7 +490,7 @@ fn drawPortrait(object_range: gba.display.ObjectSlotRange, position: room_data.S
 
 fn loadPortraitPalette() void {
     if (portrait_palette_loaded) return;
-    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, portrait_palette_bank) * 16], @ptrCast(&portrait_palette_data), 16);
+    gba.display.memcpyObjectPaletteBank(portrait_palette_bank, 0, @ptrCast(&portrait_palette_data));
     portrait_palette_loaded = true;
 }
 

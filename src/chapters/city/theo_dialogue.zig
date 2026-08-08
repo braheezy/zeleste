@@ -64,7 +64,7 @@ var bubble_visible: bool = false;
 
 pub fn loadGraphics(room_index: usize) void {
     if (!isTheoRoom(room_index)) return;
-    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, bubble_palette_bank) * 16], @ptrCast(&palette_data), 16);
+    gba.display.memcpyObjectPaletteBank(bubble_palette_bank, 0, @ptrCast(&palette_data));
     loadBubbleTiles();
     cutscene_dialogue.setTextboxSkin(.chapter1);
     cutscene_dialogue.resetTextboxGraphics();

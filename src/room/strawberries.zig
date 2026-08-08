@@ -436,9 +436,9 @@ fn loadMainPalette(variant: PaletteVariant) void {
     const desired: PaletteVariant = if (variant == .ghost) .ghost else .normal;
     if (loaded_main_palette == desired) return;
     if (desired == .ghost) {
-        gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(&ghost_palette_data), 16);
+        gba.display.memcpyObjectPaletteBank(palette_bank, 0, @ptrCast(&ghost_palette_data));
     } else {
-        gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(&palette_data), 16);
+        gba.display.memcpyObjectPaletteBank(palette_bank, 0, @ptrCast(&palette_data));
     }
     loaded_main_palette = desired;
 }
@@ -447,9 +447,9 @@ fn loadCollectPalette(variant: PaletteVariant) void {
     const desired: PaletteVariant = if (variant == .ghost) .ghost else .normal;
     if (loaded_collect_palette == desired) return;
     if (desired == .ghost) {
-        gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, collect_palette_bank) * 16], @ptrCast(&ghost_collect_palette_data), 16);
+        gba.display.memcpyObjectPaletteBank(collect_palette_bank, 0, @ptrCast(&ghost_collect_palette_data));
     } else {
-        gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, collect_palette_bank) * 16], @ptrCast(&collect_palette_data), 16);
+        gba.display.memcpyObjectPaletteBank(collect_palette_bank, 0, @ptrCast(&collect_palette_data));
     }
     loaded_collect_palette = desired;
 }

@@ -132,19 +132,19 @@ pub fn load(room_index: usize) void {
 pub fn loadGraphics() void {
     if (!hasDrawableWalls()) return;
     if (hasDrawableIceSize(sprite_width, ice_wall_height)) {
-        gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, ice_palette_bank) * 16], @ptrCast(&ice_palette_data), 16);
+        gba.display.memcpyObjectPaletteBank(ice_palette_bank, 0, @ptrCast(&ice_palette_data));
         gba.display.memcpyObjectTiles4Bpp(ice_base_tile, @ptrCast(&ice_tiles_data));
     }
     if (hasDrawableIceSize(sprite_width, ice_6c_wall_height)) {
-        gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, ice_6c_palette_bank) * 16], @ptrCast(&ice_6c_palette_data), 16);
+        gba.display.memcpyObjectPaletteBank(ice_6c_palette_bank, 0, @ptrCast(&ice_6c_palette_data));
         gba.display.memcpyObjectTiles4Bpp(ice_6c_base_tile, @ptrCast(&ice_6c_tiles_data));
     }
     if (hasDrawableIceSize(ice_7z_wall_width, ice_7z_wall_height)) {
-        gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, ice_palette_bank) * 16], @ptrCast(&ice_7z_palette_data), 16);
+        gba.display.memcpyObjectPaletteBank(ice_palette_bank, 0, @ptrCast(&ice_7z_palette_data));
         gba.display.memcpyObjectTiles4Bpp(ice_7z_base_tile, @ptrCast(&ice_7z_tiles_data));
     }
     if (hasDrawableMaterial(.dirt)) {
-        gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, dirt_palette_bank) * 16], @ptrCast(&dirt_palette_data), 16);
+        gba.display.memcpyObjectPaletteBank(dirt_palette_bank, 0, @ptrCast(&dirt_palette_data));
         gba.display.memcpyObjectTiles4Bpp(dirt_base_tile, @ptrCast(&dirt_tiles_data));
     }
 }

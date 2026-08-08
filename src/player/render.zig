@@ -52,13 +52,14 @@ pub fn invalidate() void {
 
 pub fn loadPalettes() void {
     gba.mem.memcpy(gba.display.obj_palette, &player_palette_data, player_palette_data.len);
-    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, sweat_palette_bank) * 16], @ptrCast(&sweat_palette_data), 16);
+    const sweat_palette: *align(2) const gba.display.Palette.Bank = @ptrCast(&sweat_palette_data);
+    gba.display.memcpyObjectPaletteBank(sweat_palette_bank, 0, sweat_palette);
     loaded_palette_mode = .normal;
 }
 
 pub fn loadNormalPalette() void {
     const base_palette: [*]align(2) const gba.ColorRgb555 = @ptrCast(&player_palette_data);
-    gba.mem.memcpy16(&gba.display.obj_palette.colors[0], base_palette, 16);
+    gba.display.memcpyObjectPaletteBank(0, 0, base_palette[0..16]);
     loaded_palette_mode = .normal;
 }
 
@@ -123,15 +124,16 @@ fn updatePalette(player: Player, foreground_anim_counter: u16) void {
     if (loaded_palette_mode == desired_mode) return;
 
     if (desired_mode == .normal) {
-        gba.mem.memcpy16(&gba.display.obj_palette.colors[0], base_palette, 16);
+        gba.display.memcpyObjectPaletteBank(0, 0, base_palette[0..16]);
         loaded_palette_mode = .normal;
         return;
     }
 
-    gba.display.obj_palette.colors[0] = base_palette[0];
+    const player_palette = gba.display.objectPaletteBank(0);
+    player_palette[0] = base_palette[0];
     var index: usize = 0;
     while (index < 16) : (index += 1) {
-        gba.display.obj_palette.colors[index] = redFatigueTint(base_palette[index]);
+        player_palette[index] = redFatigueTint(base_palette[index]);
     }
     loaded_palette_mode = .fatigue;
 }

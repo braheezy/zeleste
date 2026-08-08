@@ -145,7 +145,7 @@ var campfire_frame_cache: gba.display.ObjectTileFrameCache4Bpp = .{};
 
 pub fn loadGraphics(room_index: usize) void {
     if (!isEndRoom(room_index)) return;
-    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, bird_palette_bank) * 16], @ptrCast(&bird_palette_data), 16);
+    gba.display.memcpyObjectPaletteBank(bird_palette_bank, 0, @ptrCast(&bird_palette_data));
     loadMemorialPalette();
     cutscene_dialogue.setTextboxSkin(.chapter1);
     cutscene_dialogue.resetTextboxGraphics();
@@ -743,7 +743,7 @@ fn birdLandPoint(room_index: usize) Spawn {
 }
 
 fn loadCampfireGraphics() void {
-    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, campfire_palette_bank) * 16], @ptrCast(&fire_small1_palette_data), 16);
+    gba.display.memcpyObjectPaletteBank(campfire_palette_bank, 0, @ptrCast(&fire_small1_palette_data));
     campfire_frame_cache.invalidate();
 }
 

@@ -85,7 +85,7 @@ fn currentFrame() u16 {
 
 fn loadPalette() void {
     if (palette_loaded) return;
-    gba.mem.memcpy16(&gba.display.obj_palette.colors[@as(usize, palette_bank) * 16], @ptrCast(&palette_data), 16);
+    gba.display.memcpyObjectPaletteBank(palette_bank, 0, @ptrCast(&palette_data));
     palette_loaded = true;
 }
 
